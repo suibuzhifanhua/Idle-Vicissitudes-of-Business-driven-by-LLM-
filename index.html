@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>商海浮沉 — LLM驱动放置游戏</title>
+<style>
+:root {
+  --bg-primary: #0a0e1a; --bg-secondary: #0f1525; --bg-card: #141d2e;
+  --bg-hover: #1a2540; --bg-modal: #0d1220f0; --border: #1e2d47; --border-bright: #2a4070;
+  --text-primary: #e8eaf0; --text-secondary: #8a9bb5; --text-muted: #4a5a75;
+  --accent-blue: #3b82f6; --accent-cyan: #06b6d4; --accent-gold: #f59e0b;
+  --red-up: #ef4444; --green-down: #22c55e; --positive: #ef4444; --negative: #22c55e;
+  --purple: #a855f7; --pink: #ec4899; --teal: #14b8a6;
+  --shadow: 0 4px 24px rgba(0,0,0,0.5);
+  --font: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
+* { margin:0; padding:0; box-sizing: border-box; }
+body { font-family:var(--font); background:var(--bg-primary); color:var(--text-primary); min-height:100vh; overflow:hidden; font-size:13px; }
+#topbar { min-height:50px; background:var(--bg-secondary); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 16px; gap:10px; position:fixed; top:0; left:0; right:0; z-index:100; flex-wrap:wrap; row-gap:4px; }
+.topbar-btn { height:28px; line-height:28px; padding:0 10px !important; font-size:11px !important; white-space:nowrap; flex-shrink:0; }
+.game-title { font-size:16px; font-weight:700; background:linear-gradient(135deg,var(--accent-gold),var(--accent-blue)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.llm-status { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-secondary); }
+.llm-dot { width:6px; height:6px; border-radius:50%; background:#555e72; }
+.llm-dot.active { background:#22c55e; animation:pulse 2s infinite; }
+.llm-dot.loading { background:var(--accent-gold); animation:pulse 0.8s infinite; }
+#game-clock { font-size:11px; color:var(--text-secondary); }
+#main-layout { display:grid; grid-template-columns:240px 1fr 280px; gap:0; height:calc(100vh - 50px); margin-top:50px; }
+#left-panel { background:var(--bg-secondary); border-right:1px solid var(--border); overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.panel-section { background:var(--bg-card); border-radius:8px; padding:10px; border:1px solid var(--border); }
+.panel-title { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+.stat-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:12px; }
+.stat-label { color:var(--text-secondary); }
+.stat-value { font-weight:600; font-variant-numeric:tabular-nums; }
+.stat-bar { height:3px; background:var(--bg-primary); border-radius:2px; margin-top:2px; }
+.stat-bar-fill { height:100%; border-radius:2px; transition:width 0.5s; }
+#center-area { overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+.dashboard-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:10px; }
+.dash-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:14px; position:relative; overflow:hidden; }
+.dash-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,var(--accent-blue),var(--purple)); }
+.dash-label { font-size:10px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; }
+.dash-value { font-size:22px; font-weight:700; margin:4px 0; font-variant-numeric:tabular-nums; }
+.dash-sub { font-size:10px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.event-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:8px; animation:slideIn 0.3s ease-out; }
+.event-card.decision { border-color:var(--accent-gold); }
+.event-title { font-size:13px; font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+.event-text { font-size:12px; color:var(--text-secondary); line-height:1.6; margin-bottom:8px; }
+.event-choices { display:flex; flex-direction:column; gap:6px; }
+.event-choice { background:var(--bg-hover); border:1px solid var(--border); border-radius:6px; padding:8px 12px; cursor:pointer; font-size:11px; transition:all 0.2s; text-align:left; color:var(--text-primary); font-family:var(--font); }
+.event-choice:hover { background:var(--accent-blue); border-color:var(--accent-blue); color:#fff; }
+.event-meta { font-size:10px; color:var(--text-muted); margin-top:6px; }
+#right-panel { background:var(--bg-secondary); border-left:1px solid var(--border); overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+#event-log { display:flex; flex-direction:column; gap:4px; max-height:400px; overflow-y:auto; }
+.log-entry { font-size:11px; padding:4px 0; border-bottom:1px solid var(--border); line-height:1.5; }
+.log-time { color:var(--text-muted); font-size:10px; }
+.log-text { color:var(--text-secondary); }
+.hot-item { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:11px; }
+.hot-rank { width:18px; height:18px; border-radius:4px; background:var(--bg-hover); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; }
+.hot-rank.top3 { background:var(--accent-gold); color:#000; }
+.modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:var(--bg-modal); display:flex; align-items:center; justify-content:center; z-index:1000; opacity:0; pointer-events:none; transition:opacity 0.3s; }
+.modal-overlay.active { opacity:1; pointer-events:auto; }
+.modal { background:var(--bg-card); border:1px solid var(--border-bright); border-radius:14px; padding:24px; max-width:520px; width:90%; max-height:80vh; overflow-y:auto; transform:translateY(20px); transition:transform 0.3s; }
+.modal-overlay.active .modal { transform:translateY(0); }
+.modal-title { font-size:16px; font-weight:700; margin-bottom:14px; }
+.modal-close { float:right; background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; font-family:var(--font); }
+#origin-screen { position:fixed; top:0; left:0; right:0; bottom:0; background:var(--bg-primary); z-index:2000; display:flex; align-items:center; justify-content:center; }
+.origin-cards { display:grid; grid-template-columns:repeat(2, 240px); gap:16px; }
+.origin-card { background:var(--bg-card); border:2px solid var(--border); border-radius:12px; padding:18px; cursor:pointer; transition:all 0.3s; }
+.origin-card:hover { border-color:var(--accent-blue); transform:translateY(-4px); box-shadow:var(--shadow); }
+.origin-card.selected { border-color:var(--accent-gold); box-shadow:0 0 20px rgba(245,158,11,0.3); }
+.btn { background:linear-gradient(135deg,var(--accent-blue),#2563eb); border:none; border-radius:6px; color:#fff; padding:6px 14px; cursor:pointer; font-size:12px; transition:all 0.2s; font-family:var(--font); }
+.btn:hover { filter:brightness(1.2); }
+.btn:disabled { opacity:0.4; cursor:not-allowed; filter:none; }
+.btn-hire { width:100%; padding:7px; background:linear-gradient(135deg,#1e3a5f,#2a4a7a); border:1px solid var(--accent-blue); border-radius:6px; color:var(--accent-blue); font-size:12px; cursor:pointer; transition:all 0.2s; font-family:var(--font); }
+.btn-hire:hover:not(:disabled) { background:var(--accent-blue); color:#fff; }
+.btn-hire:disabled { background:var(--bg-hover); border-color:var(--border); color:var(--text-muted); cursor:not-allowed; opacity:0.5; }
+.btn-action.cooldown { background:linear-gradient(135deg,#374151,#4b5563); color:var(--text-muted); cursor:not-allowed; opacity:0.7; }
+.auto-toggle-wrapper { display:flex; align-items:center; gap:6px; margin-right:4px; }
+.auto-toggle-label { font-size:11px; color:#9ca3af; white-space:nowrap; user-select:none; }
+.auto-toggle { position:relative; display:inline-block; width:42px; height:22px; cursor:pointer; }
+.auto-toggle input { opacity:0; width:0; height:0; }
+.auto-slider { position:absolute; cursor:pointer; top:0;left:0;right:0;bottom:0;
+  background:#374151; border-radius:22px; transition:.3s; }
+.auto-slider:before { content:''; position:absolute; height:16px; width:16px;
+  left:3px; bottom:3px; background:#9ca3af; border-radius:50%; transition:.3s; }
+.auto-toggle input:checked + .auto-slider { background:#22c55e; }
+.auto-toggle input:checked + .auto-slider:before { transform:translateX(20px); background:#fff; }
+.tutorial-highlight { position:relative; z-index:2001; box-shadow:0 0 0 4px var(--accent-gold), 0 0 30px rgba(245,158,11,0.4); border-radius:6px; }
+#tutorial-overlay { position:fixed; top:0;left:0;right:0;bottom:0; background:rgba(0,0,0,0.75); z-index:1999; display:none; align-items:center; justify-content:center; }
+#tutorial-overlay .tutorial-box { background:var(--bg-card); border:2px solid var(--accent-gold); border-radius:14px; padding:28px; max-width:420px; width:90%; text-align:left; }
+.modal-skills-content { max-height:60vh; overflow-y:auto; }
+#achievement-banner { position:fixed; top:60px; left:50%; transform:translateX(-50%) translateY(-140px); background:linear-gradient(135deg,#7c3aed,#a855f7); border:1px solid #c084fc; border-radius:12px; padding:14px 24px; display:flex; align-items:center; gap:12px; z-index:500; transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1); box-shadow:0 8px 32px rgba(168,85,247,0.4); pointer-events:none; }
+#achievement-banner.show { transform:translateX(-50%) translateY(0); pointer-events:auto; }
+::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+@keyframes slideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.stress-low{color:var(--green-down)} .stress-mid{color:var(--accent-gold)} .stress-high{color:var(--red-up)} .stress-critical{color:var(--red-up);animation:pulse 1s infinite;}
+.rep-low{color:var(--red-up)} .rep-mid{color:var(--accent-gold)} .rep-high{color:var(--green-down)}
+.act-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;}
+.act-1{background:#1e3a5f;color:var(--accent-blue)} .act-2{background:#1a2e1a;color:var(--green-down)}
+.act-3{background:#2e1a0a;color:var(--accent-gold)} .act-4{background:#1a0a2e;color:var(--purple)}
+.act-5{background:#2e0a0a;color:var(--red-up)}
+@media(max-width:900px){ #main-layout{grid-template-columns:1fr;} #left-panel,#right-panel{display:none;} }
+
+/* === 面板切换动画 === */
+.dash-panel { transition: opacity 0.25s ease, transform 0.25s ease; }
+.dash-panel.switching { opacity: 0; transform: translateY(8px); }
+.panel-tab { padding: 6px 14px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 12px; color: var(--text-muted); background: transparent; border: 1px solid transparent; border-bottom: none; transition: all 0.2s; }
+.panel-tab.active { color: var(--accent-gold); background: var(--bg-card); border-color: var(--border); font-weight: 600; }
+.panel-tab:hover:not(.active) { color: var(--text-secondary); background: var(--bg-hover); }
+
+/* === 业务等级颜色 === */
+.biz-lv-1 { color: #c0c8d4; } .biz-lv-2 { color: var(--green-down); } .biz-lv-3 { color: var(--accent-blue); }
+.biz-lv-4 { color: var(--purple); } .biz-lv-5 { color: var(--accent-gold); font-weight: 700; }
+
+/* === 区域主题色 === */
+.region-yongning { border-left: 3px solid #d97706; }
+.region-xinghai { border-left: 3px solid var(--accent-cyan); }
+.region-jinwan { border-left: 3px solid var(--accent-gold); }
+.region-jinxiu { border-left: 3px solid var(--purple); }
+.region-yunding { border-left: 3px solid var(--pink); }
+.region-tiexi { border-left: 3px solid #6b7280; }
+.region-guangming { border-left: 3px solid var(--teal); }
+
+/* === 进度条增强 === */
+.progress-bar { height: 6px; background: var(--bg-primary); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.progress-fill.good { background: linear-gradient(90deg, var(--green-down), var(--teal)); }
+.progress-fill.warn { background: linear-gradient(90deg, var(--accent-gold), #f97316); }
+.progress-fill.danger { background: linear-gradient(90deg, #f97316, var(--red-up)); }
+
+/* === Toast通知 === */
+#toast-container { position: fixed; top: 60px; right: 16px; z-index: 1500; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast-notify { background: linear-gradient(135deg, #1e293b, #1a2540); border: 1px solid var(--border-bright); border-left: 4px solid var(--accent-gold); border-radius: 10px; padding: 14px 18px; min-width: 260px; max-width: 360px; animation: toastSlideIn 0.4s cubic-bezier(0.34,1.56,0.64,1), toastSlideOut 0.35s ease-in 2.8s forwards; box-shadow: 0 8px 32px rgba(0,0,0,0.5); pointer-events: auto; }
+.toast-notify .toast-icon { font-size: 24px; margin-right: 10px; }
+.toast-notify .toast-name { font-weight: 700; font-size: 13px; color: var(--accent-gold); }
+.toast-notify .toast-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+@keyframes toastSlideIn { from { opacity: 0; transform: translateX(120%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toastSlideOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(120%); } }
+
+/* === 里程碑庆祝 === */
+#milestone-overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1600; pointer-events: none; font-size: 36px; font-weight: 900; text-align: center; opacity: 0; }
+#milestone-overlay.show { animation: milestonePop 2.5s ease-out forwards; }
+@keyframes milestonePop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); } 35% { transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); } }
+
+/* === 迷你资产折线图 === */
+.mini-chart { width: 100%; height: 56px; margin-top: 6px; }
+.mini-chart svg { width: 100%; height: 100%; }
+
+/* === 收入构成柱状图 === */
+.income-breakdown { margin-top: 8px; }
+.income-bar-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 10px; }
+.income-bar-label { width: 56px; text-align: right; color: var(--text-secondary); flex-shrink: 0; }
+.income-bar-track { flex: 1; height: 14px; background: var(--bg-primary); border-radius: 3px; overflow: hidden; }
+.income-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.income-bar-pct { width: 36px; font-size: 10px; color: var(--text-muted); text-align: right; flex-shrink: 0; }
+
+/* === 资产趋势指示器 === */
+.asset-trend { display: inline-flex; gap: 2px; align-items: center; font-size: 14px; margin-left: 6px; }
+.trend-up { color: var(--green-down); } .trend-down { color: var(--red-up); }
+
+/* === 键盘快捷键提示 === */
+#keyboard-hints { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-secondary); border-top: 1px solid var(--border); padding: 4px 16px; display: flex; gap: 14px; font-size: 10px; color: var(--text-muted); z-index: 100; justify-content: center; flex-wrap: wrap; }
+.key-hint { display: flex; align-items: center; gap: 4px; }
+.key-badge { display: inline-block; background: var(--bg-card); border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 600; color: var(--text-secondary); min-width: 18px; text-align: center; }
+
+/* === 存档槽位样式 === */
+.save-slot { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; transition: all 0.2s; }
+.save-slot:hover { border-color: var(--accent-blue); }
+.save-slot.active { border-color: var(--accent-gold); }
+.save-slot .slot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.save-slot .slot-name { font-weight: 600; font-size: 13px; }
+.save-slot .slot-meta { font-size: 11px; color: var(--text-secondary); }
+.save-slot .slot-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+/* === 统计面板 === */
+.stat-panel-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+.stat-panel-label { color: var(--text-secondary); }
+.stat-panel-value { font-weight: 600; color: var(--text-primary); }
+
+/* === 时段主题 === */
+body.time-day {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #0f1525;
+  --bg-card: #141d2e;
+  --bg-hover: #1a2540;
+  --accent-blue: #3b82f6;
+  --accent-cyan: #06b6d4;
+}
+
+body.time-dusk {
+  --bg-primary: #1a1020;
+  --bg-secondary: #201828;
+  --bg-card: #281e35;
+  --bg-hover: #302440;
+  --accent: #f0a050;
+  --accent-gold: #f4972e;
+  --accent-blue: #6b5ce7;
+}
+
+body.time-night {
+  --bg-primary: #050510;
+  --bg-secondary: #0a0a18;
+  --bg-card: #101025;
+  --bg-hover: #181835;
+  --accent-blue: #4060c0;
+  --accent-gold: #c9a040;
+  --accent-cyan: #3090b0;
+}
+
+body.time-dawn {
+  --bg-primary: #0d1220;
+  --bg-secondary: #121828;
+  --bg-card: #181f32;
+  --bg-hover: #1e2840;
+  --accent: #80a0e0;
+  --accent-blue: #6090e0;
+  --accent-gold: #d4a040;
+}
+
+/* === 天气效果 === */
+/* 雨天 - 微弱雨滴 */
+body.weather-rainy {
+  background-image:
+    linear-gradient(transparent 0%, rgba(60,120,200,0.03) 100%);
+  animation: rainyShimmer 3s ease-in-out infinite alternate;
+}
+@keyframes rainyShimmer { from { background-position: 0 0; } to { background-position: 0 5px; } }
+
+/* 暴风雨 - 闪电效果 */
+body.weather-storm {
+  animation: stormFlash 6s ease-in-out infinite;
+}
+@keyframes stormFlash {
+  0%, 95%, 100% { background: var(--bg-primary); }
+  95.5% { background: #1a1a30; }
+  96% { background: var(--bg-primary); }
+  96.5% { background: #252540; }
+  97% { background: var(--bg-primary); }
+}
+
+/* 雾天 - 半透明遮罩 */
+body.weather-foggy::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(200,210,230,0.08);
+  pointer-events: none;
+  z-index: 9999;
+  animation: fogDrift 8s ease-in-out infinite alternate;
+}
+@keyframes fogDrift { from { opacity: 0.06; } to { opacity: 0.12; } }
+
+/* 雪天 - 飘雪粒子 */
+body.weather-snow {
+  position: relative;
+}
+body.weather-snow::after {
+  content: '';
+  position: fixed;
+  top: -10px; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background:
+    radial-gradient(1.5px 1.5px at 20px 30px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 80px 120px, #fff, transparent),
+    radial-gradient(1px 1px at 150px 70px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 240px 200px, #fff, transparent),
+    radial-gradient(1px 1px at 340px 60px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 420px 180px, #fff, transparent),
+    radial-gradient(1px 1px at 520px 40px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 600px 160px, #fff, transparent),
+    radial-gradient(1px 1px at 700px 90px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 780px 210px, #fff, transparent),
+    radial-gradient(1px 1px at 860px 30px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 940px 140px, #fff, transparent),
+    radial-gradient(1px 1px at 1020px 80px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 1120px 190px, #fff, transparent);
+  animation: snowfall 4s linear infinite;
+}
+@keyframes snowfall {
+  0% { transform: translateY(-10px); opacity: 0.7; }
+  100% { transform: translateY(20px); opacity: 0.4; }
+}
+
+/* === 氛围文字 === */
+.atmosphere-text {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
+  opacity: 0.7;
+  margin-top: 6px;
+  line-height: 1.5;
+  transition: opacity 0.5s ease;
+}
+</style>
+</head>
+<body>
+
+<div id="achievement-banner"><span id="ach-icon" style="font-size:24px;"></span><span id="ach-name" style="font-weight:600;"></span></div>
+
+<div id="topbar">
+  <span class="game-title">商海浮沉</span>
+  <div class="llm-status"><span class="llm-dot" id="llm-dot"></span><span id="llm-status">LLM检测中...</span></div>
+  <span id="game-clock"></span>
+  <div style="flex:1;"></div>
+  <div class="auto-toggle-wrapper" id="btn-auto-container">
+  <span class="auto-toggle-label">托管</span>
+  <label class="auto-toggle">
+    <input type="checkbox" id="auto-toggle-input" onchange="UI.toggleAutoMode()">
+    <span class="auto-slider"></span>
+  </label>
+  <span class="auto-toggle-label" id="auto-toggle-status">关闭</span>
+</div>
+  <button class="btn topbar-btn" onclick="UI.openSettings()" style="background:linear-gradient(135deg,var(--accent-gold),#d97706);">⚙ 设置</button>
+  <button class="btn topbar-btn" onclick="UI.openAchievementPanel()" style="background:linear-gradient(135deg,var(--purple),#7c3aed);">🏆 成就</button>
+  <button class="btn topbar-btn" onclick="UI.openSkillTree()" style="background:linear-gradient(135deg,var(--teal),#0d9488);">📚 技能树</button>
+  <button class="btn topbar-btn" onclick="UI.switchPanel('worldmap')" style="background:linear-gradient(135deg,#6366f1,#4f46e5);">🗺 世界地图</button>
+  <button class="btn topbar-btn" onclick="quitGame()" style="background:linear-gradient(135deg,#dc2626,#991b1b);margin-right:4px;">🚪 退出游戏</button>
+</div>
+
+<div id="main-layout">
+  <div id="left-panel">
+    <div class="panel-section"><div class="panel-title">玩家属性</div><div id="stats-panel"></div></div>
+    <div class="panel-section"><div class="panel-title">城市区域</div><div id="regions-panel"></div></div>
+    <div class="panel-section" style="flex:1;overflow-y:auto;"><div class="panel-title">我的业务</div><div id="business-list"></div></div>
+  </div>
+  <div id="center-area">
+    <div id="center-default">
+      <div class="dashboard-grid" id="dashboard"></div>
+      <div id="synergy-status" style="display:none;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:10px;"></div>
+      <div class="panel-section" id="manual-work-area"></div>
+      <div id="event-area"></div>
+      <div class="panel-section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span class="panel-title" style="margin:0;">员工管理 (<span id="emp-count">0</span>/<span id="emp-max">5</span>)</span>
+          <button class="btn-hire" id="btn-hire" onclick="UI.openHireModal()">+ 招聘新员工</button>
+        </div>
+        <div id="employee-list"></div>
+      </div>
+      <div class="panel-section"><div class="panel-title">人脉网络</div><div id="npc-panel"></div></div>
+    </div>
+    <div id="center-panel" class="dash-panel" style="display:none;flex:1;overflow-y:auto;padding:8px 4px;"></div>
+  </div>
+  <div id="right-panel">
+    <div class="panel-section"><div class="panel-title">当前幕次</div><div id="act-display"></div></div>
+    <div class="panel-section"><div class="panel-title">全网热搜</div><div id="hot-search"></div></div>
+    <div class="panel-section" style="flex:1;overflow-y:auto;"><div class="panel-title">事件日志</div><div id="event-log"></div></div>
+  </div>
+</div>
+
+<div id="origin-screen">
+  <div style="text-align:center;">
+    <h1 style="font-size:28px;margin-bottom:6px;background:linear-gradient(135deg,var(--accent-gold),var(--accent-blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">商海浮沉</h1>
+    <p style="color:var(--text-secondary);margin-bottom:24px;font-size:14px;">选择你的出身，开启创业之旅</p>
+    <div class="origin-cards" id="origin-cards"></div>
+    <div style="margin-top:16px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label style="font-size:13px;color:var(--text-secondary);">主角姓名</label>
+        <input id="player-name-input" type="text" placeholder="请输入你的姓名" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--text-primary);font-size:13px;font-family:var(--font);width:160px;outline:none;" maxlength="8" />
+      </div>
+      <div id="start-warning" style="font-size:11px;color:var(--red-up);max-width:320px;text-align:center;line-height:1.6;display:none;">
+        ⚠️ 一旦踏上商海征途，便再无回头之路。你的每一个决策都将改写命运，确定要开始吗？
+      </div>
+      <button class="btn" id="start-btn" style="margin-top:4px;padding:10px 40px;font-size:16px;" disabled>选择出身，踏上征途</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-hire"><div class="modal"><button class="modal-close" onclick="UI.closeModal('hire')">&times;</button><div class="modal-title">招聘新员工</div><div id="hire-content"></div></div></div>
+<div class="modal-overlay" id="modal-decision"><div class="modal"><div class="modal-title" id="decision-title">决策时刻</div><div id="decision-content" style="font-size:13px;line-height:1.8;color:var(--text-secondary);margin-bottom:16px;"></div><div id="decision-choices" style="display:flex;flex-direction:column;gap:8px;"></div></div></div>
+<div class="modal-overlay" id="modal-npc"><div class="modal"><button class="modal-close" onclick="UI.closeModal('npc')">&times;</button><div class="modal-title" id="npc-modal-title">NPC对话</div><div id="npc-dialog-content"></div></div></div>
+<div class="modal-overlay" id="modal-settings"><div class="modal" style="max-width:480px;"><button class="modal-close" onclick="UI.closeModal('settings')">&times;</button><div class="modal-title">⚙ LLM设置</div><div id="settings-content"></div></div></div>
+<div class="modal-overlay" id="modal-achievements"><div class="modal" style="max-width:520px;"><button class="modal-close" onclick="UI.closeModal('achievements')">&times;</button><div class="modal-title">🏆 成就</div><div id="achievements-content"></div></div></div>
+<div class="modal-overlay" id="modal-skills"><div class="modal" style="max-width:600px;"><button class="modal-close" onclick="UI.closeModal('skills')">&times;</button><div class="modal-title">📚 技能树</div><div id="skills-content" class="modal-skills-content"></div></div></div>
+<div id="tutorial-overlay"><div class="tutorial-box" id="tutorial-content"></div></div>
+<div id="toast-container"></div>
+<div id="milestone-overlay"></div>
+<div id="keyboard-hints">
+  <span class="key-hint"><span class="key-badge">1-7</span>面板切换</span>
+  <span class="key-hint"><span class="key-badge">R</span>排行榜</span>
+  <span class="key-hint"><span class="key-badge">Space</span>拉项目</span>
+  <span class="key-hint"><span class="key-badge">A</span>托管</span>
+  <span class="key-hint"><span class="key-badge">S</span>设置</span>
+</div>
+
+<!-- 游戏逻辑分文件加载 -->
+<script src="config.js"></script>
+<script src="data.js"></script>
+<script src="settings.js"></script>
+<script src="llm.js"></script>
+<script src="core.js"></script>
+<script src="events.js"></script>
+<script src="npc.js"></script>
+<script src="ui.js"></script>
+<script src="audio.js"></script>
+<script src="main.js"></script>
+<script>
+function quitGame() {
+  if (confirm('确定要退出游戏吗？\n\n游戏进度会自动保存。确认后将关闭此页面。')) {
+    window.close();
+    setTimeout(function() {
+      alert('浏览器安全策略限制了自动关闭。\n\n请手动关闭此标签页，或双击运行桌面上的「关闭游戏.bat」彻底退出。');
+    }, 300);
+  }
+}
+</script>
+</body>
+</html>
