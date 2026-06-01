@@ -2,6 +2,13 @@
 
 > LLM 驱动的放置式经营模拟游戏。在虚构的商业都市里，从一无所有到商业帝国，每一步都由你决策。
 
+## About
+
+A browser-based idle business simulation game powered by local LLM (Ollama). Start from nothing — choose your origin, build businesses across cities, manage employees, negotiate with NPCs, trade stocks, and climb your way to a commercial empire. Every decision matters, and the LLM generates dynamic narratives for key events.
+
+**Tech Stack:** Vanilla JS + Ollama API + Web Audio  
+**Play:** Open `index.html` in browser, start Ollama, and dive in.
+
 ---
 
 ## 目录
