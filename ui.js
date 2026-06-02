@@ -369,7 +369,30 @@ window.UI = (() => {
         ${regionSelect}
         <div style="display:flex;gap:6px;margin-top:6px">
           ${lv === 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px" onclick="UI.openBusiness('${b.id}')">开业</button>` : ''}
-          ${nextDef ? (G.money >= nextDef.cost * 10000 ? `<button class="btn" style="font-size:10px;padding:3px 8px" onclick="UI.upgradeBusiness('${b.id}')">升级 (${(nextDef.cost).toFixed(0)}万)</button>` : `<button class="btn" style="font-size:10px;padding:3px 8px;opacity:0.5" disabled>升级 (${(nextDef.cost).toFixed(0)}万)</button>`) : ''}
+          ${nextDef ? (() => {
+            const canAfford = G.money >= nextDef.cost * 10000;
+            // 检查前置条件
+            let condMet = true;
+            let condHint = '';
+            if (nextDef.reqCond) {
+              if (nextDef.reqCond.techLv) {
+                const maxTL = Math.max(...Object.values(G.completedResearch || {}));
+                if (maxTL < nextDef.reqCond.techLv) { condMet = false; condHint = `需科技Lv${nextDef.reqCond.techLv}`; }
+              }
+              if (nextDef.reqCond.rep && G.reputation < nextDef.reqCond.rep) { condMet = false; condHint = condHint || `需声誉${nextDef.reqCond.rep}`; }
+              if (nextDef.reqCond.npcFavor) {
+                for (const [nid, minF] of Object.entries(nextDef.reqCond.npcFavor)) {
+                  if ((G.npcFavor[nid] || 0) < minF) { condMet = false; condHint = condHint || `需${(NPCS[nid]||{}).name||nid}好感${minF}`; break; }
+                }
+              }
+            }
+            if (canAfford && condMet) {
+              return `<button class="btn" style="font-size:10px;padding:3px 8px" onclick="UI.upgradeBusiness('${b.id}')">升级 (${(nextDef.cost).toFixed(0)}万)</button>`;
+            } else {
+              const hint = !canAfford ? `升级 (${(nextDef.cost).toFixed(0)}万)` : `升级 (${condHint})`;
+              return `<button class="btn" style="font-size:10px;padding:3px 8px;opacity:0.5" disabled title="${!canAfford ? '资金不足' : condHint}">${hint}</button>`;
+            }
+          })() : ''}
           ${lv > 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,var(--accent-gold),#d97706);" onclick="UI.upgradeBusinessMax('${b.id}')">一键升级</button>` : ''}
           ${lv > 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px;opacity:0.6" onclick="UI.closeBusiness('${b.id}')">停业</button>` : ''}
         </div>
@@ -412,7 +435,30 @@ window.UI = (() => {
     const state = G.businesses[bizId];
     const next = bDef.levels[state.level];
     if (!next) return;
-    let cost = next.cost * 10000; // cost以万元存储
+    // 前置条件检查（与 upgradeBusinessMax 一致）
+    if (next.reqCond) {
+      if (next.reqCond.techLv) {
+        const maxTechLv = Math.max(...Object.values(G.completedResearch || {}));
+        if (maxTechLv < next.reqCond.techLv) {
+          EventSystem.addLog(`升级需要科技等级 ${next.reqCond.techLv}，当前最高 ${maxTechLv}。`);
+          return;
+        }
+      }
+      if (next.reqCond.rep && G.reputation < next.reqCond.rep) {
+        EventSystem.addLog(`升级需要声誉 ${next.reqCond.rep}，当前 ${G.reputation}。`);
+        return;
+      }
+      if (next.reqCond.npcFavor) {
+        for (const [npcId, minFavor] of Object.entries(next.reqCond.npcFavor)) {
+          if ((G.npcFavor[npcId] || 0) < minFavor) {
+            const npc = NPCS[npcId];
+            EventSystem.addLog(`升级需要${npc ? npc.name : npcId}好感度 ${minFavor}，当前 ${G.npcFavor[npcId] || 0}。`);
+            return;
+          }
+        }
+      }
+    }
+    let cost = next.cost * 10000;
     if (G.origin === 'rich2nd') cost = Math.floor(cost * 0.8);
     if (G.money < cost) { EventSystem.addLog(`资金不足，升级需要 ${SGame.formatMoney(cost)}。`); return; }
     G.money -= cost;
