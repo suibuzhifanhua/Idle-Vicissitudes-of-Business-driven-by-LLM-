@@ -6,7 +6,9 @@ import sys
 import urllib.parse
 
 PORT = 8765
-SAVES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'saves')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVES_DIR = os.path.join(BASE_DIR, 'saves')
+PUBLIC_DIR = os.path.join(BASE_DIR, 'public')
 
 class GameServer(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -156,8 +158,9 @@ class GameServer(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     os.makedirs(SAVES_DIR, exist_ok=True)
+    # 工作目录设为 public/，让 SimpleHTTPRequestHandler 从这里提供静态文件
+    os.chdir(PUBLIC_DIR)
     server = http.server.HTTPServer(('0.0.0.0', PORT), GameServer)
     print(f' 商海浮沉 游戏服务器已启动')
     print(f'   打开浏览器访问: http://localhost:{PORT}')

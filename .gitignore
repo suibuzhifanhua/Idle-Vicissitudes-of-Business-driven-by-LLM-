@@ -1,1 +1,4 @@
 proxy_connect.py
+saves/
+__pycache__/
+*.pyc
