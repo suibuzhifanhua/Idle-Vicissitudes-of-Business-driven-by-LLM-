@@ -12,7 +12,6 @@ window.SGame = (() => {
   let isPaused = false;
   let pendingDecisions = [];
   let autoDecideTimer = null;
-  let speedMode = 1;  // 加速模式：1x/2x/5x
 
   // ========== 初始化 ==========
   function initState(origin, playerName) {
@@ -241,7 +240,7 @@ window.SGame = (() => {
   // ========== 放置循环 ==========
   function startTick() {
     if (gameTimer) clearInterval(gameTimer);
-    const interval = CONFIG.TICK_MS / speedMode;
+    const interval = CONFIG.TICK_MS;
     gameTimer = setInterval(() => {
       if (isPaused) return;
       tickCount++;
@@ -252,17 +251,6 @@ window.SGame = (() => {
       UI.renderAll();
     }, interval);
   }
-
-  // ========== 加速模式 ==========
-  function setSpeedMode(mode) {
-    const valid = CONFIG.SPEED_MODES[mode];
-    if (!valid) return;
-    speedMode = mode;
-    startTick(); // 重启定时器
-    addLog(`⏩ 游戏速度：${mode}x`);
-  }
-
-  function getSpeedMode() { return speedMode; }
 
   function doTick() {
     try {
@@ -2102,6 +2090,8 @@ window.SGame = (() => {
     if (am.autoGift && !cd('gift', 24)) { autoGiftStrategy(); setCd('gift'); }
     // 10. 贷款检查（每60 tick）
     if (am.autoLoan && !cd('loan', 60)) { autoLoanStrategy(); setCd('loan'); }
+    // 11. 自动拉项目（每3 tick检查一次，CD到了就拉）
+    if (!cd('manualWork', 3)) { autoManualWorkStrategy(); setCd('manualWork'); }
   }
 
   function autoRepayStrategy() {
@@ -2321,6 +2311,17 @@ window.SGame = (() => {
     const loanAmt = Math.floor(totalAssets * 0.15);
     if (loanAmt < 50000) return;
     applyLoan(loanAmt, 60);
+  }
+
+  // 自动拉项目策略：CD到了就拉，增加被动收入
+  function autoManualWorkStrategy() {
+    if (!G) return;
+    const cdRemain = getManualWorkCdRemain();
+    if (cdRemain > 0) return; // CD中，跳过
+    const result = manualWork();
+    if (result && result.success && result.earn > 0) {
+      addLog('[托管] 自动拉项目：' + formatMoney(result.earn));
+    }
   }
 
 
@@ -2884,7 +2885,7 @@ window.SGame = (() => {
     checkCityUnlocks, switchCity, updateRank,
     getStressMultiplier, getRepMultiplier,
     calcEmployeeIncomeBonus,
-    startTick, setSpeedMode, getSpeedMode,
+    startTick,
     applySkillEffects, canUnlockSkill,
     fireEvent, tryFireEvent, startEventCheck,
     updateStressMode, updateRepLevel,

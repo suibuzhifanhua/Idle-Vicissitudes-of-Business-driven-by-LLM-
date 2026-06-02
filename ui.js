@@ -193,29 +193,6 @@ window.UI = (() => {
     safeRender('manualButton', renderManualButton);
     safeRender('clock', renderClock);
     safeRender('autoButton', renderAutoButton);
-    safeRender('speedButtons', renderSpeedButtons);
-  }
-
-  // ========== 加速模式控制 (1x/2x/5x) ==========
-  function renderSpeedButtons() {
-    const container = document.getElementById('speed-buttons');
-    if (!container) return;
-    const currentSpeed = SGame.getSpeedMode ? SGame.getSpeedMode() : 1;
-    const modes = [1, 2, 5];
-    container.innerHTML = modes.map(m => {
-      const isActive = currentSpeed === m;
-      const bg = isActive ? 'var(--accent-gold)' : 'var(--bg-hover)';
-      const color = isActive ? '#000' : 'var(--text-secondary)';
-      const border = isActive ? '1px solid var(--accent-gold)' : '1px solid var(--border)';
-      return `<button style="background:${bg};color:${color};border:${border};border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:var(--font);font-weight:${isActive?'700':'400'};" onclick="UI.setSpeedMode(${m})">${m}x</button>`;
-    }).join('');
-  }
-
-  function setSpeedMode(mode) {
-    if (typeof SGame.setSpeedMode === 'function') {
-      SGame.setSpeedMode(mode);
-    }
-    renderSpeedButtons();
   }
 
   // ========== 离线收益弹窗 ==========
@@ -531,7 +508,7 @@ window.UI = (() => {
       <div class="dash-card">
         <div class="dash-label">Tick收益</div>
         <div class="dash-value" style="color:var(--green-down)">+${formatMoneyComma(income)}</div>
-        <div class="dash-sub">每${(tickMs/1000/currentSpeed).toFixed(0)}秒 | 速度: ${speedBtns}</div>
+        <div class="dash-sub">每${(tickMs/1000).toFixed(0)}秒</div>
       </div>
       <div class="dash-card">
         <div class="dash-label">工资支出</div>
@@ -547,11 +524,6 @@ window.UI = (() => {
         <div class="dash-label">员工数</div>
         <div class="dash-value" style="color:var(--accent-blue)">${(G.employees || []).length}</div>
         <div class="dash-sub">上限 ${SGame.getEmpMax()}</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">维护费用</div>
-        <div class="dash-value" style="color:var(--accent-gold);opacity:0.7">-${formatMoneyComma(maintCost)}</div>
-        <div class="dash-sub">每Tick</div>
       </div>
       <div class="dash-card">
         <div class="dash-label">业务数</div>
@@ -1758,7 +1730,6 @@ window.UI = (() => {
     updateEnvironment, renderAtmosphere,
     renderTechPanel, renderStockPanel,
     // 新增功能
-    renderSpeedButtons, setSpeedMode,
     showOfflineIncomePopup, claimOfflineIncome,
     batchHire,
     trainEmployee, restEmployee,

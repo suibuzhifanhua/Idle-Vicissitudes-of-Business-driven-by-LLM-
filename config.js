@@ -19,9 +19,6 @@ const CONFIG = {
   STRESS_NATURAL_DECAY: 0.05,
   LOYALTY_DECAY: 0.17,
   REPUTATION_DECAY: 0.08,
-  // ---- 加速模式 ----
-  SPEED_MODES: { 1: 1, 2: 2, 5: 5 },       // 倍速档位
-  DEFAULT_SPEED: 1,
   // ---- 维护成本 ----
   MAINTENANCE_BASE_RATE: 0.02,   // 每Tick维护成本 = 业务收入 × 此比例
   MAINTENANCE_LEVEL_SCALE: 0.005, // 每级额外增加0.5%
