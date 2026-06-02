@@ -12,6 +12,7 @@ window.SGame = (() => {
   let isPaused = false;
   let pendingDecisions = [];
   let autoDecideTimer = null;
+  let speedMode = 1;  // 加速模式：1x/2x/5x
 
   // ========== 初始化 ==========
   function initState(origin, playerName) {
@@ -154,6 +155,24 @@ window.SGame = (() => {
       neverLoaned: true,
       // 送礼冷却
       todayGifted: {},
+      // ---- 新增系统状态 ----
+      // 供应链系统
+      supplyChain: {},
+      supplyDisruptions: [],
+      // 市场份额系统
+      marketShare: {},
+      // 员工深度
+      empTrainingQueue: [],
+      // 离线收益
+      lastOnlineTime: Date.now(),
+      offlineIncomeClaimed: true,
+      // 事件队列（稍后处理）
+      eventQueue: [],
+      // 里程碑记录（替代结局）
+      milestonesAchieved: [],
+      // 任务线
+      questProgress: {},
+      questCompleted: {},
     };
     // 初始化NPC好感
     Object.values(NPCS).forEach(npc => {
@@ -176,6 +195,10 @@ window.SGame = (() => {
     G.skillEffects = {};
     pendingDecisions = [];
     tickCount = 0;
+    // 初始化市场份额（每种业务100%归玩家）
+    BUSINESS_DEFS.forEach(b => { G.marketShare[b.id] = 1.0; });
+    // 初始化供应链（每种业务正常状态）
+    BUSINESS_DEFS.forEach(b => { G.supplyChain[b.id] = { upstream: 'normal', downstream: 'normal', disruptionTicks: 0 }; });
   }
 
   // ========== 出身选择 ==========
@@ -218,6 +241,7 @@ window.SGame = (() => {
   // ========== 放置循环 ==========
   function startTick() {
     if (gameTimer) clearInterval(gameTimer);
+    const interval = CONFIG.TICK_MS / speedMode;
     gameTimer = setInterval(() => {
       if (isPaused) return;
       tickCount++;
@@ -226,8 +250,19 @@ window.SGame = (() => {
       doTick();
       if (G.tickCount % CONFIG.SAVE_INTERVAL === 0) save();
       UI.renderAll();
-    }, CONFIG.TICK_MS);
+    }, interval);
   }
+
+  // ========== 加速模式 ==========
+  function setSpeedMode(mode) {
+    const valid = CONFIG.SPEED_MODES[mode];
+    if (!valid) return;
+    speedMode = mode;
+    startTick(); // 重启定时器
+    addLog(`⏩ 游戏速度：${mode}x`);
+  }
+
+  function getSpeedMode() { return speedMode; }
 
   function doTick() {
     try {
@@ -271,6 +306,16 @@ window.SGame = (() => {
     if (G.assetHistory.length > 60) G.assetHistory.shift();
     // 3.6 统计追踪
     G.totalIncome = (G.totalIncome || 0) + (income > 0 ? income : 0);
+    // 3.7 维护成本（每Tick）
+    const maintenanceCost = calcMaintenanceCost();
+    G.money -= maintenanceCost;
+    G.totalExpense = (G.totalExpense || 0) + maintenanceCost;
+    // 3.8 运营风险事件
+    if (Math.random() < CONFIG.OPERATIONAL_RISK_BASE) triggerOperationalRisk();
+    // 3.9 供应链检查
+    if (G.tickCount % 3 === 0) checkSupplyChain();
+    // 3.10 市场份额变化
+    if (G.tickCount % 6 === 0) updateMarketShare();
     // 4. 发工资
     let totalSalary = 0;
     G.employees.forEach(emp => {
@@ -279,6 +324,13 @@ window.SGame = (() => {
       emp.loyalty = Math.max(0, emp.loyalty - CONFIG.LOYALTY_DECAY + (emp.happiness || 0));
       // 压力影响
       if (G.stress > 70) emp.happiness = Math.max(0, (emp.happiness || 50) - 2);
+      // 疲劳度变化
+      emp.fatigue = Math.min(100, (emp.fatigue || 0) + CONFIG.EMP_FATIGUE_RATE);
+      emp.fatigue = Math.max(0, emp.fatigue - CONFIG.EMP_FATIGUE_DECAY);
+      // 高疲劳影响忠诚
+      if (emp.fatigue > 80) emp.loyalty = Math.max(0, emp.loyalty - 0.3);
+      // 高疲劳影响效率（等效降收入）
+      if (emp.fatigue > 70) emp.happiness = Math.max(0, (emp.happiness || 50) - 1);
     });
     G.money -= totalSalary;
     G.totalExpense = (G.totalExpense || 0) + totalSalary;
@@ -324,8 +376,8 @@ window.SGame = (() => {
     if (G.tickCount % 10 === 0) generateNews();
     // 17.7 子公司自动运营
     manageSubsidiaries();
-    // 17.8 结局检查
-    checkEndings();
+    // 17.8 结局检查 — 已禁用（长期放置游戏无结局），改为里程碑记录
+    checkMilestonesAdvanced();
     // 15. 破产检查
     checkBankruptcy();
     // 11. 音效：收益为正时播放
@@ -739,6 +791,16 @@ window.SGame = (() => {
         if (!lv) return;
         let income = lv.income;
 
+        // 市场份额修正
+        const share = (G.marketShare && G.marketShare[bDef.id]) || 1.0;
+        income *= share;
+
+        // 供应链修正
+        const sc = (G.supplyChain && G.supplyChain[bDef.id]) || { upstream:'normal', downstream:'normal' };
+        if (sc.upstream === 'disrupted') income *= 0.6;  // 上游断供，收入-40%
+        if (sc.downstream === 'disrupted') income *= 0.7; // 下游断供，收入-30%
+        if (sc.upstream === 'disrupted' && sc.downstream === 'disrupted') income *= 0.3; // 双断供
+
         // 区域加成
         if (bState.region && REGIONS[bState.region]) {
           const r = REGIONS[bState.region];
@@ -909,7 +971,14 @@ window.SGame = (() => {
       if (emp.role === 'sales' && (bizId === 'retail' || bizId === 'media')) mul += 0.2;
       if (emp.role === 'marketer') mul += 0.15;
       if (emp.loyalty < 20) mul *= 0.5; // 低忠诚减产
+      // 员工技能加成
+      if (emp.skill && emp.skill > 1) mul += (emp.skill - 1) * 0.03;
     });
+    // 全局疲劳影响
+    if (G.employees.length > 0) {
+      const avgFatigue = G.employees.reduce((s, e) => s + (e.fatigue || 0), 0) / G.employees.length;
+      if (avgFatigue > 60) mul *= Math.max(0.7, 1 - (avgFatigue - 60) * 0.005);
+    }
     return mul;
   }
 
@@ -1121,6 +1190,7 @@ window.SGame = (() => {
         return G.money >= a.cond.value && G.tickCount <= ticksAllowed;
       }
       case 'endings_all': return (G.seenEndings || []).length >= 5;
+      case 'play_time': return (G.totalPlayTime || 0) >= ((a.cond.hours || 24) * 3600);
       case 'paperwork': return (G.readEventIds || []).length >= 50;
       case 'biz_level': {
         const biz = G.businesses[a.cond.bizId];
@@ -1236,6 +1306,8 @@ window.SGame = (() => {
         pendingDecisions = data.pendingDecisions || [];
         migrateSave();
         G.unlockedRegions.forEach(id => { if (REGIONS[id]) REGIONS[id].unlocked = true; });
+        // 检查离线收益
+        checkAndShowOfflineIncome();
         return true;
       }
       // 未指定槽位：优先slot_1（自动档），然后slot_2、slot_3
@@ -1248,10 +1320,26 @@ window.SGame = (() => {
         pendingDecisions = data.pendingDecisions || [];
         migrateSave();
         G.unlockedRegions.forEach(id => { if (REGIONS[id]) REGIONS[id].unlocked = true; });
+        // 检查离线收益
+        checkAndShowOfflineIncome();
         return true;
       }
       return false;
     } catch(e) { return false; }
+  }
+
+  function checkAndShowOfflineIncome() {
+    if (!G) return;
+    const offline = calcOfflineIncome();
+    if (offline.income > 0 && offline.hours > 0.1) {
+      G._pendingOfflineIncome = offline;
+      // 通知UI显示离线收益弹窗
+      setTimeout(() => {
+        if (typeof UI !== 'undefined' && UI.showOfflineIncomePopup) {
+          UI.showOfflineIncomePopup(offline);
+        }
+      }, 1000);
+    }
   }
 
   // ========== 存档版本迁移 ==========
@@ -1319,6 +1407,31 @@ window.SGame = (() => {
         cooldowns: {},
       };
     }
+    // 迁移：旧存档没有新系统字段
+    if (!G.marketShare) {
+      G.marketShare = {};
+      BUSINESS_DEFS.forEach(b => { G.marketShare[b.id] = 1.0; });
+    }
+    if (!G.supplyChain) {
+      G.supplyChain = {};
+      BUSINESS_DEFS.forEach(b => { G.supplyChain[b.id] = { upstream:'normal', downstream:'normal', disruptionTicks: 0 }; });
+    }
+    if (!G.milestonesAchieved) G.milestonesAchieved = [];
+    if (!G.eventQueue) G.eventQueue = [];
+    if (G.lastOnlineTime === undefined) G.lastOnlineTime = Date.now();
+    // 迁移：清除旧结局状态
+    if (G.ending) G.ending = null;
+    if (G.retireRequested) G.retireRequested = false;
+    // 迁移：给旧员工添加疲劳和技能
+    if (G.employees) {
+      G.employees.forEach(emp => {
+        if (emp.fatigue === undefined) emp.fatigue = 0;
+        if (emp.skill === undefined) emp.skill = 1;
+      });
+    }
+    // 迁移：添加任务线字段
+    if (!G.questProgress) G.questProgress = {};
+    if (!G.questCompleted) G.questCompleted = {};
   }
 
   function reset() {
@@ -2469,63 +2582,290 @@ window.SGame = (() => {
   }
 
   // ===================================================
-  //  结局检查
+  //  维护成本系统
   // ===================================================
-  function checkEndings() {
-    if (!G || G.ending) return;
-    if (G.retireRequested) {
-      G.ending = '急流勇退';
-      addLog('🕊️ 你选择了急流勇退，优雅地告别了商海。');
-      if (typeof UI !== 'undefined' && UI.showEnding) UI.showEnding('急流勇退');
-      if (gameTimer) clearInterval(gameTimer);
-      if (eventTimer) clearInterval(eventTimer);
-      return;
+  function calcMaintenanceCost() {
+    if (!G) return 0;
+    let total = 0;
+    Object.entries(G.businesses).forEach(([bizId, biz]) => {
+      if (!biz || biz.level === 0) return;
+      const bDef = BUSINESS_DEFS.find(b => b.id === bizId);
+      if (!bDef) return;
+      const lv = bDef.levels[biz.level - 1];
+      if (!lv) return;
+      const baseIncome = lv.income * 10000;
+      const rate = CONFIG.MAINTENANCE_BASE_RATE + biz.level * CONFIG.MAINTENANCE_LEVEL_SCALE;
+      total += baseIncome * rate;
+    });
+    return total;
+  }
+
+  // ===================================================
+  //  运营风险系统
+  // ===================================================
+  function triggerOperationalRisk() {
+    if (!G) return;
+    const risks = [
+      { text: '消防检查发现隐患，罚款', moneyLoss: 0.02, repLoss: 2 },
+      { text: '税务抽查，需补缴', moneyLoss: 0.03, repLoss: 0 },
+      { text: '员工工伤事故', moneyLoss: 0.01, stressAdd: 5, repLoss: 3 },
+      { text: '供应商临时涨价', moneyLoss: 0.015, repLoss: 0 },
+      { text: '客户投诉，声誉受损', moneyLoss: 0.005, repLoss: 5 },
+      { text: '设备故障维修', moneyLoss: 0.02, repLoss: 0 },
+      { text: '竞争对手挖角', moneyLoss: 0, repLoss: 2, loyaltyHit: true },
+    ];
+    const risk = risks[Math.floor(Math.random() * risks.length)];
+    const loss = G.money * risk.moneyLoss;
+    G.money -= loss;
+    if (risk.repLoss) G.reputation = Math.max(0, G.reputation - risk.repLoss);
+    if (risk.stressAdd) G.stress = Math.min(100, G.stress + risk.stressAdd);
+    if (risk.loyaltyHit && G.employees.length > 0) {
+      const emp = G.employees[Math.floor(Math.random() * G.employees.length)];
+      emp.loyalty = Math.max(0, emp.loyalty - 10);
     }
-    // 商界传奇
-    if (typeof CITIES !== 'undefined' && typeof BUSINESS_DEFS !== 'undefined') {
-      let allCities = true, allBizMax = true;
-      Object.keys(CITIES).forEach(cid => {
-        if (!G.cities[cid] || !G.cities[cid].unlocked) allCities = false;
-      });
-      BUSINESS_DEFS.forEach(b => {
-        if (!G.businesses[b.id] || G.businesses[b.id].level < 5) allBizMax = false;
-      });
-      if (G.money >= 100000000000 && allCities && allBizMax) {
-        G.ending = '商界传奇';
-        addLog('🏆 商界传奇！百亿资产、十城在手、五大满级！');
-        if (typeof UI !== 'undefined' && UI.showEnding) UI.showEnding('商界传奇');
-        if (gameTimer) clearInterval(gameTimer); if (eventTimer) clearInterval(eventTimer);
+    addLog(`⚠️ ${risk.text}，损失 ${formatMoney(loss)}`);
+  }
+
+  // ===================================================
+  //  供应链系统
+  // ===================================================
+  function checkSupplyChain() {
+    if (!G || !G.supplyChain) return;
+    Object.entries(G.supplyChain).forEach(([bizId, sc]) => {
+      // 恢复计时
+      if (sc.disruptionTicks > 0) {
+        sc.disruptionTicks--;
+        if (sc.disruptionTicks <= 0) {
+          if (sc.upstream === 'disrupted') { sc.upstream = 'normal'; addLog(`🔗 ${BUSINESS_DEFS.find(b=>b.id===bizId)?.name || bizId} 上游供应链恢复`); }
+          if (sc.downstream === 'disrupted') { sc.downstream = 'normal'; addLog(`🔗 ${BUSINESS_DEFS.find(b=>b.id===bizId)?.name || bizId} 下游销售链恢复`); }
+        }
         return;
       }
-    }
-    // 全球霸主
-    if (typeof CITIES !== 'undefined') {
-      const intlCities = ['singapore','tokyo','newyork','london','dubai'];
-      let allIntl = intlCities.every(cid => G.cities[cid] && G.cities[cid].unlocked);
-      if (allIntl) {
-        const rankInfo = getRivalRank();
-        if (rankInfo.rank === 1) {
-          G.ending = '全球霸主';
-          addLog('🌏 全球霸主！五大国际都市+排名第一！');
-          if (typeof UI !== 'undefined' && UI.showEnding) UI.showEnding('全球霸主');
-          if (gameTimer) clearInterval(gameTimer); if (eventTimer) clearInterval(eventTimer);
-          return;
+      // 随机断供
+      if (Math.random() < CONFIG.SUPPLY_CHAIN_RISK) {
+        const isUpstream = Math.random() < 0.5;
+        const key = isUpstream ? 'upstream' : 'downstream';
+        sc[key] = 'disrupted';
+        sc.disruptionTicks = CONFIG.SUPPLY_CHAIN_RECOVER_TICKS + Math.floor(Math.random() * 4);
+        const bizName = BUSINESS_DEFS.find(b => b.id === bizId)?.name || bizId;
+        const what = isUpstream ? '上游供应断裂' : '下游销售渠道中断';
+        addLog(`🔗 ${bizName} ${what}！预计${sc.disruptionTicks}Tick恢复`);
+      }
+    });
+  }
+
+  // ===================================================
+  //  市场份额系统
+  // ===================================================
+  function updateMarketShare() {
+    if (!G || !G.marketShare || !G.rivals) return;
+    Object.keys(G.marketShare).forEach(bizId => {
+      if (!G.marketShare[bizId]) G.marketShare[bizId] = 1.0;
+      // 对手蚕食
+      G.rivals.forEach(r => {
+        if (Math.random() < CONFIG.MARKET_SHARE_DECAY * 0.1) {
+          G.marketShare[bizId] = Math.max(0.3, G.marketShare[bizId] - 0.005);
+        }
+      });
+      // 玩家恢复（声誉高恢复快）
+      if (G.marketShare[bizId] < 1.0 && Math.random() < CONFIG.MARKET_SHARE_RECOVERY) {
+        const repBonus = G.reputation > 60 ? 0.01 : 0.005;
+        G.marketShare[bizId] = Math.min(1.0, G.marketShare[bizId] + repBonus);
+      }
+    });
+  }
+
+  // ===================================================
+  //  高级里程碑系统（替代结局）
+  // ===================================================
+  function checkMilestonesAdvanced() {
+    if (!G) return;
+    const advMilestones = [
+      { id: 'ms_1b', name: '十亿资产', desc: '资产突破10亿', icon: '🏆', cond: () => G.money >= 1000000000 },
+      { id: 'ms_10b', name: '百亿资产', desc: '资产突破100亿', icon: '💎', cond: () => G.money >= 10000000000 },
+      { id: 'ms_100b', name: '千亿资产', desc: '资产突破1000亿', icon: '🌟', cond: () => G.money >= 100000000000 },
+      { id: 'ms_1t', name: '万亿资产', desc: '资产突破1万亿', icon: '⭐', cond: () => G.money >= 1000000000000 },
+      { id: 'ms_all_cities', name: '全球版图', desc: '解锁所有城市', icon: '🌏', cond: () => Object.keys(CITIES).every(cid => G.cities[cid] && G.cities[cid].unlocked) },
+      { id: 'ms_biz_10', name: '满级业务', desc: '任意业务达到10级', icon: '🔥', cond: () => Object.values(G.businesses).some(b => b.level >= 10) },
+      { id: 'ms_all_biz_10', name: '全能满级', desc: '所有业务达到10级', icon: '👑', cond: () => BUSINESS_DEFS.every(bDef => G.businesses[bDef.id] && G.businesses[bDef.id].level >= 10) },
+      { id: 'ms_tech_max', name: '科技全满', desc: '三条研发路线全满', icon: '🔬', cond: () => G.completedResearch && Object.values(G.completedResearch).every(v => v >= 5) },
+      { id: 'ms_rank_1', name: '榜首', desc: '竞争对手排名中位列第一', icon: '🥇', cond: () => getRivalRank().rank === 1 && getRivalRank().total >= 2 },
+      { id: 'ms_comeback', name: '东山再起', desc: '破产后资产重返千万', icon: '🔥', cond: () => G.comebackFromBankruptcy && G.money >= 10000000 },
+    ];
+    advMilestones.forEach(ms => {
+      if (G.milestonesAchieved.includes(ms.id)) return;
+      if (ms.cond()) {
+        G.milestonesAchieved.push(ms.id);
+        addLog(`🏅 里程碑达成：${ms.icon} ${ms.name} — ${ms.desc}`);
+        if (typeof UI !== 'undefined' && UI.showToast) UI.showToast(`🏅 ${ms.name}`);
+        // 奖励技能点
+        G.statPoints = (G.statPoints || 0) + 2;
+        addLog(`📚 获得 2 技能点！`);
+      }
+    });
+  }
+
+  // ===================================================
+  //  员工培训系统
+  // ===================================================
+  function trainEmployee(empId) {
+    if (!G) return { ok: false, msg: '游戏未开始' };
+    const emp = G.employees.find(e => e.id === empId);
+    if (!emp) return { ok: false, msg: '员工不存在' };
+    const curSkill = emp.skill || 1;
+    if (curSkill >= CONFIG.EMP_SKILL_MAX) return { ok: false, msg: '技能已满级' };
+    const cost = CONFIG.EMP_TRAINING_COST_BASE * curSkill * curSkill;
+    if (G.money < cost) return { ok: false, msg: `培训费不足（需要${formatMoney(cost)}）` };
+    G.money -= cost;
+    emp.skill = curSkill + 1;
+    emp.loyalty = Math.min(100, (emp.loyalty || 0) + 5);
+    addLog(`📚 ${emp.name} 培训完成，技能升至 ${emp.skill} 级`);
+    save();
+    return { ok: true, msg: `${emp.name} 技能升至 ${emp.skill} 级` };
+  }
+
+  // ===================================================
+  //  员工休息（降疲劳）
+  // ===================================================
+  function restEmployee(empId) {
+    if (!G) return { ok: false, msg: '游戏未开始' };
+    const emp = G.employees.find(e => e.id === empId);
+    if (!emp) return { ok: false, msg: '员工不存在' };
+    const cost = 5000;
+    if (G.money < cost) return { ok: false, msg: '资金不足' };
+    G.money -= cost;
+    emp.fatigue = Math.max(0, (emp.fatigue || 0) - 30);
+    emp.happiness = Math.min(100, (emp.happiness || 50) + 10);
+    addLog(`😴 ${emp.name} 休息恢复，疲劳-30`);
+    save();
+    return { ok: true, msg: `${emp.name} 疲劳恢复` };
+  }
+
+  // ===================================================
+  //  离线收益增强系统
+  // ===================================================
+  function calcOfflineIncome() {
+    if (!G || !G.saveTime) return { income: 0, ticks: 0, hours: 0 };
+    const now = Date.now();
+    const elapsed = (now - G.saveTime) / 1000; // 秒
+    const maxSec = CONFIG.MAX_OFFLINE_HOURS * 3600;
+    const validSec = Math.min(elapsed, maxSec);
+    if (validSec < CONFIG.TICK_MS / 1000) return { income: 0, ticks: 0, hours: 0 };
+    const ticks = Math.floor(validSec / (CONFIG.TICK_MS / 1000));
+    // 按当前速率估算 × 离线效率
+    const perTick = calcTotalIncome();
+    const efficiency = CONFIG.OFFLINE_EFFICIENCY;
+    const totalIncome = perTick * Math.min(ticks, maxSec / (CONFIG.TICK_MS / 1000)) * efficiency;
+    const hours = Math.floor(validSec / 3600 * 10) / 10;
+    return { income: totalIncome, ticks, hours };
+  }
+
+  function claimOfflineIncome() {
+    if (!G) return 0;
+    const offline = calcOfflineIncome();
+    if (offline.income <= 0) return 0;
+    G.money += offline.income;
+    G.lastOnlineTime = Date.now();
+    G.offlineIncomeClaimed = true;
+    addLog(`💤 离线收益到账：${formatMoney(offline.income)}（离线${offline.hours}小时，效率${(CONFIG.OFFLINE_EFFICIENCY * 100).toFixed(0)}%）`);
+    save();
+    return offline.income;
+  }
+
+  // ===================================================
+  //  一键升级业务
+  // ===================================================
+  function upgradeBusinessMax(bizId) {
+    if (!G) return { ok: false, msg: '游戏未开始', levels: 0 };
+    const bDef = BUSINESS_DEFS.find(b => b.id === bizId);
+    if (!bDef) return { ok: false, msg: '未知业务', levels: 0 };
+    const state = G.businesses[bizId];
+    if (!state || state.level === 0) return { ok: false, msg: '业务未开设', levels: 0 };
+    let upgraded = 0;
+    while (state.level < bDef.levels.length) {
+      const nextLv = bDef.levels[state.level];
+      if (!nextLv) break;
+      // 检查前置条件
+      if (nextLv.reqCond) {
+        if (nextLv.reqCond.techLv) {
+          const maxTechLv = Math.max(...Object.values(G.completedResearch || {}));
+          if (maxTechLv < nextLv.reqCond.techLv) break;
+        }
+        if (nextLv.reqCond.rep && G.reputation < nextLv.reqCond.rep) break;
+        if (nextLv.reqCond.npcFavor) {
+          let pass = true;
+          Object.entries(nextLv.reqCond.npcFavor).forEach(([npcId, minFavor]) => {
+            if ((G.npcFavor[npcId] || 0) < minFavor) pass = false;
+          });
+          if (!pass) break;
         }
       }
+      const cost = nextLv.cost * 10000;
+      if (G.money < cost) break;
+      G.money -= cost;
+      state.level++;
+      upgraded++;
     }
-    // 东山再起
-    if (G.comebackFromBankruptcy && G.money >= 10000000) {
-      G.ending = '东山再起';
-      addLog('🔥 东山再起！从破产灰烬中重生！');
-      if (typeof UI !== 'undefined' && UI.showEnding) UI.showEnding('东山再起');
-      if (gameTimer) clearInterval(gameTimer); if (eventTimer) clearInterval(eventTimer);
+    if (upgraded > 0) {
+      addLog(`⬆️ ${bDef.icon} ${bDef.name} 一键升级 ${upgraded} 级 → Lv${state.level}`);
+      save();
+      return { ok: true, msg: `升级${upgraded}级`, levels: upgraded };
+    }
+    return { ok: false, msg: '无法升级（资金不足或前置条件未满足）', levels: 0 };
+  }
+
+  // ===================================================
+  //  批量招聘
+  // ===================================================
+  function batchHire(roleId, count) {
+    if (!G) return { ok: false, msg: '游戏未开始', hired: 0 };
+    const roleDef = EMP_ROLES.find(r => r.id === roleId);
+    if (!roleDef) return { ok: false, msg: '未知角色', hired: 0 };
+    const maxEmp = getEmpMax();
+    const canHire = Math.min(count, maxEmp - G.employees.length);
+    if (canHire <= 0) return { ok: false, msg: '员工已满', hired: 0 };
+    const totalCost = roleDef.salary * 10000 * canHire * 2;
+    if (G.money < totalCost) return { ok: false, msg: `资金不足（需要${formatMoney(totalCost)}）`, hired: 0 };
+    let hired = 0;
+    const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
+    const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','飞','洋','芳','军','平'];
+    for (let i = 0; i < canHire; i++) {
+      G.empIdCounter++;
+      const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
+      const salary = +(roleDef.salary * (0.85 + Math.random() * 0.3)).toFixed(1);
+      const loyalty = +(35 + Math.random() * 35).toFixed(0);
+      G.employees.push({ id: G.empIdCounter, name, role: roleDef.id, salary, loyalty, happiness: 50, icon: roleDef.icon || '👤', fatigue: 0, skill: 1 });
+      hired++;
+    }
+    G.money -= totalCost;
+    addLog(`👥 批量招聘 ${hired} 名${roleDef.name}，花费 ${formatMoney(totalCost)}`);
+    save();
+    return { ok: true, msg: `招聘${hired}人`, hired };
+  }
+
+  // ===================================================
+  //  禁用结局检查（改为no-op）
+  // ===================================================
+  function checkEndings() {
+    // 已禁用 — 长期放置游戏不设结局
+    // 旧存档中有 G.ending 的会被忽略
+    if (G && G.ending) {
+      // 清除旧存档的结局状态，恢复游戏
+      G.ending = null;
+      if (!gameTimer) startTick();
+      if (!eventTimer) startEventCheck();
+      addLog('🔄 继续你的商业旅程，永无止境！');
     }
   }
 
+  // ===================================================
+  //  退休改为"暂离"（不再结束游戏）
+  // ===================================================
   function retireGame() {
     if (!G) return;
-    G.retireRequested = true;
-    addLog('🕊️ 你决定急流勇退，申请退休...');
+    // 不再触发结局，而是暂停游戏
+    isPaused = !isPaused;
+    addLog(isPaused ? '⏸️ 游戏已暂停' : '▶️ 游戏继续');
   }
 
   // ========== 公开API ==========
@@ -2536,7 +2876,7 @@ window.SGame = (() => {
     get tickCount() { return tickCount; },
     get pendingDecisions() { return pendingDecisions; },
     set pendingDecisions(v) { pendingDecisions = v; },
-    calcTotalIncome, calcOfflineIncome,
+    calcTotalIncome, calcOfflineIncome, claimOfflineIncome,
     addLog, showAchievement, formatMoney, getEmpMax,
     save, load, reset, autoSave, getSaveSlots,
     exportSave, importSave, deleteSaveSlot,
@@ -2544,7 +2884,7 @@ window.SGame = (() => {
     checkCityUnlocks, switchCity, updateRank,
     getStressMultiplier, getRepMultiplier,
     calcEmployeeIncomeBonus,
-    startTick,
+    startTick, setSpeedMode, getSpeedMode,
     applySkillEffects, canUnlockSkill,
     fireEvent, tryFireEvent, startEventCheck,
     updateStressMode, updateRepLevel,
@@ -2558,11 +2898,16 @@ window.SGame = (() => {
     getTimeOfDay: (h) => GameTime.getTimeOfDay(h),
     isFirstGame, markTutorialDone,
     toggleAutoMode, setAutoPreference, autoDecide,
-    // 新增
     startResearch, getTechBonus, generateRPT, checkResearchProgress,
     buyStock, sellStock, updateStockPrices, getStockPortfolioValue, getStockCostBasis,
     applyLoan, processLoans, repayLoan,
     getSeason, checkHoliday,
     calcSynergyEffects, getSynergyStatusDisplay,
+    // ---- 新增系统 ----
+    calcMaintenanceCost,
+    upgradeBusinessMax,
+    batchHire,
+    trainEmployee, restEmployee,
+    checkAndShowOfflineIncome,
   };
 })();

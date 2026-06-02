@@ -9,7 +9,7 @@ window.UI = (() => {
 
   // ========== 面板切换 ==========
   function switchPanel(name) {
-    if (!['dashboard', 'region', 'business', 'npc', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking'].includes(name)) return;
+    if (!['dashboard', 'region', 'business', 'npc', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking', 'milestone'].includes(name)) return;
     currentPanel = name;
     const tabs = document.querySelectorAll('.panel-tab');
     tabs.forEach(t => t.classList.remove('active'));
@@ -48,6 +48,7 @@ window.UI = (() => {
       case 'tech': renderTechPanel(panel); return;
       case 'stock': renderStockPanel(panel); return;
       case 'ranking': renderRankingPanel(panel); return;
+      case 'milestone': renderMilestonePanel(panel); return;
     }
   }
 
@@ -192,6 +193,67 @@ window.UI = (() => {
     safeRender('manualButton', renderManualButton);
     safeRender('clock', renderClock);
     safeRender('autoButton', renderAutoButton);
+    safeRender('speedButtons', renderSpeedButtons);
+  }
+
+  // ========== 加速模式控制 (1x/2x/5x) ==========
+  function renderSpeedButtons() {
+    const container = document.getElementById('speed-buttons');
+    if (!container) return;
+    const currentSpeed = SGame.getSpeedMode ? SGame.getSpeedMode() : 1;
+    const modes = [1, 2, 5];
+    container.innerHTML = modes.map(m => {
+      const isActive = currentSpeed === m;
+      const bg = isActive ? 'var(--accent-gold)' : 'var(--bg-hover)';
+      const color = isActive ? '#000' : 'var(--text-secondary)';
+      const border = isActive ? '1px solid var(--accent-gold)' : '1px solid var(--border)';
+      return `<button style="background:${bg};color:${color};border:${border};border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:var(--font);font-weight:${isActive?'700':'400'};" onclick="UI.setSpeedMode(${m})">${m}x</button>`;
+    }).join('');
+  }
+
+  function setSpeedMode(mode) {
+    if (typeof SGame.setSpeedMode === 'function') {
+      SGame.setSpeedMode(mode);
+    }
+    renderSpeedButtons();
+  }
+
+  // ========== 离线收益弹窗 ==========
+  function showOfflineIncomePopup(offlineData) {
+    const G = SGame.G;
+    if (!G) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.style.zIndex = '2000';
+    overlay.innerHTML = `
+      <div class="modal" style="text-align:center;">
+        <div style="font-size:48px;margin-bottom:12px;">💰</div>
+        <div class="modal-title" style="font-size:18px;">离线收益</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin:12px 0;line-height:1.8;">
+          你离开了 <b style="color:var(--accent-gold)">${(offlineData.hours ?? 0).toFixed(1)} 小时</b><br>
+          期间经过 <b style="color:var(--accent-cyan)">${offlineData.ticks ?? 0} Tick</b><br>
+          产生收益: <b style="color:var(--green-down);font-size:18px;">+${formatMoneyComma(offlineData.income ?? 0)}</b>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;">
+          <button class="btn" style="font-size:13px;padding:8px 24px;background:linear-gradient(135deg,var(--accent-gold),#d97706);" onclick="UI.claimOfflineIncome(this)">领取收益</button>
+          <button class="btn" style="font-size:13px;padding:8px 24px;background:var(--bg-hover);border:1px solid var(--border);" onclick="this.closest('.modal-overlay').remove();">暂不领取</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  function claimOfflineIncome(btn) {
+    if (typeof SGame.claimOfflineIncome === 'function') {
+      SGame.claimOfflineIncome();
+    }
+    if (typeof SGame.save === 'function') {
+      SGame.save();
+    }
+    const overlay = btn.closest('.modal-overlay');
+    if (overlay) overlay.remove();
+    showToast('💰', '离线收益已领取', '已添加到你的资产');
+    renderAll();
   }
 
   // ========== 玩家属性面板 ==========
@@ -299,6 +361,25 @@ window.UI = (() => {
         </select>`;
       }
 
+      // 市场份额和供应链状态（功能6）
+      let marketShareHtml = '';
+      let supplyChainHtml = '';
+      if (lv > 0) {
+        const ms = G.marketShare ? G.marketShare[b.id] : undefined;
+        if (ms !== undefined) {
+          const msPct = (ms * 100).toFixed(1);
+          marketShareHtml = `<div style="font-size:10px;color:var(--accent-cyan);margin-top:2px">市场份额: ${msPct}%</div>`;
+        }
+        const sc = G.supplyChain ? G.supplyChain[b.id] : undefined;
+        if (sc) {
+          const upColor = sc.upstream === 'normal' ? 'var(--green-down)' : 'var(--red-up)';
+          const downColor = sc.downstream === 'normal' ? 'var(--green-down)' : 'var(--red-up)';
+          const upLabel = sc.upstream === 'normal' ? '正常' : '中断';
+          const downLabel = sc.downstream === 'normal' ? '正常' : '中断';
+          supplyChainHtml = `<div style="font-size:10px;color:var(--text-muted);margin-top:1px">供应链: 上游<span style="color:${upColor}">${upLabel}</span> | 下游<span style="color:${downColor}">${downLabel}</span></div>`;
+        }
+      }
+
       const lvColorClass = lv > 0 ? 'biz-lv-' + Math.min(lv, 5) : '';
       html += `<div style="padding:10px 0;border-bottom:1px solid var(--border)" class="${lvColorClass}">
         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -306,10 +387,13 @@ window.UI = (() => {
           <span style="font-size:10px;color:var(--text-muted)">${lv === 0 ? '未开业' : def.name}</span>
         </div>
         ${lv > 0 ? `<div style="font-size:10px;color:var(--accent-gold);margin-top:2px">收益: ${(def.income).toFixed(1)}万/年</div>` : ''}
+        ${marketShareHtml}
+        ${supplyChainHtml}
         ${regionSelect}
         <div style="display:flex;gap:6px;margin-top:6px">
           ${lv === 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px" onclick="UI.openBusiness('${b.id}')">开业</button>` : ''}
           ${nextDef ? (G.money >= nextDef.cost * 10000 ? `<button class="btn" style="font-size:10px;padding:3px 8px" onclick="UI.upgradeBusiness('${b.id}')">升级 (${(nextDef.cost).toFixed(0)}万)</button>` : `<button class="btn" style="font-size:10px;padding:3px 8px;opacity:0.5" disabled>升级 (${(nextDef.cost).toFixed(0)}万)</button>`) : ''}
+          ${lv > 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,var(--accent-gold),#d97706);" onclick="UI.upgradeBusinessMax('${b.id}')">一键升级</button>` : ''}
           ${lv > 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px;opacity:0.6" onclick="UI.closeBusiness('${b.id}')">停业</button>` : ''}
         </div>
       </div>`;
@@ -360,6 +444,19 @@ window.UI = (() => {
     renderAll();
   }
 
+  // ========== 一键升级 (功能3) ==========
+  function upgradeBusinessMax(bizId) {
+    if (typeof SGame.upgradeBusinessMax === 'function') {
+      const result = SGame.upgradeBusinessMax(bizId);
+      if (result.ok) {
+        showToast('⬆️', '一键升级成功', result.msg);
+      } else {
+        EventSystem.addLog(result.msg);
+      }
+    }
+    renderAll();
+  }
+
   function closeBusiness(bizId) {
     const G = SGame.G;
     G.businesses[bizId].level = 0;
@@ -390,6 +487,7 @@ window.UI = (() => {
     if (!G) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">等待游戏数据加载...</div>'; return; }
     const income = SGame.calcTotalIncome() ?? 0;
     const expense = (G.employees || []).reduce((s, e) => s + (e.salary ?? 0) * 10000, 0);
+    const maintenanceCost = typeof SGame.calcMaintenanceCost === 'function' ? SGame.calcMaintenanceCost() : 0;
     const trendHtml = renderAssetTrend(G);
     const chartHtml = renderMiniAssetChart(G);
     const breakdownHtml = renderIncomeBreakdown();
@@ -433,7 +531,7 @@ window.UI = (() => {
       <div class="dash-card">
         <div class="dash-label">Tick收益</div>
         <div class="dash-value" style="color:var(--green-down)">+${formatMoneyComma(income)}</div>
-        <div class="dash-sub">每${(tickMs/1000).toFixed(0)}秒</div>
+        <div class="dash-sub">每${(tickMs/1000/currentSpeed).toFixed(0)}秒 | 速度: ${speedBtns}</div>
       </div>
       <div class="dash-card">
         <div class="dash-label">工资支出</div>
@@ -441,9 +539,19 @@ window.UI = (() => {
         <div class="dash-sub">每Tick</div>
       </div>
       <div class="dash-card">
+        <div class="dash-label">维护成本</div>
+        <div class="dash-value" style="color:var(--red-up);font-size:18px;">-${formatMoneyComma(maintenanceCost)}</div>
+        <div class="dash-sub">每Tick</div>
+      </div>
+      <div class="dash-card">
         <div class="dash-label">员工数</div>
         <div class="dash-value" style="color:var(--accent-blue)">${(G.employees || []).length}</div>
         <div class="dash-sub">上限 ${SGame.getEmpMax()}</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">维护费用</div>
+        <div class="dash-value" style="color:var(--accent-gold);opacity:0.7">-${formatMoneyComma(maintCost)}</div>
+        <div class="dash-sub">每Tick</div>
       </div>
       <div class="dash-card">
         <div class="dash-label">业务数</div>
@@ -568,15 +676,49 @@ window.UI = (() => {
       const roleDef = EMP_ROLES.find(r => r.id === emp.role);
       const roleName = roleDef ? roleDef.name : emp.role;
       const loyaltyColor = emp.loyalty >= 50 ? 'var(--green-down)' : emp.loyalty >= 20 ? 'var(--accent-gold)' : 'var(--red-up)';
-      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div>
-          <div style="font-size:12px;font-weight:600">${emp.icon} ${emp.name} <span style="font-size:10px;color:var(--text-muted)">${roleName}</span></div>
-          <div style="font-size:10px;color:var(--text-muted)">忠诚: <span style="color:${loyaltyColor}">${emp.loyalty.toFixed(0)}</span> | 工资: ${emp.salary}万/年</div>
+      const fatigue = emp.fatigue || 0;
+      const skill = emp.skill || 1;
+      const fatigueColor = fatigue >= 70 ? 'var(--red-up)' : fatigue >= 40 ? 'var(--accent-gold)' : 'var(--green-down)';
+      html += `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:12px;font-weight:600">${emp.icon} ${emp.name} <span style="font-size:10px;color:var(--text-muted)">${roleName}</span></div>
+            <div style="font-size:10px;color:var(--text-muted)">忠诚: <span style="color:${loyaltyColor}">${emp.loyalty.toFixed(0)}</span> | 工资: ${emp.salary}万/年 | 疲劳: <span style="color:${fatigueColor}">${fatigue.toFixed(0)}</span> | 技能: Lv.${skill}</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn" style="font-size:9px;padding:2px 6px;background:linear-gradient(135deg,var(--accent-cyan),#0891b2);" onclick="UI.trainEmployee(${emp.id})" title="培训提升技能">📚 培训</button>
+            <button class="btn" style="font-size:9px;padding:2px 6px;background:linear-gradient(135deg,var(--green-down),#16a34a);" onclick="UI.restEmployee(${emp.id})" title="休息恢复疲劳">😴 休息</button>
+            <button class="btn" style="font-size:9px;padding:2px 6px;opacity:0.6" onclick="UI.fireEmployee(${emp.id})">解雇</button>
+          </div>
         </div>
-        <button class="btn" style="font-size:10px;padding:3px 8px;opacity:0.6" onclick="UI.fireEmployee(${emp.id})">解雇</button>
       </div>`;
     });
     el.innerHTML = html;
+  }
+
+  // ========== 员工培训和休息 (功能5) ==========
+  function trainEmployee(empId) {
+    if (typeof SGame.trainEmployee === 'function') {
+      const result = SGame.trainEmployee(empId);
+      if (result.ok) {
+        showToast('📚', '培训成功', result.msg);
+      } else {
+        EventSystem.addLog(result.msg);
+      }
+    }
+    renderAll();
+  }
+
+  function restEmployee(empId) {
+    if (typeof SGame.restEmployee === 'function') {
+      const result = SGame.restEmployee(empId);
+      if (result.ok) {
+        showToast('😴', '休息恢复', result.msg);
+      } else {
+        EventSystem.addLog(result.msg);
+      }
+    }
+    renderAll();
   }
 
   function renderHireButton() {
@@ -632,7 +774,25 @@ window.UI = (() => {
   }
 
   function renderHireCards(container) {
-    container.innerHTML = hireCandidates.map((c, i) => `
+    const G = SGame.G;
+    // 批量招聘UI (功能4)
+    let batchHtml = '<div style="padding:10px;border:1px solid var(--accent-gold);border-radius:8px;margin-bottom:12px;background:rgba(245,158,11,0.05);">';
+    batchHtml += '<div style="font-size:12px;font-weight:600;color:var(--accent-gold);margin-bottom:8px;">👥 批量招聘</div>';
+    batchHtml += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+    batchHtml += '<select id="batch-role-select" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:4px 8px;font-family:var(--font);">';
+    EMP_ROLES.forEach(r => {
+      batchHtml += `<option value="${r.id}">${r.icon} ${r.name} (${r.salary}万/年)</option>`;
+    });
+    batchHtml += '</select>';
+    batchHtml += '<select id="batch-count-select" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:4px 8px;font-family:var(--font);">';
+    [1, 2, 3, 5].forEach(n => {
+      batchHtml += `<option value="${n}">${n}人</option>`;
+    });
+    batchHtml += '</select>';
+    batchHtml += '<button class="btn" style="font-size:11px;padding:4px 12px;background:linear-gradient(135deg,var(--accent-gold),#d97706);" onclick="UI.batchHire()">批量录用</button>';
+    batchHtml += '</div></div>';
+
+    let cardsHtml = hireCandidates.map((c, i) => `
       <div style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between">
           <span style="font-weight:600">${c.roleIcon} ${c.name}</span>
@@ -646,6 +806,28 @@ window.UI = (() => {
         <button class="btn" style="margin-top:8px;font-size:11px" onclick="UI.hireCandidate(${i})">录用</button>
       </div>
     `).join('');
+
+    container.innerHTML = batchHtml + cardsHtml;
+  }
+
+  // ========== 批量招聘 (功能4) ==========
+  function batchHire() {
+    const roleSelect = document.getElementById('batch-role-select');
+    const countSelect = document.getElementById('batch-count-select');
+    if (!roleSelect || !countSelect) return;
+    const roleId = roleSelect.value;
+    const count = parseInt(countSelect.value, 10);
+    if (!roleId || !count) return;
+    if (typeof SGame.batchHire === 'function') {
+      const result = SGame.batchHire(roleId, count);
+      if (result.ok) {
+        showToast('👥', '批量招聘成功', `已招聘 ${result.hired} 名员工`);
+        closeModal('hire');
+      } else {
+        EventSystem.addLog(result.msg);
+      }
+    }
+    renderAll();
   }
 
   function closeModal(type) {
@@ -664,6 +846,8 @@ window.UI = (() => {
       loyalty,
       happiness: 50,
       icon: roleDef ? roleDef.icon : '👤',
+      fatigue: 0,
+      skill: 1,
     });
     EventSystem.addLog(`新员工入职：${name}（${roleDef.name}）`);
     closeModal('hire');
@@ -685,6 +869,8 @@ window.UI = (() => {
       loyalty: parseFloat(c.loyalty),
       happiness: 50,
       icon: roleDef ? roleDef.icon : '👤',
+      fatigue: 0,
+      skill: 1,
     });
     EventSystem.addLog(`新员工入职：${c.name}（${c.roleName}）`);
     closeModal('hire');
@@ -867,31 +1053,6 @@ window.UI = (() => {
     overlay.textContent = text;
     overlay.className = 'show';
     setTimeout(() => { overlay.className = ''; }, 2600);
-  }
-
-  // ========== 结局 ==========
-  function showEnding(endingType) {
-    const endings = {
-      '商业帝国': { title: '商业帝国', desc: '你的商业版图横跨七大区域，成为了新海市最传奇的企业家。', icon: '👑' },
-      '隐退江湖': { title: '隐退江湖', desc: '你选择了功成身退，在新海的夕阳下开启了新的生活。', icon: '🌅' },
-      '弄巧成拙': { title: '弄巧成拙', desc: '过度扩张和错误决策让你一败涂地，但东山再起的机会永远都在。', icon: '⚡' },
-      '回归平凡': { title: '回归平凡', desc: '你决定放下一切，回到最初的地方，过简单而平静的生活。', icon: '🏠' },
-    };
-    const e = endings[endingType] || { title: endingType, desc: '游戏结束。', icon: '🎬' };
-
-    document.body.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg-primary);text-align:center;padding:40px">
-        <div>
-          <div style="font-size:80px;margin-bottom:20px">${e.icon}</div>
-          <h1 style="font-size:32px;margin-bottom:12px;background:linear-gradient(135deg,var(--accent-gold),var(--accent-blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent">${e.title}</h1>
-          <p style="color:var(--text-secondary);font-size:16px;max-width:400px;line-height:1.8;margin-bottom:24px">${e.desc}</p>
-          <div style="font-size:13px;color:var(--text-muted);margin-bottom:32px">
-            最终资产: ${SGame.formatMoney(SGame.G.money)} | 声誉: ${SGame.G.reputation.toFixed(0)} | 游戏时长: ${Math.floor(SGame.G.totalPlayTime/60)}分钟
-          </div>
-          <button class="btn" style="font-size:16px;padding:12px 40px" onclick="SGame.reset()">重新开始</button>
-        </div>
-      </div>
-    `;
   }
 
   // ========== 时钟 ==========
@@ -1156,11 +1317,13 @@ window.UI = (() => {
     const playMin = Math.floor((G.totalPlayTime || 0) / 60);
     const playH = Math.floor(playMin / 60);
     const playM = playMin % 60;
+    const maintenanceCost = typeof SGame.calcMaintenanceCost === 'function' ? SGame.calcMaintenanceCost() : 0;
 
     container.innerHTML = `
       <div class="stat-panel-row"><span class="stat-panel-label">累计总收入</span><span class="stat-panel-value" style="color:var(--green-down)">${SGame.formatMoney(G.totalIncome || 0)}</span></div>
       <div class="stat-panel-row"><span class="stat-panel-label">累计总支出</span><span class="stat-panel-value" style="color:var(--red-up)">${SGame.formatMoney(G.totalExpense || 0)}</span></div>
       <div class="stat-panel-row"><span class="stat-panel-label">净收入</span><span class="stat-panel-value" style="color:var(--accent-gold)">${SGame.formatMoney((G.totalIncome||0) - (G.totalExpense||0))}</span></div>
+      <div class="stat-panel-row"><span class="stat-panel-label">每Tick维护成本</span><span class="stat-panel-value" style="color:var(--red-up)">${SGame.formatMoney(maintenanceCost)}</span></div>
       <div class="stat-panel-row"><span class="stat-panel-label">总事件数</span><span class="stat-panel-value">${G.eventCount || 0}</span></div>
       <div class="stat-panel-row"><span class="stat-panel-label">总决策数</span><span class="stat-panel-value">${G.decisionCount || 0}</span></div>
       <div class="stat-panel-row"><span class="stat-panel-label">游戏时长</span><span class="stat-panel-value">${playH}时${playM}分</span></div>
@@ -1168,6 +1331,54 @@ window.UI = (() => {
       <div class="stat-panel-row"><span class="stat-panel-label">关系最好NPC</span><span class="stat-panel-value">${bestNpc.name} (${bestNpc.favor})</span></div>
       <div class="stat-panel-row"><span class="stat-panel-label">已解锁成就</span><span class="stat-panel-value">${G.unlockedAchievements.length}/${ACHIEVEMENTS.length}</span></div>
     `;
+  }
+
+  // ========== 里程碑面板 (功能9) ==========
+  function renderMilestonePanel(container) {
+    if (!container) return;
+    const G = SGame.G;
+    if (!G) { container.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">请先开始游戏</div>'; return; }
+
+    const advMilestones = [
+      { id: 'ms_1b', name: '十亿资产', desc: '资产突破10亿', icon: '🏆' },
+      { id: 'ms_10b', name: '百亿资产', desc: '资产突破100亿', icon: '💎' },
+      { id: 'ms_100b', name: '千亿资产', desc: '资产突破1000亿', icon: '🌟' },
+      { id: 'ms_1t', name: '万亿资产', desc: '资产突破1万亿', icon: '⭐' },
+      { id: 'ms_all_cities', name: '全球版图', desc: '解锁所有城市', icon: '🌏' },
+      { id: 'ms_biz_10', name: '满级业务', desc: '任意业务达到10级', icon: '🔥' },
+      { id: 'ms_all_biz_10', name: '全能满级', desc: '所有业务达到10级', icon: '👑' },
+      { id: 'ms_tech_max', name: '科技全满', desc: '三条研发路线全满', icon: '🔬' },
+      { id: 'ms_rank_1', name: '榜首', desc: '竞争对手排名中位列第一', icon: '🥇' },
+      { id: 'ms_comeback', name: '东山再起', desc: '破产后资产重返千万', icon: '💪' },
+    ];
+
+    const achieved = G.milestonesAchieved || [];
+    const total = advMilestones.length;
+    const achievedCount = advMilestones.filter(m => achieved.includes(m.id)).length;
+
+    let html = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
+    html += '<button onclick="UI.switchPanel(\'dashboard\')" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:6px 14px;font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.2s;" onmouseover="this.style.background=\'rgba(255,255,255,0.18)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.08)\'">← 返回</button>';
+    html += '<div style="font-size:16px;font-weight:700;color:var(--accent-gold)">🏅 里程碑</div>';
+    html += '</div>';
+
+    html += `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">进度: <b style="color:var(--accent-gold)">${achievedCount}/${total}</b></div>`;
+    html += `<div class="stat-bar" style="margin-bottom:16px;"><div class="stat-bar-fill" style="width:${total > 0 ? (achievedCount/total*100) : 0}%;background:var(--accent-gold)"></div></div>`;
+
+    advMilestones.forEach(ms => {
+      const done = achieved.includes(ms.id);
+      const tierColors = ['var(--text-muted)', '#c0c8d4', 'var(--green-down)', 'var(--accent-blue)', 'var(--purple)', 'var(--accent-gold)'];
+      const tierIdx = done ? Math.min(achieved.indexOf(ms.id) + 2, tierColors.length - 1) : 0;
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);opacity:${done ? 1 : 0.35}">
+        <div style="font-size:28px;">${done ? ms.icon : '🔒'}</div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;color:${done ? tierColors[tierIdx] : 'var(--text-muted)'}">${ms.name}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${ms.desc}</div>
+          ${done ? '<div style="font-size:10px;color:var(--accent-gold);margin-top:2px">✓ 已达成 | 奖励: +2技能点</div>' : ''}
+        </div>
+      </div>`;
+    });
+
+    container.innerHTML = html;
   }
 
   // ========== 存档槽位UI ==========
@@ -1358,14 +1569,16 @@ window.UI = (() => {
     showToast(`${emoji} [${item.category}] ${item.text}`, 3000);
   }
 
-  // UI.retireGame
+  // ========== 暂停/继续按钮（原"退休"改为"暂停"） ==========
   function retireGame() {
     if (!SGame.G) return;
-    if (!confirm('确定要急流勇退（退休）吗？退休后将触发相应结局。')) return;
     if (typeof SGame.retireGame === 'function') {
       SGame.retireGame();
+      // 检查是否暂停
+      const isPaused = SGame.G.retireRequested || false;
+      const label = isPaused ? '⏸️ 游戏已暂停' : '▶️ 游戏继续';
+      showToast(label.split(' ')[0], label.split(' ').slice(1).join(' '), isPaused ? '点击暂停按钮可继续' : '游戏运行中');
       renderAll();
-      showToast('🕊️ 已提交退休申请，结局将在下一Tick触发', 3000);
     }
   }
 
@@ -1526,9 +1739,10 @@ window.UI = (() => {
     renderActDisplay, renderHotSearch, renderEventLog,
     renderHireButton, renderClock,
     renderWorldMap, switchCity, renderCitySelector,
-    showAchievement, showEnding,
+    showAchievement,
     openHireModal, closeModal, hireCandidate, hireEmployee, fireEmployee,
     setBusinessRegion, openBusiness, upgradeBusiness, closeBusiness,
+    upgradeBusinessMax,
     openSettings, openAchievementPanel,
     renderManualButton, doManualWork, startCdTimer,
     openSkillTree, buySkill,
@@ -1543,5 +1757,11 @@ window.UI = (() => {
     renderRankingPanel, showNewsDetail, retireGame,
     updateEnvironment, renderAtmosphere,
     renderTechPanel, renderStockPanel,
+    // 新增功能
+    renderSpeedButtons, setSpeedMode,
+    showOfflineIncomePopup, claimOfflineIncome,
+    batchHire,
+    trainEmployee, restEmployee,
+    renderMilestonePanel,
   };
 })();

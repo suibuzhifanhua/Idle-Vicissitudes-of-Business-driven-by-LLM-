@@ -4,21 +4,41 @@
 
 // ---- 游戏参数 ----
 const CONFIG = {
-  TICK_MS: 15000,
+  TICK_MS: 10000,          // 10秒/Tick（原15秒）
   LLM_BASE: 'http://localhost:11434',
   LLM_MODEL: 'qwen3.5:4b',
-  EVENT_CHECK_INTERVAL: 6,
+  EVENT_CHECK_INTERVAL: 5, // 事件检查间隔缩短
   EVENT_BASE_PROB: 0.30,
-  MAX_PENDING_DECISIONS: 3,
-    MAX_OFFLINE_HOURS: 12,
+  MAX_PENDING_DECISIONS: 5, // 事件队列增大
+  MAX_OFFLINE_HOURS: 24,    // 离线收益上限24小时
   BANKRUPTCY_THRESHOLD: -500000,
-  BANKRUPTCY_TICKS: 5,
-    SAVE_INTERVAL: 10,
+  BANKRUPTCY_TICKS: 8,     // 破产容忍tick增加
+  SAVE_INTERVAL: 8,
   MANUAL_WORK_CD: 20,
   MANUAL_WORK_BAD_PROB: 0.08,
   STRESS_NATURAL_DECAY: 0.05,
   LOYALTY_DECAY: 0.17,
   REPUTATION_DECAY: 0.08,
+  // ---- 加速模式 ----
+  SPEED_MODES: { 1: 1, 2: 2, 5: 5 },       // 倍速档位
+  DEFAULT_SPEED: 1,
+  // ---- 维护成本 ----
+  MAINTENANCE_BASE_RATE: 0.02,   // 每Tick维护成本 = 业务收入 × 此比例
+  MAINTENANCE_LEVEL_SCALE: 0.005, // 每级额外增加0.5%
+  OPERATIONAL_RISK_BASE: 0.003,   // 每Tick运营事故概率
+  // ---- 市场份额 ----
+  MARKET_SHARE_DECAY: 0.1,       // 对手每tick抢占份额概率
+  MARKET_SHARE_RECOVERY: 0.05,   // 玩家每tick恢复份额概率
+  // ---- 供应链 ----
+  SUPPLY_CHAIN_RISK: 0.008,       // 供应链断裂概率/tick
+  SUPPLY_CHAIN_RECOVER_TICKS: 6,  // 供应链恢复tick数
+  // ---- 员工深度 ----
+  EMP_FATIGUE_RATE: 0.3,          // 疲劳增长/tick
+  EMP_FATIGUE_DECAY: 0.5,         // 疲劳自然恢复/tick
+  EMP_TRAINING_COST_BASE: 20000,  // 培训基础费用
+  EMP_SKILL_MAX: 5,               // 技能最高5级
+  // ---- 离线收益 ----
+  OFFLINE_EFFICIENCY: 0.7,        // 离线收益效率70%
 };
 
 // ---- 时间系统 ----
@@ -364,7 +384,7 @@ const CITIES = {
   },
 };
 
-// ---- 富豪等级体系 ----
+// ---- 富豪等级体系（12级） ----
 const RANK_TIERS = [
   { name:'个体户',        icon:'🛒',  minMoney:0 },
   { name:'区域龙头',      icon:'🏪',  minMoney:500000 },
@@ -373,6 +393,11 @@ const RANK_TIERS = [
   { name:'全国百强',      icon:'🏆',  minMoney:500000000 },
   { name:'亚洲巨擘',      icon:'🌏',  minMoney:5000000000 },
   { name:'全球富豪',      icon:'👑',  minMoney:50000000000 },
+  { name:'商业教父',      icon:'🏛️',  minMoney:200000000000 },
+  { name:'千亿帝国',      icon:'💎',  minMoney:1000000000000 },
+  { name:'万亿财阀',      icon:'🌟',  minMoney:10000000000000 },
+  { name:'传奇巨擘',      icon:'🔥',  minMoney:100000000000000 },
+  { name:'永恒商神',      icon:'⭐',  minMoney:1000000000000000 },
 ];
 
 // ---- 出身 ----
@@ -427,6 +452,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'连锁便利(3家)', income:0.78, cost:50 },
       { level:4, name:'区域品牌(10家)', income:1.98, cost:120 },
       { level:5, name:'城市配送网络', income:4.98, cost:300 },
+      { level:6, name:'区域配送中心', income:6.48, cost:600, reqCond:{ techLv:2 } },
+      { level:7, name:'智能仓储物流', income:7.98, cost:1200, reqCond:{ techLv:3 } },
+      { level:8, name:'全渠道零售', income:9.60, cost:2500, reqCond:{ techLv:3, npcFavor:{ zhaolei:40 } } },
+      { level:9, name:'新零售生态', income:11.28, cost:5000, reqCond:{ techLv:4 } },
+      { level:10, name:'零售帝国', income:13.08, cost:10000, reqCond:{ techLv:5, rep:70 } },
     ]
   },
   {
@@ -439,6 +469,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'产品化运营', income:1.56, cost:80 },
       { level:4, name:'明星产品', income:3.6, cost:200 },
       { level:5, name:'行业标杆', income:8.58, cost:500 },
+      { level:6, name:'SaaS平台', income:10.58, cost:1000, reqCond:{ techLv:2 } },
+      { level:7, name:'AI产品矩阵', income:12.68, cost:2000, reqCond:{ techLv:3 } },
+      { level:8, name:'技术生态圈', income:14.88, cost:4000, reqCond:{ techLv:4, npcFavor:{ linjiaoshou:40 } } },
+      { level:9, name:'行业基础设施', income:17.18, cost:8000, reqCond:{ techLv:4 } },
+      { level:10, name:'科技帝国', income:19.58, cost:15000, reqCond:{ techLv:5, rep:75 } },
     ]
   },
   {
@@ -451,6 +486,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'独立写字楼', income:4.08, cost:240 },
       { level:4, name:'商务园区', income:10.08, cost:600 },
       { level:5, name:'城市地标', income:26.1, cost:1600 },
+      { level:6, name:'综合商务体', income:30.1, cost:3200, reqCond:{ techLv:2, money:100000000 } },
+      { level:7, name:'甲级写字楼群', income:34.2, cost:6000, reqCond:{ techLv:3 } },
+      { level:8, name:'城市综合体', income:38.5, cost:12000, reqCond:{ techLv:3, npcFavor:{ chenzong:40 } } },
+      { level:9, name:'商业地产帝国', income:42.8, cost:24000, reqCond:{ techLv:4 } },
+      { level:10, name:'地标之城', income:47.2, cost:48000, reqCond:{ techLv:5, rep:80 } },
     ]
   },
   {
@@ -463,6 +503,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'量化交易系统', income:12.6, cost:800 },
       { level:4, name:'对冲基金', income:32.4, cost:2000 },
       { level:5, name:'金融帝国', income:82.8, cost:5000 },
+      { level:6, name:'量化2.0', income:90.8, cost:10000, reqCond:{ techLv:3 } },
+      { level:7, name:'全球配置', income:99.0, cost:20000, reqCond:{ techLv:3, npcFavor:{ chenzong:50 } } },
+      { level:8, name:'跨境金融', income:107.4, cost:40000, reqCond:{ techLv:4 } },
+      { level:9, name:'衍生品帝国', income:116.0, cost:80000, reqCond:{ techLv:4, rep:75 } },
+      { level:10, name:'金融王朝', income:124.8, cost:150000, reqCond:{ techLv:5, rep:85 } },
     ]
   },
   {
@@ -475,6 +520,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'垂直媒体', income:31.2, cost:2000 },
       { level:4, name:'全媒体矩阵', income:81.0, cost:5000 },
       { level:5, name:'媒体帝国', income:201.0, cost:12000 },
+      { level:6, name:'直播电商', income:215.0, cost:24000, reqCond:{ techLv:2, npcFavor:{ zhangye:40 } } },
+      { level:7, name:'短视频生态', income:229.2, cost:48000, reqCond:{ techLv:3 } },
+      { level:8, name:'内容AI工厂', income:243.6, cost:90000, reqCond:{ techLv:4 } },
+      { level:9, name:'文化输出平台', income:258.2, cost:180000, reqCond:{ techLv:4, rep:70 } },
+      { level:10, name:'传媒王朝', income:273.0, cost:350000, reqCond:{ techLv:5, rep:80 } },
     ]
   },
   {
@@ -487,6 +537,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'连锁品牌(5家)', income:1.38, cost:80 },
       { level:4, name:'区域餐饮集团', income:3.78, cost:240 },
       { level:5, name:'城市美食地标', income:10.8, cost:700 },
+      { level:6, name:'中央厨房', income:12.8, cost:1400, reqCond:{ techLv:2 } },
+      { level:7, name:'预制菜品牌', income:14.9, cost:2800, reqCond:{ techLv:3 } },
+      { level:8, name:'餐饮数字化', income:17.1, cost:5500, reqCond:{ techLv:3, npcFavor:{ zhaolei:40 } } },
+      { level:9, name:'美食生态链', income:19.4, cost:11000, reqCond:{ techLv:4 } },
+      { level:10, name:'食神帝国', income:21.8, cost:22000, reqCond:{ techLv:5, rep:65 } },
     ]
   },
   {
@@ -499,6 +554,11 @@ const BUSINESS_DEFS = [
       { level:3, name:'储能电站', income:2.82, cost:200 },
       { level:4, name:'区域能源网络', income:8.82, cost:600 },
       { level:5, name:'绿色能源巨头', income:26.82, cost:1800 },
+      { level:6, name:'氢能实验站', income:29.82, cost:3600, reqCond:{ techLv:2 } },
+      { level:7, name:'碳交易平台', income:32.92, cost:7000, reqCond:{ techLv:3, rep:50 } },
+      { level:8, name:'虚拟电厂', income:36.12, cost:14000, reqCond:{ techLv:4 } },
+      { level:9, name:'绿色电网', income:39.42, cost:28000, reqCond:{ techLv:4, npcFavor:{ lichu:40 } } },
+      { level:10, name:'能源新纪元', income:42.82, cost:55000, reqCond:{ techLv:5, rep:75 } },
     ]
   },
 ];
@@ -539,7 +599,7 @@ const SKILL_TREES = {
     { id:'network',       name:'人脉网络',   desc:'人脉获取速度+20%',                     cond:{ type:'connections', value:50 },        effect:{ connGain:1.2 } },
     { id:'crisis_pr',     name:'危机公关',   desc:'负面舆论影响-30%',                     cond:{ type:'event_type', eventType:'media_crisis' }, effect:{ rumorImpact:0.7 } },
     { id:'capital_op',    name:'资本运作',   desc:'融资金额+10%',                       cond:{ type:'funding', count:1 },          effect:{ fundingMult:1.1 } },
-    { id:'shadow_play',   name:'幕后操盘',   desc:'解锁隐藏结局',                         cond:{ type:'npc_favor', count:5, level:'亲密' }, effect:{ hiddenEnding:true } },
+    { id:'shadow_play',   name:'幕后操盘',   desc:'全局收入+8%',                           cond:{ type:'npc_favor', count:5, level:'亲密' }, effect:{ incomeMult:1.08 } },
   ],
   finance: [
     { id:'cost_ctrl',     name:'成本控制',   desc:'无效支出-10%',                         cond:{ type:'fire_emp', count:1 },         effect:{ wasteCost:0.9 } },
@@ -550,7 +610,8 @@ const SKILL_TREES = {
   ],
 };
 
-// ---- 结局文本 ----
+// ---- 结局文本（已禁用 — 这是一个长期放置游戏，没有结局） ----
+const ENDINGS_DISABLED = true;
 const ENDINGS = {
   '商业帝国': { title:'商业帝国', desc:'你的商业版图横跨七大区域，成为了新海市最传奇的企业家。', icon:'👑' },
   '隐退江湖': { title:'隐退江湖', desc:'你选择了功成身退，在新海的夕阳下开启了新的生活。', icon:'🌅' },
@@ -628,7 +689,7 @@ const ACHIEVEMENTS = [
   { id:'stress_never_high', name:'从容不迫', desc:'压力从未超过60',    icon:'😌', cond:{ type:'stress_never_high' } },
   { id:'no_debt',       name:'现金为王',   desc:'资金从未低于运营成本×3', icon:'💵', cond:{ type:'money_never_low' } },
   { id:'speed_run',     name:'极速传说',   desc:'60分钟内达到100万',    icon:'⚡', cond:{ type:'speed_run',      value:1000000, time:3600 } },
-  { id:'all_endings',   name:'全结局收集',   desc:'体验所有5个结局',      icon:'🎬', cond:{ type:'endings_all' } },
+  { id:'all_endings',   name:'商海老手',   desc:'游戏时间超过24小时',      icon:'🎬', cond:{ type:'play_time', hours:24 } },
 
   // ---- 新增成就 (10) ----
   { id:'diversifying',   name:'多元化经营',   desc:'拥有4条以上不同业务线',       icon:'🎯', cond:{ type:'biz_count', count:4 } },

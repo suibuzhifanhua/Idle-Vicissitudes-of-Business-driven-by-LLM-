@@ -1,5 +1,5 @@
 // ==================================================
-// npc.js — NPC系统：好感度、对话、事件链
+// npc.js — NPC系统：好感度、对话、事件链、任务线、NPC联动
 // ==================================================
 
 window.NPCSystem = (() => {
@@ -26,7 +26,7 @@ window.NPCSystem = (() => {
     return npc.favorLevels[lv] || '中立';
   }
 
-  // ========== 好感度变化 ==========
+  // ========== 好感度变化（含NPC联动传播） ==========
   function changeFavor(npcId, delta) {
     const old = getFavor(npcId);
     SGame.G.npcFavor[npcId] = Math.max(-50, Math.min(100, old + delta));
@@ -35,6 +35,25 @@ window.NPCSystem = (() => {
     if (newLv !== oldLv) {
       const npc = NPCS[npcId];
       EventSystem.addLog(`${npc.name}的好感度变为${npc.favorLevels[newLv]}。`);
+    }
+
+    // NPC联动传播：根据npcLinks比例影响关联NPC好感度
+    const npc = NPCS[npcId];
+    if (npc && npc.npcLinks) {
+      const linkDelta = delta > 0 ? Math.max(1, Math.floor(delta * 0.3)) : Math.min(-1, Math.ceil(delta * 0.2));
+      for (const [linkedId, ratio] of Object.entries(npc.npcLinks)) {
+        if (NPCS[linkedId]) {
+          const propagateDelta = Math.round(linkDelta * ratio);
+          if (propagateDelta !== 0) {
+            const linkedOld = getFavor(linkedId);
+            SGame.G.npcFavor[linkedId] = Math.max(-50, Math.min(100, linkedOld + propagateDelta));
+            // 联动变化不重复触发挥发提示，但记录到日志
+            if (Math.abs(propagateDelta) >= 3) {
+              EventSystem.addLog(`${NPCS[linkedId].name}也受到了影响（好感${propagateDelta > 0 ? '+' : ''}${propagateDelta}）。`);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -110,6 +129,20 @@ window.NPCSystem = (() => {
     // 通用：约谈
     actions.push({ text: '💼 商务约谈', fn: () => { negotiate(npcId, 'business'); closeDialog(); if (typeof UI !== 'undefined') UI.renderAll(); } });
 
+    // 可用任务线
+    const availableQuests = getAvailableQuests(npcId);
+    availableQuests.forEach(quest => {
+      const progress = getQuestProgress(npcId, quest.id);
+      if (progress && progress.stepIndex > 0) {
+        // 进行中的任务
+        actions.push({ text: `📋 ${quest.name}（进行中：第${progress.stepIndex + 1}/${quest.steps.length}步）`, fn: () => { advanceQuest(npcId, quest.id); } });
+      } else {
+        // 新任务
+        actions.push({ text: `📋 ${quest.name}（新任务）`, fn: () => { startQuest(npcId, quest.id); } });
+      }
+    });
+
+    // NPC特定动作
     if (npcId === 'zhaolei') {
       actions.push({ text: '询问行业趋势（人脉+1，好感+2）', fn: () => { changeFavor('zhaolei', 2); SGame.G.connections++; EventSystem.addLog('赵磊分享了一些行业见解。'); } });
       actions.push({ text: '谈合作（需求：资金100万）', fn: () => {
@@ -309,6 +342,203 @@ window.NPCSystem = (() => {
     }
   }
 
+  // ========== 任务线系统 ==========
+
+  // 获取NPC可用的任务线列表
+  function getAvailableQuests(npcId) {
+    const npc = NPCS[npcId];
+    if (!npc || !npc.questLines) return [];
+    const favor = getFavor(npcId);
+    const completed = (SGame.G.questCompleted && SGame.G.questCompleted[npcId]) || [];
+
+    return npc.questLines.filter(q => {
+      // 已完成的不显示
+      if (completed.includes(q.id)) return false;
+      // 好感度不足
+      if (favor < q.reqFavor) return false;
+      // 检查前置任务（如果有 prerequisite 字段）
+      if (q.prerequisite && !completed.includes(q.prerequisite)) return false;
+      return true;
+    });
+  }
+
+  // 获取任务进度
+  function getQuestProgress(npcId, questId) {
+    if (!SGame.G.questProgress) return null;
+    if (!SGame.G.questProgress[npcId]) return null;
+    return SGame.G.questProgress[npcId][questId] || null;
+  }
+
+  // 开始任务
+  function startQuest(npcId, questId) {
+    const npc = NPCS[npcId];
+    if (!npc) return { ok: false, msg: '未知NPC' };
+
+    const quest = npc.questLines.find(q => q.id === questId);
+    if (!quest) return { ok: false, msg: '未知任务' };
+
+    // 检查好感度
+    if (getFavor(npcId) < quest.reqFavor) {
+      EventSystem.addLog(`${npc.name}：「咱们还不够熟，这件事以后再说吧。」`);
+      return { ok: false, msg: '好感度不足' };
+    }
+
+    // 初始化任务进度
+    if (!SGame.G.questProgress) SGame.G.questProgress = {};
+    if (!SGame.G.questProgress[npcId]) SGame.G.questProgress[npcId] = {};
+
+    SGame.G.questProgress[npcId][questId] = { stepIndex: 0, started: true };
+
+    // 执行第一步
+    const step = quest.steps[0];
+    EventSystem.addLog(`📋 新任务：${quest.name} — ${step.text}`);
+    applyQuestReward(step.reward, npcId);
+
+    // 如果只有一步，直接完成
+    if (quest.steps.length <= 1) {
+      completeQuest(npcId, questId);
+    }
+
+    // 刷新NPC对话
+    renderNPCActions(npcId);
+    return { ok: true, msg: `开始任务：${quest.name}` };
+  }
+
+  // 推进任务
+  function advanceQuest(npcId, questId) {
+    const npc = NPCS[npcId];
+    if (!npc) return { ok: false, msg: '未知NPC' };
+
+    const quest = npc.questLines.find(q => q.id === questId);
+    if (!quest) return { ok: false, msg: '未知任务' };
+
+    const progress = getQuestProgress(npcId, questId);
+    if (!progress) return { ok: false, msg: '任务未开始' };
+
+    const nextIndex = progress.stepIndex + 1;
+
+    if (nextIndex >= quest.steps.length) {
+      // 不应该到这里，任务应该已经完成了
+      return { ok: false, msg: '任务已完成' };
+    }
+
+    // 推进到下一步
+    progress.stepIndex = nextIndex;
+    const step = quest.steps[nextIndex];
+
+    EventSystem.addLog(`📋 ${quest.name}（第${nextIndex + 1}/${quest.steps.length}步）— ${step.text}`);
+    applyQuestReward(step.reward, npcId);
+
+    // 检查是否完成全部步骤
+    if (nextIndex >= quest.steps.length - 1) {
+      completeQuest(npcId, questId);
+    }
+
+    // 刷新NPC对话
+    renderNPCActions(npcId);
+    return { ok: true, msg: `任务推进：${quest.name}` };
+  }
+
+  // 完成任务
+  function completeQuest(npcId, questId) {
+    const npc = NPCS[npcId];
+    if (!npc) return;
+
+    // 记录完成
+    if (!SGame.G.questCompleted) SGame.G.questCompleted = {};
+    if (!SGame.G.questCompleted[npcId]) SGame.G.questCompleted[npcId] = [];
+    if (!SGame.G.questCompleted[npcId].includes(questId)) {
+      SGame.G.questCompleted[npcId].push(questId);
+    }
+
+    // 清除进度
+    if (SGame.G.questProgress && SGame.G.questProgress[npcId]) {
+      delete SGame.G.questProgress[npcId][questId];
+    }
+
+    const quest = npc.questLines.find(q => q.id === questId);
+    EventSystem.addLog(`✅ 任务完成：${quest ? quest.name : questId}！`);
+
+    // 完成任务额外奖励：1技能点
+    SGame.G.statPoints = (SGame.G.statPoints || 0) + 1;
+    EventSystem.addLog('获得1技能点作为任务完成奖励！');
+  }
+
+  // 应用任务奖励
+  function applyQuestReward(reward, sourceNpcId) {
+    if (!reward) return;
+
+    // 金钱奖励（负值为扣除）
+    if (reward.money) {
+      SGame.G.money += reward.money;
+      if (reward.money > 0) {
+        EventSystem.addLog(`获得资金 ${SGame.formatMoney(reward.money)}`);
+      } else if (reward.money < 0) {
+        EventSystem.addLog(`花费 ${SGame.formatMoney(Math.abs(reward.money))}`);
+      }
+    }
+
+    // 声誉
+    if (reward.reputation) {
+      SGame.G.reputation += reward.reputation;
+      EventSystem.addLog(`声誉 ${reward.reputation > 0 ? '+' : ''}${reward.reputation}`);
+    }
+
+    // 压力
+    if (reward.stress) {
+      SGame.G.stress = Math.max(0, Math.min(100, (SGame.G.stress || 0) + reward.stress));
+      EventSystem.addLog(`压力 ${reward.stress > 0 ? '+' : ''}${reward.stress}`);
+    }
+
+    // 人脉
+    if (reward.connections) {
+      SGame.G.connections = (SGame.G.connections || 0) + reward.connections;
+      EventSystem.addLog(`人脉 ${reward.connections > 0 ? '+' : ''}${reward.connections}`);
+    }
+
+    // NPC好感度（含联动传播）
+    if (reward.npcFavor) {
+      for (const [nid, delta] of Object.entries(reward.npcFavor)) {
+        changeFavor(nid, delta);
+      }
+    }
+
+    // 技能点
+    if (reward.statPoints) {
+      SGame.G.statPoints = (SGame.G.statPoints || 0) + reward.statPoints;
+      EventSystem.addLog(`获得 ${reward.statPoints} 技能点`);
+    }
+  }
+
+  // 获取所有NPC的任务完成情况（供UI展示）
+  function getAllQuestStatus() {
+    const result = [];
+    for (const [npcId, npc] of Object.entries(NPCS)) {
+      if (!npc.questLines) continue;
+      const completed = (SGame.G.questCompleted && SGame.G.questCompleted[npcId]) || [];
+      const progress = (SGame.G.questProgress && SGame.G.questProgress[npcId]) || {};
+
+      for (const quest of npc.questLines) {
+        const isCompleted = completed.includes(quest.id);
+        const prog = progress[quest.id];
+        result.push({
+          npcId,
+          npcName: npc.name,
+          questId: quest.id,
+          questName: quest.name,
+          desc: quest.desc,
+          reqFavor: quest.reqFavor,
+          completed: isCompleted,
+          inProgress: !!prog,
+          stepIndex: prog ? prog.stepIndex : 0,
+          totalSteps: quest.steps.length,
+          available: !isCompleted && !prog && getFavor(npcId) >= quest.reqFavor,
+        });
+      }
+    }
+    return result;
+  }
+
   // ========== 关闭对话 ==========
   function closeDialog() {
     document.getElementById('modal-npc').classList.remove('active');
@@ -322,5 +552,8 @@ window.NPCSystem = (() => {
     openDialog, closeDialog, doAction,
     giveGift, _giveGift, canGiftToday, negotiate, openGiftMenu,
     renderNPCActions,
+    // 任务线系统
+    getAvailableQuests, getQuestProgress, startQuest, advanceQuest,
+    completeQuest, applyQuestReward, getAllQuestStatus,
   };
 })();

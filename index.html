@@ -304,6 +304,7 @@ body.weather-snow::after {
   <span class="game-title">商海浮沉</span>
   <div class="llm-status"><span class="llm-dot" id="llm-dot"></span><span id="llm-status">LLM检测中...</span></div>
   <span id="game-clock"></span>
+  <div style="display:flex;align-items:center;gap:3px;" id="speed-buttons"></div>
   <div style="flex:1;"></div>
   <div class="auto-toggle-wrapper" id="btn-auto-container">
   <span class="auto-toggle-label">托管</span>
@@ -317,7 +318,8 @@ body.weather-snow::after {
   <button class="btn topbar-btn" onclick="UI.openAchievementPanel()" style="background:linear-gradient(135deg,var(--purple),#7c3aed);">🏆 成就</button>
   <button class="btn topbar-btn" onclick="UI.openSkillTree()" style="background:linear-gradient(135deg,var(--teal),#0d9488);">📚 技能树</button>
   <button class="btn topbar-btn" onclick="UI.switchPanel('worldmap')" style="background:linear-gradient(135deg,#6366f1,#4f46e5);">🗺 世界地图</button>
-  <button class="btn topbar-btn" onclick="quitGame()" style="background:linear-gradient(135deg,#dc2626,#991b1b);margin-right:4px;">🚪 退出游戏</button>
+  <button class="btn topbar-btn" onclick="UI.switchPanel('milestone')" style="background:linear-gradient(135deg,#f59e0b,#b45309);">🏅 里程碑</button>
+  <button class="btn topbar-btn" onclick="UI.retireGame()" style="background:linear-gradient(135deg,#6b7280,#374151);margin-right:4px;">⏸ 暂停</button>
 </div>
 
 <div id="main-layout">

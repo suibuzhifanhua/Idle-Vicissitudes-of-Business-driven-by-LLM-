@@ -4,6 +4,7 @@
 
 window.EventSystem = (() => {
   let currentEvent = null;
+  let eventQueue = [];  // 事件队列
 
   // ========== 触发事件 ==========
   function fireEvent(event) {
@@ -12,6 +13,10 @@ window.EventSystem = (() => {
     SGame.G.eventHistory.push(event.id);
 
     const desc = typeof event.getDesc === 'function' ? event.getDesc() : event.desc;
+
+    // 添加到事件队列
+    eventQueue.push(event);
+    if (eventQueue.length > CONFIG.MAX_PENDING_DECISIONS + 5) eventQueue.shift();
 
     // 添加到日志
     addLog(`[事件] ${event.title}`);
@@ -62,6 +67,8 @@ window.EventSystem = (() => {
         });
         choicesHTML += '</div>';
       }
+      // 稍后处理按钮
+      choicesHTML += `<button class="event-choice event-defer" style="background:var(--bg-card);color:var(--text-muted);border:1px solid var(--border-color);" onclick="EventSystem.deferEvent('${event.id}')">稍后处理</button>`;
     }
 
     const card = document.createElement('div');
@@ -111,9 +118,11 @@ window.EventSystem = (() => {
     const card = document.getElementById(`event-${eventId}`);
     if (card) card.remove();
 
-    // 结局检查
+    // 结局检查 — 已禁用（长期放置游戏无结局）
     if (choice.ending) {
-      triggerEnding(choice.ending);
+      // 不再触发结局，改为记录里程碑
+      SGame.addLog(`🏆 达成成就：${choice.ending}`);
+      if (typeof UI !== 'undefined' && UI.showToast) UI.showToast(`🏆 ${choice.ending}`);
       return;
     }
 
@@ -141,10 +150,68 @@ window.EventSystem = (() => {
     }
   }
 
-  // ========== 结局 ==========
+  // ========== 结局（已禁用） ==========
   function triggerEnding(endingType) {
-    SGame.G.ending = endingType;
-    if (typeof UI !== 'undefined') UI.showEnding(endingType);
+    // 长期放置游戏无结局，改为里程碑通知
+    SGame.addLog(`🏆 里程碑达成：${endingType}`);
+    if (typeof UI !== 'undefined' && UI.showToast) UI.showToast(`🏆 ${endingType}`);
+  }
+
+  // ========== 稍后处理 ==========
+  function deferEvent(eventId) {
+    const card = document.getElementById(`event-${eventId}`);
+    if (card) {
+      card.style.opacity = '0.5';
+      card.style.transform = 'scale(0.98)';
+      setTimeout(() => {
+        if (card.parentNode) card.remove();
+      }, 300);
+    }
+    // 事件仍在队列中，稍后可重新显示
+    addLog(`[事件] ${eventId} 已暂时搁置`);
+  }
+
+  // ========== 重新显示搁置事件 ==========
+  function showDeferredEvents() {
+    if (!SGame.G || !eventQueue.length) return;
+    eventQueue.forEach(event => {
+      const existing = document.getElementById(`event-${event.id}`);
+      if (!existing && event.type === 'decision') {
+        const desc = typeof event.getDesc === 'function' ? event.getDesc() : event.desc;
+        renderEventCard(event, desc);
+      }
+    });
+    // 清空已处理的
+    eventQueue = eventQueue.filter(e => {
+      const card = document.getElementById(`event-${e.id}`);
+      return !card && e.type === 'decision';
+    });
+  }
+
+  // ========== 节日事件触发 ==========
+  function fireHolidayEvent(holidayKey) {
+    const holidayNames = {
+      spring_festival: '春节', lantern: '元宵节', qingming: '清明节',
+      labor: '劳动节', dragon_boat: '端午节', qixi: '七夕',
+      mid_autumn: '中秋节', national: '国庆节', double11: '双十一',
+      double12: '双十二', newyear: '元旦', christmas: '圣诞节'
+    };
+    const holidayBonuses = {
+      spring_festival: { retail: 0.30, food_chain: 0.20, media: 0.10 },
+      double11: { retail: 0.40, media: 0.15, tech: 0.05 },
+      national: { office: 0.15, retail: 0.10, new_energy: 0.15 },
+      labor: { retail: 0.20, food_chain: 0.15 },
+      christmas: { retail: 0.20, media: 0.10 },
+      dragon_boat: { retail: 0.10, media: 0.15 },
+      qixi: { retail: 0.15, food_chain: 0.10, media: 0.05 },
+      mid_autumn: { retail: 0.10, food_chain: 0.10 },
+      double12: { retail: 0.20, media: 0.05 },
+    };
+    const hName = holidayNames[holidayKey] || holidayKey;
+    const bonus = holidayBonuses[holidayKey] || {};
+    addLog(`🎉 ${hName}到了！${Object.keys(bonus).length > 0 ? '相关业务收益加成！' : ''}`);
+    SGame.G._currentHoliday = holidayKey;
+    setTimeout(() => { if (SGame.G) SGame.G._currentHoliday = null; }, 24 * (CONFIG.TICK_MS / 1000) * 1000);
   }
 
   // ========== 公开API ==========
@@ -153,5 +220,9 @@ window.EventSystem = (() => {
     choose,
     addLog,
     triggerEnding,
+    deferEvent,
+    showDeferredEvents,
+    fireHolidayEvent,
+    getEventQueue: () => eventQueue,
   };
 })();
