@@ -385,7 +385,22 @@ body.weather-snow::after {
   <span class="key-hint"><span class="key-badge">S</span>设置</span>
 </div>
 
+<!-- 预加载存档数据（同步 XHR，在所有模块初始化前完成） -->
+<script>
+window.__preloadData = {};
+try {
+  var _xhr = new XMLHttpRequest();
+  _xhr.open('GET', '/api/preload', false);
+  _xhr.timeout = 2000;
+  _xhr.send();
+  if (_xhr.status === 200) {
+    window.__preloadData = JSON.parse(_xhr.responseText);
+  }
+} catch(e) {}
+</script>
+
 <!-- 游戏逻辑分文件加载 -->
+<script src="storage.js"></script>
 <script src="config.js"></script>
 <script src="data.js"></script>
 <script src="settings.js"></script>

@@ -1212,7 +1212,7 @@ window.SGame = (() => {
       G.saveTime = Date.now();
       G.saveSlot = s;
       const data = { G, tickCount, pendingDecisions };
-      localStorage.setItem('shfc_save_slot_' + s, JSON.stringify(data));
+      Storage.set('shfc_save_slot_' + s, JSON.stringify(data));
     } catch(e) { /* ignore */ }
   }
 
@@ -1221,14 +1221,14 @@ window.SGame = (() => {
       G.saveTime = Date.now();
       G.saveSlot = 1;
       const data = { G, tickCount, pendingDecisions };
-      localStorage.setItem('shfc_save_slot_1', JSON.stringify(data));
+      Storage.set('shfc_save_slot_1', JSON.stringify(data));
     } catch(e) {}
   }
 
   function load(slot) {
     try {
       if (slot) {
-        const raw = localStorage.getItem('shfc_save_slot_' + slot);
+        const raw = Storage.get('shfc_save_slot_' + slot);
         if (!raw) return false;
         const data = JSON.parse(raw);
         G = data.G;
@@ -1240,7 +1240,7 @@ window.SGame = (() => {
       }
       // 未指定槽位：优先slot_1（自动档），然后slot_2、slot_3
       for (const s of [1, 2, 3]) {
-        const raw = localStorage.getItem('shfc_save_slot_' + s);
+        const raw = Storage.get('shfc_save_slot_' + s);
         if (!raw) continue;
         const data = JSON.parse(raw);
         G = data.G;
@@ -1322,7 +1322,7 @@ window.SGame = (() => {
   }
 
   function reset() {
-    try { for (let i = 1; i <= 3; i++) localStorage.removeItem('shfc_save_slot_' + i); } catch(e) {}
+    try { for (let i = 1; i <= 3; i++) Storage.remove('shfc_save_slot_' + i); } catch(e) {}
     G = null;
     if (gameTimer) clearInterval(gameTimer);
     if (eventTimer) clearInterval(eventTimer);
@@ -1333,7 +1333,7 @@ window.SGame = (() => {
     const slots = [];
     for (let i = 1; i <= 3; i++) {
       try {
-        const raw = localStorage.getItem('shfc_save_slot_' + i);
+        const raw = Storage.get('shfc_save_slot_' + i);
         if (raw) {
           const data = JSON.parse(raw);
           slots.push({
@@ -1359,7 +1359,7 @@ window.SGame = (() => {
   function exportSave(slot) {
     try {
       const s = slot || 1;
-      const raw = localStorage.getItem('shfc_save_slot_' + s);
+      const raw = Storage.get('shfc_save_slot_' + s);
       if (!raw) return null;
       return raw;
     } catch(e) { return null; }
@@ -1371,14 +1371,14 @@ window.SGame = (() => {
       if (!data.G) return false;
       const s = slot || 1;
       const saveData = { G: data.G, tickCount: data.tickCount || 0, pendingDecisions: data.pendingDecisions || [] };
-      localStorage.setItem('shfc_save_slot_' + s, JSON.stringify(saveData));
+      Storage.set('shfc_save_slot_' + s, JSON.stringify(saveData));
       return true;
     } catch(e) { return false; }
   }
 
   function deleteSaveSlot(slot) {
     try {
-      localStorage.removeItem('shfc_save_slot_' + slot);
+      Storage.remove('shfc_save_slot_' + slot);
       return true;
     } catch(e) { return false; }
   }
@@ -1947,12 +1947,12 @@ window.SGame = (() => {
   // ========== 教程状态 ==========
   function isFirstGame() {
     try {
-      return !localStorage.getItem('shfc_tutorial_done');
+      return !Storage.get('shfc_tutorial_done');
     } catch(e) { return true; }
   }
   function markTutorialDone() {
     try {
-      localStorage.setItem('shfc_tutorial_done', '1');
+      Storage.set('shfc_tutorial_done', '1');
     } catch(e) {}
   }
 

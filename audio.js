@@ -10,7 +10,7 @@ window.AudioFX = (() => {
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       // 加载音效开关
-      const saved = localStorage.getItem('shfc_audio_enabled');
+      const saved = Storage.get('shfc_audio_enabled');
       if (saved !== null) enabled = saved === 'true';
     } catch(e) {
       ctx = null;
@@ -23,7 +23,7 @@ window.AudioFX = (() => {
 
   function toggle() {
     enabled = !enabled;
-    try { localStorage.setItem('shfc_audio_enabled', enabled); } catch(e) {}
+    try { Storage.set('shfc_audio_enabled', String(enabled)); } catch(e) {}
     return enabled;
   }
 

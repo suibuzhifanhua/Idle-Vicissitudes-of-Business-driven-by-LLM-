@@ -43,7 +43,7 @@ window.Settings = (() => {
 
   function load() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = Storage.get(STORAGE_KEY);
       if (raw) {
         current = { ...defaults, ...JSON.parse(raw) };
       } else {
@@ -110,7 +110,7 @@ window.Settings = (() => {
     if (Object.keys(autoUpdates).length > 0) {
       current.autoMode = { ...current.autoMode, ...autoUpdates };
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    Storage.set(STORAGE_KEY, JSON.stringify(current));
     // 同步更新CONFIG（运行时使用）
     if (typeof CONFIG !== 'undefined') {
       CONFIG.LLM_BASE = current.llmBase;
