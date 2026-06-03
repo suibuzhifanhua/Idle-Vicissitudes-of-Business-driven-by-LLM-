@@ -31,6 +31,9 @@ window.Settings = (() => {
       autoInvest: false,
       investBudget: 0.1,
       autoLoan: false,
+      autoNegotiate: true,
+      autoAssetBuy: true,
+      autoAssetPawn: true,
       autoRepay: true,
       autoGift: false,
       giftBudget: 50000,
@@ -82,6 +85,9 @@ window.Settings = (() => {
           SGame.G.autoMode.giftBudget = savedAm.giftBudget ?? 50000;
           SGame.G.autoMode.autoManualWork = savedAm.autoManualWork ?? true;
           SGame.G.autoMode.autoRest = savedAm.autoRest ?? true;
+          SGame.G.autoMode.autoNegotiate = savedAm.autoNegotiate ?? true;
+          SGame.G.autoMode.autoAssetBuy = savedAm.autoAssetBuy ?? true;
+          SGame.G.autoMode.autoAssetPawn = savedAm.autoAssetPawn ?? true;
         }
       }
     } catch(e2) { /* ignore */ }
@@ -340,6 +346,9 @@ window.Settings = (() => {
             <div class="st-card-title"><span class="st-card-icon">🤝</span> 自动操作</div>
             ${toggleRowV2('set-autoManualWork', '自动拉项目/谈合作', 'CD到了自动点击', getAuto('autoManualWork', true), true)}
             ${toggleRowV2('set-autoRest', '自动员工休息', '疲劳>60自动休息', getAuto('autoRest', true), true)}
+            ${toggleRowV2('set-autoNegotiate', '自动商务约谈', '每60tick与好感>40的NPC约谈', getAuto('autoNegotiate', true), true)}
+            ${toggleRowV2('set-autoAssetBuy', '自动资产投资', '资金充裕时购买资产', getAuto('autoAssetBuy', true), true)}
+            ${toggleRowV2('set-autoAssetPawn', '自动资产典当', '资金窘迫时典当低值资产救急', getAuto('autoAssetPawn', true), true)}
           </div>
         </div>
 
@@ -388,6 +397,9 @@ window.Settings = (() => {
       'set-autoGift': 'autoGift',
       'set-autoManualWork': 'autoManualWork',
       'set-autoRest': 'autoRest',
+      'set-autoNegotiate': 'autoNegotiate',
+      'set-autoAssetBuy': 'autoAssetBuy',
+      'set-autoAssetPawn': 'autoAssetPawn',
     };
     Object.entries(keyMap).forEach(function(e) {
       var el = document.getElementById(e[0]);
@@ -604,6 +616,9 @@ window.Settings = (() => {
       auto_giftBudget: parseInt(getRadioValue('auto_giftBudget') || '50000'),
       auto_autoManualWork: getChecked('set-autoManualWork'),
       auto_autoRest: getChecked('set-autoRest'),
+      auto_autoNegotiate: getChecked('set-autoNegotiate'),
+      auto_autoAssetBuy: getChecked('set-autoAssetBuy'),
+      auto_autoAssetPawn: getChecked('set-autoAssetPawn'),
     };
 
     save(newSettings);
@@ -616,7 +631,8 @@ window.Settings = (() => {
         newSettings.auto_autoUnlockRegion || newSettings.auto_autoInvest ||
         newSettings.auto_autoLoan || newSettings.auto_autoRepay ||
         newSettings.auto_autoGift || newSettings.auto_autoManualWork ||
-        newSettings.auto_autoRest;
+        newSettings.auto_autoRest || newSettings.auto_autoNegotiate ||
+        newSettings.auto_autoAssetBuy || newSettings.auto_autoAssetPawn;
       const masterCheck = document.getElementById('set-autoMasterEnabled');
       // 主开关已存在 → 完全按用户选择
       if (masterCheck) {
@@ -645,6 +661,9 @@ window.Settings = (() => {
       SGame.G.autoMode.giftBudget = newSettings.auto_giftBudget;
       SGame.G.autoMode.autoManualWork = newSettings.auto_autoManualWork;
       SGame.G.autoMode.autoRest = newSettings.auto_autoRest;
+      SGame.G.autoMode.autoNegotiate = newSettings.auto_autoNegotiate;
+      SGame.G.autoMode.autoAssetBuy = newSettings.auto_autoAssetBuy;
+      SGame.G.autoMode.autoAssetPawn = newSettings.auto_autoAssetPawn;
       if (SGame.G.autoMode.enabled && typeof EventSystem !== 'undefined') {
         EventSystem.addLog('[托管] 全自动托管已开启');
       }
@@ -720,6 +739,9 @@ window.Settings = (() => {
         SGame.G.autoMode.giftBudget = d.giftBudget;
         SGame.G.autoMode.autoManualWork = d.autoManualWork;
         SGame.G.autoMode.autoRest = d.autoRest;
+        SGame.G.autoMode.autoNegotiate = d.autoNegotiate;
+        SGame.G.autoMode.autoAssetBuy = d.autoAssetBuy;
+        SGame.G.autoMode.autoAssetPawn = d.autoAssetPawn;
         if (typeof SGame.save === 'function') SGame.save();
       }
     } catch(e2) {}

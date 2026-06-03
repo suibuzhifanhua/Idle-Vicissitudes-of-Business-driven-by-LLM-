@@ -79,7 +79,7 @@ window.EventSystem = (() => {
     // 决策事件额外增加决策叙事区域
     var decisionNarrativeHTML = '';
     if (isDecision) {
-      decisionNarrativeHTML = '<div class="event-decision-narrative" id="event-decision-${event.id}" style="font-size:11px;color:var(--accent-gold);line-height:1.6;margin-bottom:8px;padding:8px 10px;background:rgba(245,158,11,0.06);border-radius:6px;border-left:3px solid var(--accent-gold);font-style:italic;min-height:20px;"></div>';
+      decisionNarrativeHTML = `<div class="event-decision-narrative" id="event-decision-${event.id}" style="font-size:11px;color:var(--accent-gold);line-height:1.6;margin-bottom:8px;padding:8px 10px;background:rgba(245,158,11,0.06);border-radius:6px;border-left:3px solid var(--accent-gold);font-style:italic;min-height:20px;"></div>`;
     }
 
     card.innerHTML = `
@@ -124,6 +124,7 @@ window.EventSystem = (() => {
 
     // 记录决策
     SGame.G.decisionHistory.push({ eventId, choice: choice.text, tick: SGame.G.tickCount });
+    SGame.G.decisionCount = (SGame.G.decisionCount || 0) + 1;
     if (SGame.G.decisionHistory.length > 500) SGame.G.decisionHistory = SGame.G.decisionHistory.slice(-200);
 
     // 移除事件卡片
@@ -150,9 +151,9 @@ window.EventSystem = (() => {
   function applyEffects(eff) {
     if (!eff) return;
     const G = SGame.G;
-    // eff.money: 0~1范围内视为乘数, 否则视为绝对增减量
+    // eff.money: 绝对值<1 且不为0 视为乘数，否则视为绝对增减量
     if (eff.money) {
-      if (eff.money > -1 && eff.money < 1 && eff.money !== 0) {
+      if (Math.abs(eff.money) < 1 && eff.money !== 0) {
         G.money *= eff.money;
       } else {
         G.money += eff.money;

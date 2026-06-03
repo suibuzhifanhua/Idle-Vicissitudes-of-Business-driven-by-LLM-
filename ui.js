@@ -95,7 +95,7 @@ window.UI = (() => {
 
     // 国内城市和国际城市分开
     const domestic = ['xinhai', 'jingdu', 'shengang', 'rongcheng', 'hangjiang'];
-    const international = ['singapore', 'tokyo', 'newyork', 'london', 'dubai'];
+    const international = ['xinjiapo', 'dongjing', 'niuyue', 'lundun', 'dibai'];
 
     let html = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
     html += '<button onclick="UI.switchPanel(\'dashboard\')" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:6px 14px;font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.2s;" onmouseover="this.style.background=\'rgba(255,255,255,0.18)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.08)\'">← 返回</button>';
@@ -556,7 +556,9 @@ window.UI = (() => {
     const bDef = BUSINESS_DEFS.find(b => b.id === bizId);
     if (!bDef) return;
     let state = G.businesses[bizId];
-    if (!state) { G.businesses[bizId] = { level: 0, region: null, unlocked: true }; state = G.businesses[bizId]; }
+    if (!state) { G.businesses[bizId] = bDef.unlockMoney === 0
+      ? { level: 1, region: bDef.regions ? bDef.regions[0] : null, unlocked: true }
+      : { level: 0, region: null, unlocked: true }; state = G.businesses[bizId]; }
     // 开业成本（Level 1的cost，富二代8折）
     const lv1 = bDef.levels[0];
     let openCost = (lv1.cost || 0) * 10000;
@@ -879,12 +881,16 @@ window.UI = (() => {
 
   function formatMoneyComma(n) {
     if (n == null || isNaN(n)) return '0';
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' 亿';
-    if (n >= 1e4) return (n / 1e4).toFixed(1) + ' 万';
+    const sign = n < 0 ? '-' : '';
+    n = Math.abs(n);
+    if (n >= 1e16) return sign + (n / 1e16).toFixed(2) + 'e16';
+    if (n >= 1e12) return sign + (n / 1e12).toFixed(2) + '万亿';
+    if (n >= 1e8) return sign + (n / 1e8).toFixed(1) + '亿';
+    if (n >= 1e4) return sign + (n / 1e4).toFixed(1) + '万';
     // Add thousand separators
     const parts = n.toFixed(0).split('.');
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return parts.join('.');
+    return sign + parts.join('.');
   }
 
   function renderAssetTrend(G) {
@@ -1489,12 +1495,11 @@ window.UI = (() => {
     // 计算当前总业务等级
     function getTotalBizLevels() {
       let sum = 0;
-      if (!G.businesses) return 0;
-      Object.keys(G.businesses).forEach(function(cityId) {
-        const cityBiz = G.businesses[cityId] || {};
-        Object.keys(cityBiz).forEach(function(bizId) {
-          const b = cityBiz[bizId];
-          if (b && b.level) sum += b.level;
+      if (!G.cities) return 0;
+      Object.values(G.cities).forEach(function(city) {
+        if (!city.unlocked || !city.businesses) return;
+        Object.values(city.businesses).forEach(function(biz) {
+          if (biz && biz.level) sum += biz.level;
         });
       });
       return sum;
@@ -2223,12 +2228,11 @@ window.UI = (() => {
     // 计算总业务等级
     function getTotalBizLevels() {
       let sum = 0;
-      if (!G.businesses) return 0;
-      Object.keys(G.businesses).forEach(function(cityId) {
-        const cityBiz = G.businesses[cityId] || {};
-        Object.keys(cityBiz).forEach(function(bizId) {
-          const b = cityBiz[bizId];
-          if (b && b.level) sum += b.level;
+      if (!G.cities) return 0;
+      Object.values(G.cities).forEach(function(city) {
+        if (!city.unlocked || !city.businesses) return;
+        Object.values(city.businesses).forEach(function(biz) {
+          if (biz && biz.level) sum += biz.level;
         });
       });
       return sum;
@@ -2563,18 +2567,20 @@ window.UI = (() => {
 
     const maxLoan = Math.floor(G.money * 0.5);
     const rep = G.reputation || 0;
-    const rate = Math.max(0.15 - (rep / 100) * 0.07, 0.08);
+    const npcBon = (typeof calcNpcBonus === 'function') ? calcNpcBonus() : {};
+    const maxLoanActual = Math.floor(G.money * 0.5 * (1 + (npcBon._loanCapBonus || 0)));
+    const rate = Math.max(0.05, 0.15 - (rep / 100) * 0.07 - (npcBon._loanRateBonus || 0));
     const rateDisp = (rate * 100).toFixed(1);
 
     html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">' +
-      '可贷额度: <b style="color:var(--accent-gold)">' + formatMoneyComma(maxLoan) + '</b> (资产50%) | ' +
+      '可贷额度: <b style="color:var(--accent-gold)">' + formatMoneyComma(maxLoanActual) + '</b> (资产50%' + (npcBon._loanCapBonus ? '+金行长加成' : '') + ') | ' +
       '利率: <b>' + rateDisp + '%</b></div>';
 
     if (G.loans && G.loans.length > 0) {
       html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">当前贷款:</div>';
       G.loans.forEach((loan, i) => {
         html += '<div style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">' +
-          '<span>贷款 ' + formatMoneyComma(loan.amount) + ' | 利率 ' + (loan.rate*100).toFixed(1) + '% | 剩余 ' + loan.ticksRemaining + ' Tick</span>' +
+          '<span>贷款 ' + formatMoneyComma(loan.amount) + ' | 利率 ' + (loan.interestRate*100).toFixed(1) + '% | 剩余 ' + loan.remaining + ' Tick</span>' +
           '<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="SGame.repayLoan(' + loan.id + ');UI.renderAll();">还款</button>' +
         '</div>';
       });

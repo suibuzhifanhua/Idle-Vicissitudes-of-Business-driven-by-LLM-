@@ -26,8 +26,6 @@
     if (achRewards.rdBonus) rptGain *= (1 + achRewards.rdBonus);
     // 出身加成：技术极客 techRdSpeed
     if (G.originBonus && G.originBonus.techRdSpeed) rptGain *= G.originBonus.techRdSpeed;
-    // 联动：赵磊好感 > 40 → RPT 获取 +20%
-    if ((G.npcFavor && G.npcFavor.zhaolei) > 40) rptGain *= 1.20;
     // 联动：马记者好感 > 40 → RPT 获取 +20%（舆论情报加速研发）
     if ((G.npcFavor && G.npcFavor.majizhe) > 40) rptGain *= 1.20;
     // 联动：林教授好感 > 40 → RPT 获取 +15%（学术资源）

@@ -27,12 +27,8 @@
       console.log('[商海浮沉] save loaded, G.money:', SGame.G ? SGame.G.money : 'null');
       // 有存档，直接进入游戏
       document.getElementById('origin-screen').style.display = 'none';
-      // 计算离线收益
-      const offline = SGame.calcOfflineIncome();
-      if (offline > 0) {
-        SGame.G.money += offline;
-        SGame.addLog(`离线收益: +${SGame.formatMoney(offline)}`);
-      }
+      // 存档加载时 SGame.load() 内部已调用 checkAndShowOfflineIncome() 处理离线收益
+      // 此处不再重复处理，避免双重计算
       console.log('[商海浮沉] calling UI.renderAll()...');
       UI.renderAll();
       console.log('[商海浮沉] UI.renderAll() done');

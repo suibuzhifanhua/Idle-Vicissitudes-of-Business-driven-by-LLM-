@@ -864,6 +864,8 @@ function calcAchievementRewards() {
     for (const [k, v] of Object.entries(r)) {
       if (k === 'desc') continue;
       if (typeof v === 'boolean') total[k] = v;
+      // 乘法类奖励（<1.0表示减免/衰减，累乘更合理）
+      else if (k === 'opCost' || k === 'loyaltyDecay') total[k] = (total[k] || 1) * v;
       else if (typeof v === 'number') total[k] = (total[k] || 0) + v;
     }
   });
