@@ -15,7 +15,6 @@ window.Settings = (() => {
     employeeBg: true,       // 员工背景LLM
     npcDialog: true,        // NPC对话LLM
     decisionNarrative: true,// 决策叙事LLM
-    weatherEffects: true,   // 天气视觉效果
     // 托管管理设置
     autoMode: {
       eventDecide: true,
@@ -189,17 +188,15 @@ window.Settings = (() => {
           </div>
         </div>
 
-        <!-- 环境设置 -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:6px;">🌍 环境氛围</label>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${toggleRow('set-weatherEffects', '天气视觉效果（雨雪动画）', s.weatherEffects)}
-          </div>
-        </div>
-
         <!-- ==================== 托管管理 ==================== -->
         <div style="border-top:2px solid var(--accent-gold);padding-top:14px;margin-top:4px;">
           <label style="font-size:14px;font-weight:700;color:var(--accent-gold);display:block;margin-bottom:10px;">🤖 托管管理</label>
+          
+          <!-- 托管主开关 -->
+          <div style="margin-bottom:12px;padding:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:8px;">
+            ${toggleRow('set-autoMasterEnabled', '🔛 启用全自动托管（主开关）', getAutoMasterEnabled())}
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px;margin-left:24px;">开启后将自动管理以下所有项目，关闭则全部停止</div>
+          </div>
 
           <!-- 事件决策 -->
           <div style="margin-bottom:10px;">
@@ -312,6 +309,7 @@ window.Settings = (() => {
     // 绑定托管开关的 onchange 事件
     setTimeout(() => {
       const keyMap = {
+        'set-autoMasterEnabled': 'enabled',
         'set-autoEventDecide': 'eventDecide',
         'set-autoOpenBusiness': 'autoOpenBusiness',
         'set-autoUpgradeBusiness': 'autoUpgradeBusiness',
@@ -430,6 +428,15 @@ window.Settings = (() => {
   }
 
   // ========== 托管设置辅助函数 ==========
+  function getAutoMasterEnabled() {
+    try {
+      if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
+        return !!SGame.G.autoMode.enabled;
+      }
+    } catch(e) {}
+    return false;
+  }
+
   function getAuto(key, defVal) {
     try {
       if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
@@ -518,7 +525,6 @@ window.Settings = (() => {
       employeeBg: getChecked('set-employeeBg'),
       npcDialog: getChecked('set-npcDialog'),
       decisionNarrative: getChecked('set-decisionNarrative'),
-      weatherEffects: getChecked('set-weatherEffects'),
       // 托管设置
       auto_eventDecide: getChecked('set-autoEventDecide'),
       auto_eventPreference: getRadioValue('auto_eventPreference') || 'balanced',
@@ -540,6 +546,32 @@ window.Settings = (() => {
     };
 
     save(newSettings);
+
+    // 自动托管主开关：优先尊重主开关选择
+    if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
+      const anyOn = newSettings.auto_eventDecide || newSettings.auto_autoHire ||
+        newSettings.auto_autoOpenBusiness || newSettings.auto_autoUpgradeBusiness ||
+        newSettings.auto_autoFire || newSettings.auto_autoResearch ||
+        newSettings.auto_autoUnlockRegion || newSettings.auto_autoInvest ||
+        newSettings.auto_autoLoan || newSettings.auto_autoRepay ||
+        newSettings.auto_autoGift;
+      const masterCheck = document.getElementById('set-autoMasterEnabled');
+      // 主开关已存在 → 完全按用户选择
+      if (masterCheck) {
+        SGame.G.autoMode.enabled = masterCheck.checked;
+      } else {
+        // 降级：任何子功能开启则启用
+        SGame.G.autoMode.enabled = anyOn;
+      }
+      if (SGame.G.autoMode.enabled && typeof EventSystem !== 'undefined') {
+        EventSystem.addLog('[托管] 全自动托管已开启');
+      }
+      // 同步主UI按钮
+      const mainToggle = document.getElementById('auto-toggle-input');
+      if (mainToggle) mainToggle.checked = SGame.G.autoMode.enabled;
+      const mainStatus = document.getElementById('auto-toggle-status');
+      if (mainStatus) mainStatus.textContent = SGame.G.autoMode.enabled ? '托管中' : '关闭';
+    }
 
     // 强制重检LLM状态
     if (typeof LLM !== 'undefined') {

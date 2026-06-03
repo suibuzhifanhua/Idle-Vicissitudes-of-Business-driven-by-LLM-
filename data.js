@@ -2701,3 +2701,42 @@ const INITIAL_HOT_SEARCH = [
   { rank:5, text:'某创业者辞职创业', heat:5432, category:'社会' },
 ];
 
+// ===================================================
+//  资产模板 — ASSET_TEMPLATES
+//  用于市场随机生成可购买的资产标的
+// ===================================================
+const ASSET_TEMPLATES = [
+  // ---- 房产 (estate) ----
+  { id:'apt_dt', name:'市中心公寓', type:'estate', basePrice:80, volatility:0.03, trend:0.005, rarity:'common', desc:'新海市中心精装公寓一套，地段优越' },
+  { id:'villa_sub', name:'郊区别墅', type:'estate', basePrice:250, volatility:0.04, trend:0.006, rarity:'uncommon', desc:'带花园的独栋别墅，潜力区域' },
+  { id:'office_bld', name:'写字楼整层', type:'estate', basePrice:500, volatility:0.05, trend:0.007, rarity:'rare', desc:'CBD核心地段甲级写字楼' },
+  { id:'shop_lot', name:'商业旺铺', type:'estate', basePrice:150, volatility:0.04, trend:0.004, rarity:'uncommon', desc:'商圈内的临街商铺' },
+  { id:'land_plot', name:'开发地块', type:'estate', basePrice:350, volatility:0.08, trend:0.01, rarity:'rare', desc:'待开发的建设用地，升值空间大' },
+  { id:'penthouse', name:'顶层复式', type:'estate', basePrice:800, volatility:0.06, trend:0.008, rarity:'epic', desc:'270°海景复式公寓' },
+  // ---- 艺术品 (art) ----
+  { id:'oil_painting', name:'当代油画', type:'art', basePrice:30, volatility:0.12, trend:0.003, rarity:'common', desc:'新锐画家的作品，有升值潜力' },
+  { id:'sculpture', name:'现代雕塑', type:'art', basePrice:60, volatility:0.10, trend:0.002, rarity:'uncommon', desc:'知名艺术家的限量雕塑' },
+  { id:'ink_painting', name:'名家水墨', type:'art', basePrice:200, volatility:0.08, trend:0.008, rarity:'rare', desc:'已故名家的真迹水墨画' },
+  { id:'calligraphy', name:'书法珍品', type:'art', basePrice:120, volatility:0.09, trend:0.006, rarity:'rare', desc:'书法大师的传世之作' },
+  { id:'digital_art', name:'数字藏品', type:'art', basePrice:15, volatility:0.20, trend:0.001, rarity:'common', desc:'NFT数字艺术品，波动极大' },
+  { id:'masterpiece', name:'油画巨作', type:'art', basePrice:600, volatility:0.06, trend:0.01, rarity:'epic', desc:'国际拍卖行认证的大师级油画' },
+  // ---- 珠宝 (jewelry) ----
+  { id:'gold_watch', name:'限量腕表', type:'jewelry', basePrice:40, volatility:0.05, trend:0.004, rarity:'common', desc:'瑞士限量机械腕表' },
+  { id:'diamond_ring', name:'钻戒', type:'jewelry', basePrice:90, volatility:0.06, trend:0.003, rarity:'uncommon', desc:'3克拉D色钻戒' },
+  { id:'jade_bracelet', name:'翡翠手镯', type:'jewelry', basePrice:180, volatility:0.07, trend:0.006, rarity:'rare', desc:'老坑冰种翡翠手镯' },
+  { id:'pearl_necklace', name:'珍珠项链', type:'jewelry', basePrice:55, volatility:0.04, trend:0.002, rarity:'uncommon', desc:'南海珍珠项链，光泽润美' },
+  { id:'crown_jewel', name:'传世皇冠', type:'jewelry', basePrice:450, volatility:0.08, trend:0.009, rarity:'epic', desc:'欧洲皇室流传下来的珠宝皇冠' },
+  // ---- 古董 (antique) ----
+  { id:'porcelain', name:'青花瓷瓶', type:'antique', basePrice:100, volatility:0.06, trend:0.007, rarity:'rare', desc:'明清时期的青花瓷精品' },
+  { id:'bronze', name:'青铜器', type:'antique', basePrice:300, volatility:0.05, trend:0.008, rarity:'epic', desc:'战国时期青铜礼器' },
+  { id:'wood_furniture', name:'紫檀家具', type:'antique', basePrice:160, volatility:0.05, trend:0.005, rarity:'rare', desc:'清代紫檀木家具套件' },
+  { id:'ancient_coin', name:'古钱币套装', type:'antique', basePrice:25, volatility:0.08, trend:0.003, rarity:'uncommon', desc:'历代古钱币收藏套装' },
+  { id:'tea_set', name:'紫砂壶', type:'antique', basePrice:50, volatility:0.07, trend:0.004, rarity:'uncommon', desc:'名家制作的紫砂茶壶' },
+  // ---- 股权 (equity) ----
+  { id:'startup_share', name:'创业公司股权', type:'equity', basePrice:20, volatility:0.18, trend:0.002, rarity:'common', desc:'初创科技公司的原始股，高风险高回报' },
+  { id:'fund_lp', name:'私募LP份额', type:'equity', basePrice:200, volatility:0.10, trend:0.006, rarity:'rare', desc:'顶级私募基金的LP份额' },
+  { id:'branch_share', name:'连锁品牌股份', type:'equity', basePrice:120, volatility:0.08, trend:0.005, rarity:'uncommon', desc:'区域性连锁品牌的少数股权' },
+  { id:'mine_right', name:'矿产开采权', type:'equity', basePrice:350, volatility:0.12, trend:0.007, rarity:'epic', desc:'稀有矿产的独家开采权' },
+];
+
+

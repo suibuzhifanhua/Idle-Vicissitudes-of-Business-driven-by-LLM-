@@ -7,9 +7,43 @@ window.UI = (() => {
   let currentPanel = 'dashboard';
   let notificationsEnabled = true;
 
-  // ========== 面板切换 ==========
+  // ========== 面板标签栏（一次性渲染，供 switchPanel 高亮用） ==========
+  var _tabsBuilt = false;
+  function buildPanelTabs() {
+    if (_tabsBuilt) return;
+    _tabsBuilt = true;
+    var container = document.getElementById('center-area');
+    if (!container) return;
+    var tabBar = document.createElement('div');
+    tabBar.id = 'panel-tab-bar';
+    tabBar.style.cssText = 'display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 12px;overflow-x:auto;';
+    var panels = [
+      { id:'dashboard', label:'📊 仪表盘' },
+      { id:'region', label:'🏙 区域' },
+      { id:'business', label:'📋 业务' },
+      { id:'npc', label:'👥 NPC' },
+      { id:'asset', label:'💎 资产' },
+      { id:'achievement', label:'🏆 成就' },
+      { id:'stats', label:'📈 统计' },
+      { id:'ranking', label:'🏅 排行榜' },
+      { id:'milestone', label:'🎯 里程碑' },
+      { id:'worldmap', label:'🗺 地图' },
+      { id:'tech', label:'🔬 科技' },
+      { id:'stock', label:'📊 股票' },
+    ];
+    panels.forEach(function(p) {
+      var span = document.createElement('span');
+      span.className = 'panel-tab';
+      span.setAttribute('data-panel', p.id);
+      span.textContent = p.label;
+      span.style.cursor = 'pointer';
+      span.addEventListener('click', function() { switchPanel(p.id); });
+      tabBar.appendChild(span);
+    });
+    container.insertBefore(tabBar, container.firstChild);
+  }
   function switchPanel(name) {
-    if (!['dashboard', 'region', 'business', 'npc', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking', 'milestone'].includes(name)) return;
+    if (!['dashboard', 'region', 'business', 'npc', 'asset', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking', 'milestone'].includes(name)) return;
     currentPanel = name;
     const tabs = document.querySelectorAll('.panel-tab');
     tabs.forEach(t => t.classList.remove('active'));
@@ -49,6 +83,7 @@ window.UI = (() => {
       case 'stock': renderStockPanel(panel); return;
       case 'ranking': renderRankingPanel(panel); return;
       case 'milestone': renderMilestonePanel(panel); return;
+      case 'asset': renderAssetPanel(panel); return;
     }
   }
 
@@ -173,20 +208,109 @@ window.UI = (() => {
   // (first openSettings removed — was dead code shadowed by the modal-based version)
 
   // ========== 主渲染入口 ==========
+  // ========== 渲染节流（requestAnimationFrame 批处理） ==========
+  let _renderPending = false;
+  let _renderRAFId = null;
+
   function renderAll() {
-    console.log('[DEBUG-ui] renderAll called, SGame.G exists:', !!SGame.G);
     if (!SGame.G) return;
-    if (SGame.G.autoMode) console.log('[DEBUG-ui] autoMode.enabled at renderAll entry:', SGame.G.autoMode.enabled);
-    const safeRender = (name, fn) => { try { fn(); } catch(e) { console.error('[商海浮沉] renderAll/' + name + ' error:', e); } };
+
+    // 已有一个 rAF 在队列中，跳过本次调用（合并渲染）
+    if (_renderPending) return;
+    _renderPending = true;
+
+    _renderRAFId = requestAnimationFrame(() => {
+      _renderPending = false;
+      _renderRAFId = null;
+      _doRenderAll();
+    });
+  }
+
+  // #6-#7 局部更新：缓存上次渲染数据，仅变化时重绘
+  var _renderCache = {
+    dashboard: '', dashMoney: 0, dashIncome: 0, dashExpense: 0, dashEmpCount: 0, dashBizCount: 0,
+    dashRep: 0, dashConn: 0, dashSent: 0, dashAssetCnt: 0, dashStockCnt: 0, dashResearchN: 0,
+    regions: '', regionKeys: '',
+    employees: '', empKeys: '',
+    businesses: '', bizKeys: '',
+    eventLog: '', lastLogIdx: -1,
+    stats: '', statsMoney: 0, statsIncome: 0, statsTick: 0
+  };
+
+  function _shouldSkipDashboard(G) {
+    var empCount = G.employees ? G.employees.length : 0;
+    var bizCount = G.businesses ? Object.values(G.businesses).filter(function(b) { return b.level > 0; }).length : 0;
+    var stockCount = G.stocks ? Object.keys(G.stocks).length : 0;
+    var researchTotal = 0;
+    if (G.completedResearch) {
+      ['digital','ai','blockchain'].forEach(function(k) { researchTotal += (G.completedResearch[k] || 0); });
+    }
+    if (G.activeResearch && G.activeResearch.techId) researchTotal += 1;
+    var assetCnt = G.assets ? G.assets.length : 0;
+    var moneyDelta = Math.abs(_renderCache.dashMoney - (G.money || 0));
+    var repDelta = Math.abs(_renderCache.dashRep - (G.reputation || 0));
+    var sentDelta = Math.abs(_renderCache.dashSent - (G.marketSentiment || 50));
+
+    // 仅金额小幅波动且其他数据均未变化时跳过
+    if (moneyDelta < 200 &&
+        empCount === _renderCache.dashEmpCount &&
+        bizCount === _renderCache.dashBizCount &&
+        repDelta < 1 &&
+        _renderCache.dashConn === (G.connections || 0) &&
+        sentDelta < 2 &&
+        assetCnt === _renderCache.dashAssetCnt &&
+        stockCount === _renderCache.dashStockCnt &&
+        researchTotal === _renderCache.dashResearchN) {
+      return true;
+    }
+    _renderCache.dashMoney = G.money || 0;
+    _renderCache.dashEmpCount = empCount;
+    _renderCache.dashBizCount = bizCount;
+    _renderCache.dashRep = G.reputation || 0;
+    _renderCache.dashConn = G.connections || 0;
+    _renderCache.dashSent = G.marketSentiment || 50;
+    _renderCache.dashAssetCnt = assetCnt;
+    _renderCache.dashStockCnt = stockCount;
+    _renderCache.dashResearchN = researchTotal;
+    return false;
+  }
+
+  function _shouldSkipSimple(panel, key) {
+    if (_renderCache[panel] === key) return true;
+    _renderCache[panel] = key;
+    return false;
+  }
+
+  function _doRenderAll() {
+    const G = SGame.G;
+    const safeRender = (name, fn, skipFn) => { try { if (!skipFn || !skipFn()) fn(); } catch(e) { console.error('[商海浮沉] renderAll/' + name + ' error:', e); } };
+
+    // #6 仪表盘：除金钱外无显著变化时跳过（最昂贵的渲染）
+    safeRender('dashboard', renderDashboard, function() { return _shouldSkipDashboard(G); });
+
+    // #6 员工列表：仅数量或角色变化时重绘
+    var empKeys = G.employees ? G.employees.map(function(e) { return e.id + ':' + (e.role || '') + ':' + (e.loyalty|0) + ':' + (e.fatigue|0); }).join(',') : '';
+    safeRender('employeeList', renderEmployeeList, function() { return _shouldSkipSimple('employees', empKeys); });
+
+    // #6 业务列表：仅等级变化时重绘
+    var bizKeys = G.businesses ? Object.entries(G.businesses).filter(function(e) { return e[1].level > 0; }).map(function(e) { return e[0] + ':' + e[1].level; }).join(',') : '';
+    safeRender('businessList', renderBusinessList, function() { return _shouldSkipSimple('businesses', bizKeys); });
+
+    // #6 区域面板：仅解锁/购买/升级变化时重绘
+    var regionKeys = G.cities ? Object.entries(G.cities).map(function(e) { return e[0] + ':' + (e[1].unlocked ? 'u' : 'l'); }).join(',') : '';
+    safeRender('regions', renderRegions, function() { return _shouldSkipSimple('regions', regionKeys); });
+
+    // #6 事件日志：无新条目时跳过
+    var logIdx = G.eventLog ? G.eventLog.length - 1 : -1;
+    safeRender('eventLog', renderEventLog, function() { return _shouldSkipSimple('eventLog', logIdx); });
+
+    // #6 统计面板：几乎每tick变化但渲染轻量，保持
     safeRender('stats', renderStats);
-    safeRender('regions', renderRegions);
-    safeRender('businessList', renderBusinessList);
-    safeRender('dashboard', renderDashboard);
-    safeRender('employeeList', renderEmployeeList);
+
+    // #7 以下面板变化频率低，始终渲染但仍用 safeRender 保护
     safeRender('npcPanel', renderNPCPanel);
     safeRender('actDisplay', renderActDisplay);
     safeRender('hotSearch', renderHotSearch);
-    safeRender('eventLog', renderEventLog);
     safeRender('hireButton', renderHireButton);
     safeRender('synergyStatus', renderSynergyStatus);
     safeRender('manualButton', renderManualButton);
@@ -377,7 +501,7 @@ window.UI = (() => {
             let condHint = '';
             if (nextDef.reqCond) {
               if (nextDef.reqCond.techLv) {
-                const maxTL = Math.max(...Object.values(G.completedResearch || {}));
+                const maxTL = Math.max(0, ...Object.values(G.completedResearch || {}));
                 if (maxTL < nextDef.reqCond.techLv) { condMet = false; condHint = `需科技Lv${nextDef.reqCond.techLv}`; }
               }
               if (nextDef.reqCond.rep && G.reputation < nextDef.reqCond.rep) { condMet = false; condHint = condHint || `需声誉${nextDef.reqCond.rep}`; }
@@ -456,7 +580,7 @@ window.UI = (() => {
     // 前置条件检查（与 upgradeBusinessMax 一致）
     if (next.reqCond) {
       if (next.reqCond.techLv) {
-        const maxTechLv = Math.max(...Object.values(G.completedResearch || {}));
+        const maxTechLv = Math.max(0, ...Object.values(G.completedResearch || {}));
         if (maxTechLv < next.reqCond.techLv) {
           EventSystem.addLog(`升级需要科技等级 ${next.reqCond.techLv}，当前最高 ${maxTechLv}。`);
           return;
@@ -541,9 +665,20 @@ window.UI = (() => {
     const citySelectHtml = renderCitySelector();
     const rankDef = RANK_TIERS ? RANK_TIERS.find(r => r.name === G.rank) : null;
     const rankIcon = rankDef ? rankDef.icon : '';
-    const weatherInfo = getWeatherDisplay(G);
     const timeInfo = getTimeDisplay(G);
     const tickMs = (typeof CONFIG !== 'undefined' && CONFIG && CONFIG.TICK_MS) ? CONFIG.TICK_MS : 5000;
+
+    // 市场情绪仪表盘显示 (#9)
+    const sentiment = G.marketSentiment !== undefined ? G.marketSentiment : 50;
+    var sentColor, sentIcon, sentLabel;
+    if (sentiment >= 80) { sentColor = 'var(--red-up)'; sentIcon = '🔥'; sentLabel = '极度乐观'; }
+    else if (sentiment >= 65) { sentColor = 'var(--accent-gold)'; sentIcon = '☀'; sentLabel = '偏乐观'; }
+    else if (sentiment >= 45) { sentColor = 'var(--text-secondary)'; sentIcon = '☁'; sentLabel = '中性'; }
+    else if (sentiment >= 25) { sentColor = 'var(--accent-blue)'; sentIcon = '🌧'; sentLabel = '偏悲观'; }
+    else { sentColor = 'var(--green-down)'; sentIcon = '❄'; sentLabel = '极度悲观'; }
+
+    // 资产估值
+    const assetVal = (typeof SGame.getTotalAssetValue === 'function') ? SGame.getTotalAssetValue() : 0;
 
     // 托管状态标签
     let autoStatusHtml = '';
@@ -560,16 +695,91 @@ window.UI = (() => {
       if (am.autoInvest) badges.push(dot + '投资');
       if (am.autoRepay || am.autoLoan) badges.push(dot + '贷款');
       if (am.autoGift) badges.push(dot + '社交');
-      autoStatusHtml = '<div class="auto-status" style="font-size:10px;color:var(--text-muted);padding:4px 0 6px;margin-top:2px;display:flex;align-items:center;gap:2px;flex-wrap:wrap;border-top:1px solid rgba(245,158,11,0.15);">' +
-        '<span style="color:var(--accent-gold);font-weight:600;margin-right:4px;">🤖 托管</span>' +
-        badges.join(' · ') + '</div>';
+
+      // #18 增强托管状态：脉冲绿点 + 运行中横幅
+      autoStatusHtml = '<div class="auto-banner">' +
+        '<div style="display:flex;align-items:center;gap:4px;">' +
+        '<span class="auto-dot"></span>' +
+        '<span style="font-weight:700;font-size:12px;color:#22c55e;">托管运行中</span>' +
+        '<span style="font-size:10px;color:var(--text-muted);margin-left:auto;">🤖</span>' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);padding:4px 0 2px 14px;display:flex;align-items:center;gap:3px;flex-wrap:wrap;">' +
+        badges.join(' · ') + '</div></div>';
+
+      // 托管统计行
+      var stats = G.autoStats;
+      if (stats && stats.totalTicks > 0) {
+        var runtimeMin = stats.startedAt ? Math.floor((Date.now() - stats.startedAt) / 60000) : 0;
+        var runtimeStr = runtimeMin >= 60 ? Math.floor(runtimeMin/60) + 'h' + (runtimeMin%60) + 'm' : runtimeMin + 'min';
+        autoStatusHtml += '<div style="font-size:10px;color:var(--text-muted);padding:4px 2px;display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<span>⏱ 运行' + runtimeStr + '</span>' +
+          '<span>📋 ' + stats.decisions + '决策</span>' +
+          '<span>🏗 ' + (stats.businessesOpened + stats.businessesUpgraded) + '业务</span>' +
+          '<span>👤 +' + stats.employeesHired + '人</span>' +
+          '<span>🎁 ' + stats.giftsGiven + '送礼</span>' +
+          (stats.stocksBought + stats.stocksSold > 0 ? '<span>📈 ' + stats.stocksBought + '买/' + stats.stocksSold + '卖</span>' : '') +
+          (stats.manualWorks > 0 ? '<span>💰 ' + stats.manualWorks + '拉项目</span>' : '') +
+          (stats.researchesStarted > 0 ? '<span>🔬 ' + stats.researchesStarted + '研发</span>' : '') +
+          '</div>';
+      }
+    }
+
+    // #17 股票持仓摘要数据
+    var stockCount = 0, stockPortVal = 0, stockCost = 0;
+    if (G.stocks) {
+      stockCount = Object.keys(G.stocks).length;
+      stockPortVal = typeof SGame.getStockPortfolioValue === 'function' ? SGame.getStockPortfolioValue() : 0;
+      stockCost = typeof SGame.getStockCostBasis === 'function' ? SGame.getStockCostBasis() : 0;
+    }
+    var stockPnl = stockPortVal - stockCost;
+    var stockPnlColor = stockPnl >= 0 ? 'var(--green-down)' : 'var(--red-up)';
+    var stockPnlSign = stockPnl >= 0 ? '+' : '';
+    var stockCardHtml = '';
+    if (stockCount > 0) {
+      stockCardHtml = '<div class="dash-card">' +
+        '<div class="dash-label">📈 股票持仓</div>' +
+        '<div class="dash-value" style="color:var(--accent-gold);font-size:18px;">' + formatMoneyComma(stockPortVal) + '</div>' +
+        '<div class="dash-sub">持有 ' + stockCount + ' 支 | 盈亏 <b style="color:' + stockPnlColor + '">' + stockPnlSign + formatMoneyComma(stockPnl) + '</b></div>' +
+        '</div>';
+    }
+
+    // #17 研发进度摘要数据
+    var researchCardHtml = '';
+    var routes = [
+      { id:'digital', name:'数字化', icon:'💻' },
+      { id:'ai', name:'AI自动化', icon:'🤖' },
+      { id:'blockchain', name:'区块链', icon:'🔗' }
+    ];
+    var researchTotal = 0, researchCompleted = 0;
+    var activeResearchName = '';
+    routes.forEach(function(r) {
+      var techDefs = TECH_TREE && TECH_TREE[r.id] ? TECH_TREE[r.id] : null;
+      if (techDefs && techDefs.levels) {
+        researchTotal += techDefs.levels.length;
+        var completed = (G.completedResearch && G.completedResearch[r.id]) || 0;
+        researchCompleted += completed;
+      }
+    });
+    if (G.activeResearch && G.activeResearch.techId) {
+      var ar = G.activeResearch;
+      var arRoute = routes.find(function(r) { return r.id === ar.techId; });
+      if (arRoute) activeResearchName = arRoute.icon + ' ' + arRoute.name + ' Lv.' + (ar.level);
+    }
+    if (researchTotal > 0 && (researchCompleted > 0 || activeResearchName)) {
+      var researchPct = Math.round(researchCompleted / researchTotal * 100);
+      researchCardHtml = '<div class="dash-card">' +
+        '<div class="dash-label">🔬 研发进度</div>' +
+        '<div class="dash-value" style="color:var(--accent-cyan)">' + researchCompleted + '/' + researchTotal + '</div>' +
+        '<div class="stat-bar" style="margin-top:4px;"><div class="stat-bar-fill" style="width:' + researchPct + '%;background:var(--accent-cyan)"></div></div>' +
+        (activeResearchName ? '<div class="dash-sub">' + activeResearchName + ' 研发中</div>' : '<div class="dash-sub">完成率 ' + researchPct + '%</div>') +
+        '</div>';
     }
 
     el.innerHTML = `
       <div class="dash-card" style="grid-column:span 2;">
         <div class="dash-label">${rankIcon} ${G.rank || '个体户'}  |  ${citySelectHtml}</div>
         <div class="dash-value" style="color:var(--accent-gold);font-size:28px;">${formatMoneyComma(G.money ?? 0)} ${trendHtml}</div>
-        <div class="dash-sub">${timeInfo}  ${weatherInfo}  |  当前总资产</div>
+        <div class="dash-sub">${timeInfo} |  当前总资产</div>
         ${autoStatusHtml}
         ${chartHtml}
       </div>
@@ -598,10 +808,27 @@ window.UI = (() => {
         <div class="dash-value" style="color:var(--accent-cyan)">${Object.values(G.businesses || {}).filter(b => b.level > 0).length}</div>
         <div class="dash-sub">已开业</div>
       </div>
+      ${stockCardHtml}
+      ${researchCardHtml}
       <div class="dash-card">
-        <div class="dash-label">第 ${G.act ?? '--'} 幕</div>
-        <div class="dash-value" style="color:var(--purple)">${G.milestone ?? '--'}</div>
-        <div class="dash-sub">已达成里程碑</div>
+        <div class="dash-label">声望</div>
+        <div class="dash-value" style="color:var(--accent-gold)">${G.reputation ?? 0}</div>
+        <div class="dash-sub">/100</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">人脉</div>
+        <div class="dash-value" style="color:var(--accent-cyan)">${G.connections ?? 0}</div>
+        <div class="dash-sub">上限 ${(typeof CONFIG !== 'undefined' && CONFIG.MAX_CONNECTIONS) || 100}</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">📊 市场情绪</div>
+        <div class="dash-value" style="color:${sentColor}">${sentIcon} ${sentiment}</div>
+        <div class="dash-sub">${sentLabel} (LLM分析)</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">💎 资产估值</div>
+        <div class="dash-value" style="color:var(--accent-gold)">${formatMoneyComma(assetVal)}</div>
+        <div class="dash-sub">${G.assets ? G.assets.length : 0} 件</div>
       </div>
       <div class="dash-card" style="grid-column:span 2;">
         <div class="dash-label">收入构成</div>
@@ -1132,6 +1359,7 @@ window.UI = (() => {
   }
 
   // ========== 事件日志 ==========
+  var eventLogSearch = '';
   function renderEventLog() {
     const el = document.getElementById('event-log');
     if (!el) return;
@@ -1140,12 +1368,54 @@ window.UI = (() => {
       el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">暂无日志</div>';
       return;
     }
-    el.innerHTML = G.eventLog.slice(0, 50).map(log => `
-      <div class="log-entry">
-        <span class="log-time">[${log.time}]</span>
-        <span class="log-text">${log.text}</span>
-      </div>
-    `).join('');
+
+    // #19 搜索过滤
+    var searchTerm = eventLogSearch || '';
+    var logs = G.eventLog.slice(0, 50);
+    if (searchTerm) {
+      var lower = searchTerm.toLowerCase();
+      logs = logs.filter(function(log) { return log.text.toLowerCase().indexOf(lower) !== -1; });
+    }
+    var resultCount = logs.length;
+
+    var html = '<div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;">' +
+      '<input type="text" id="event-log-search" placeholder="搜索日志..." value="' + escapeHtml(searchTerm) + '" ' +
+      'style="flex:1;font-size:11px;padding:4px 8px;background:var(--bg-primary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);outline:none;" ' +
+      'oninput="UI._eventLogSearch(this.value)" />' +
+      (searchTerm ? '<button style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-muted);cursor:pointer;" onclick="UI._clearEventLogSearch()">✕</button>' : '') +
+      '</div>';
+
+    if (resultCount === 0) {
+      html += '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">没有匹配的日志</div>';
+    } else {
+      if (searchTerm) {
+        html += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">找到 ' + resultCount + ' 条匹配</div>';
+      }
+      html += logs.map(function(log) {
+        var text = log.text;
+        if (searchTerm) {
+          text = highlightText(text, searchTerm);
+        }
+        return '<div class="log-entry">' +
+          '<span class="log-time">[' + log.time + ']</span>' +
+          '<span class="log-text">' + text + '</span>' +
+          '</div>';
+      }).join('');
+    }
+
+    el.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function highlightText(text, query) {
+    if (!query) return escapeHtml(text);
+    var escaped = escapeHtml(text);
+    var escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var regex = new RegExp('(' + escapedQuery + ')', 'gi');
+    return escaped.replace(regex, '<mark style="background:rgba(245,158,11,0.3);color:var(--accent-gold);padding:0 1px;border-radius:1px;">$1</mark>');
   }
 
   // ========== 成就面板 ==========
@@ -1220,9 +1490,12 @@ window.UI = (() => {
   // ========== 成就弹窗 ==========
   function showAchievement(icon, name) {
     // 原有顶部横幅
-    document.getElementById('ach-icon').textContent = icon;
-    document.getElementById('ach-name').textContent = name;
+    const achIcon = document.getElementById('ach-icon');
+    const achName = document.getElementById('ach-name');
     const banner = document.getElementById('achievement-banner');
+    if (!achIcon || !achName || !banner) return; // DOM 未就绪
+    achIcon.textContent = icon;
+    achName.textContent = name;
     banner.classList.add('show');
     if (achievementTimer) clearTimeout(achievementTimer);
     achievementTimer = setTimeout(() => { banner.classList.remove('show'); }, 4000);
@@ -1230,7 +1503,7 @@ window.UI = (() => {
     showToast(icon, name, '成就解锁！');
   }
 
-  function showToast(icon, title, desc) {
+  function showToast(icon, title, desc, duration) {
     if (!notificationsEnabled) return;
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -1238,10 +1511,10 @@ window.UI = (() => {
     toast.className = 'toast-notify';
     toast.innerHTML = '<div style="display:flex;align-items:center"><span class="toast-icon">' + (icon || '') + '</span><div><div class="toast-name">' + (title || '') + '</div><div class="toast-desc">' + (desc || '') + '</div></div></div>';
     container.appendChild(toast);
-    // 3秒后自动移除
+    // 默认3.2秒后自动移除
     setTimeout(() => {
       if (toast.parentNode) toast.remove();
-    }, 3200);
+    }, (typeof duration === 'number' ? duration : 3200));
     // 限制最多5个
     const toasts = container.querySelectorAll('.toast-notify');
     if (toasts.length > 5) toasts[0].remove();
@@ -1271,6 +1544,59 @@ window.UI = (() => {
     document.getElementById('modal-settings').classList.add('active');
   }
 
+  // ========== #16 城市总览面板 ==========
+  function showCityOverview() {
+    var G = SGame.G;
+    if (!G) return;
+    var cityIds = Object.keys(CITIES);
+    var html = '<div style="max-height:60vh;overflow-y:auto;">';
+    cityIds.forEach(function(cid) {
+      var city = CITIES[cid];
+      var state = G.cities && G.cities[cid];
+      var unlocked = state && state.unlocked;
+      var isCurrent = G.currentCityId === cid;
+      var regions = city.regionIds ? city.regionIds.map(function(rid) {
+        var r = REGIONS[rid];
+        var rState = state && state.regions ? state.regions[rid] : null;
+        var rUnlocked = rState && rState.unlocked;
+        var rPurchased = rState && rState.purchased;
+        var icon = rPurchased ? '✅' : (rUnlocked ? '🔓' : '🔒');
+        return '<span style="font-size:10px;color:var(--text-muted);margin-right:6px;">' + icon + ' ' + (r ? r.name : rid) + '</span>';
+      }).join('') : '';
+
+      html += '<div style="margin-bottom:12px;padding:10px;background:var(--bg-hover);border-radius:8px;border-left:3px solid ' + (isCurrent ? 'var(--accent-gold)' : (unlocked ? 'var(--green-down)' : 'var(--border)')) + '">';
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">';
+      html += '<span style="font-size:18px;">' + city.icon + '</span>';
+      html += '<span style="font-weight:700;color:' + (unlocked ? 'var(--text-primary)' : 'var(--text-muted)') + '">' + city.name + '</span>';
+      if (isCurrent) html += '<span style="font-size:9px;padding:1px 6px;background:rgba(245,158,11,0.15);color:var(--accent-gold);border-radius:4px;">当前</span>';
+      if (!unlocked) {
+        html += '<span style="font-size:9px;padding:1px 6px;background:rgba(100,100,100,0.15);color:var(--text-muted);border-radius:4px;margin-left:auto;">未解锁</span>';
+      } else if (city.isInternational) {
+        html += '<span style="font-size:9px;padding:1px 6px;background:rgba(168,85,247,0.15);color:var(--purple);border-radius:4px;margin-left:auto;">🌏 国际</span>';
+      }
+      html += '</div>';
+      html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">' + city.desc + '</div>';
+      html += '<div style="font-size:10px;color:var(--accent-gold);margin-bottom:4px;">🏆 ' + (city.cityBonus ? city.cityBonus.desc : '无特殊加成') + '</div>';
+      if (unlocked) {
+        html += '<div style="margin-top:4px;">' + regions + '</div>';
+        html += '<button class="btn" style="font-size:10px;padding:2px 8px;margin-top:6px;" onclick="UI.switchCity(\'' + cid + '\');document.getElementById(\'modal-city-overview\').classList.remove(\'active\');">切换至此城市</button>';
+      } else {
+        html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">' +
+          '💰 需要 ¥' + (city.unlockMoney || 0).toLocaleString() +
+          (city.minAct ? ' | 幕次 ≥ ' + city.minAct : '') +
+          '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    document.getElementById('city-overview-content').innerHTML = html;
+    document.getElementById('modal-city-overview').classList.add('active');
+  }
+
+  function closeCityOverview() {
+    document.getElementById('modal-city-overview').classList.remove('active');
+  }
+
   // ========== 托管按钮 ==========
   function renderAutoButton() {
     try {
@@ -1287,26 +1613,17 @@ window.UI = (() => {
 
   function toggleAutoMode() {
     try {
-      var enabled = !(SGame.G && SGame.G.autoMode && SGame.G.autoMode.enabled);
-      if (SGame.G && SGame.G.autoMode) {
-        SGame.G.autoMode.enabled = enabled;
-        // 首次开启托管时，确保所有子配置都已初始化
-        if (enabled && SGame.G.autoMode.autoOpenBusiness === undefined) {
-          SGame.G.autoMode.autoOpenBusiness = true;
-          SGame.G.autoMode.autoUpgradeBusiness = true;
-          SGame.G.autoMode.autoHire = true;
-          SGame.G.autoMode.autoResearch = true;
-          SGame.G.autoMode.eventDecide = true;
-          SGame.G.autoMode.autoUnlockRegion = true;
-          SGame.G.autoMode.autoRepay = true;
-        }
+      // 统一入口：全部委托给 SGame.toggleAutoMode()（core.js 的完整实现）
+      if (typeof SGame !== 'undefined' && typeof SGame.toggleAutoMode === 'function') {
+        SGame.toggleAutoMode();
       }
-      if (enabled) {
+      // Toast 反馈
+      var isAuto = SGame.G && SGame.G.autoMode && SGame.G.autoMode.enabled;
+      if (isAuto) {
         showToast('🤖', '全自动托管已开启', '系统将自动管理运营决策');
       } else {
         showToast('⏸', '托管已关闭', '已恢复手动管理模式');
       }
-      if (typeof SGame.save === 'function') SGame.save();
       renderAll();
     } catch(e) {
       console.error('[商海浮沉] toggleAutoMode error:', e);
@@ -1429,8 +1746,10 @@ window.UI = (() => {
   // ========== 破产面板 ==========
   function showBankruptcyPanel() {
     const ending = ENDINGS ? ENDINGS['破产清算'] : { title:'破产清算', desc:'资金链断裂，公司进入破产清算。', icon:'💸' };
-    document.body.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg-primary);text-align:center;padding:40px">
+    const overlay = document.createElement('div');
+    overlay.id = 'bankruptcy-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg-primary);display:flex;align-items:center;justify-content:center;z-index:9999;text-align:center;padding:40px';
+    overlay.innerHTML = `
         <div>
           <div style="font-size:80px;margin-bottom:20px">${ending.icon}</div>
           <h1 style="font-size:32px;margin-bottom:12px;background:linear-gradient(135deg,var(--red-up),var(--accent-gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent">${ending.title}</h1>
@@ -1440,8 +1759,8 @@ window.UI = (() => {
           </div>
           <button class="btn" style="font-size:16px;padding:12px 40px" onclick="SGame.reset()">重新开始</button>
         </div>
-      </div>
     `;
+    document.body.appendChild(overlay);
   }
 
   // ========== 教程引导 ==========
@@ -1455,11 +1774,36 @@ window.UI = (() => {
 
   let tutorialStep = 0;
   const tutorialSteps = [
-    { title:'欢迎来到商海浮沉', text:'这是一个商业模拟放置游戏。你将扮演一位创业者，在新海市建立自己的商业帝国。', highlight:null },
-    { title:'仪表板', text:'这里显示你的资产、收益、支出等关键数据。游戏每5秒自动推进一个Tick，计算收益和事件。', highlight:'#dashboard' },
-    { title:'业务管理', text:'在左侧面板可以查看和升级你的业务。不同区域有不同加成效果，选择合适的区域经营业务。', highlight:'#business-list' },
-    { title:'员工与NPC', text:'招聘员工提升业务效率，与NPC建立关系获取资源和信息。好感度越高，帮助越大。', highlight:'#npc-panel' },
-    { title:'事件决策', text:'游戏中会随机触发事件，你的每个决策都会影响公司命运。做好准备，开始你的商业征途吧！', highlight:'#event-area' },
+    {
+      title: '欢迎来到商海浮沉',
+      text: '你是一名怀揣梦想的创业者，来到新海市打拼。初始资金 ' + (typeof SGame !== 'undefined' && SGame.G ? formatMoneyComma(SGame.G.money) : '¥20,000') + '，你的目标是成为商业大亨。',
+      highlight: null
+    },
+    {
+      title: '第一步：开业做生意',
+      text: '左侧「业务」面板显示可开设的业务类型。点击任意业务旁的「🚀 开业」按钮，用初始资金开启你的第一门生意。\n\n💡 提示：业务会在每个Tick自动产生收益。',
+      highlight: '#business-list'
+    },
+    {
+      title: '第二步：雇佣帮手',
+      text: '生意做大后需要员工。右侧「员工」面板可以招聘人才。\n\n不同角色有不同加成：经理提升整体效率，销售提升零售收入，开发提升科技产出。\n\n💡 注意：员工需要发工资，请量力而行。',
+      highlight: '#employee-list'
+    },
+    {
+      title: '第三步：仪表盘总览',
+      text: '顶部仪表盘展示你的核心财务数据：\n• Tick收益：每周期净利润\n• 员工数/业务数：经营规模\n• 声望/人脉：社会影响力\n• 市场情绪：随LLM新闻波动，影响收益\n\n💡 托管模式下AI会帮你自动决策。',
+      highlight: '#dashboard'
+    },
+    {
+      title: '第四步：事件与决策',
+      text: '游戏会随机触发商业事件。你的每个决策都会影响：\n• 金钱增减\n• 声望变化（高声望解锁更多业务和区域）\n• 员工忠诚度\n• 市场情绪\n\n💡 没有绝对正确的选择，见机行事！',
+      highlight: '#event-area'
+    },
+    {
+      title: '更多玩法',
+      text: '🎯 解锁新城市区域获取区域加成\n💼 投资收藏品赚取差价\n📈 炒股把握市场时机\n🔬 研发科技树获得全局增益\n\n准备好了吗？点击「开始游戏」进入商海！',
+      highlight: null
+    }
   ];
 
   function renderTutorialStep(step) {
@@ -1692,19 +2036,8 @@ window.UI = (() => {
     input.click();
   }
 
-  // ========== 环境主题切换 ==========
-  const WEATHER_ICONS = {
-    sunny: '☀️', cloudy: '⛅', rainy: '🌧️', storm: '⛈️',
-    foggy: '🌫️', snow: '❄️', heatwave: '🔥',
-  };
+  // ========== 时间显示 ==========
   const TIME_ICONS = { dawn: '🌅', day: '☀️', dusk: '🌇', night: '🌙' };
-
-  function getWeatherDisplay(G) {
-    if (!G || !G.currentWeather) return '';
-    const icon = WEATHER_ICONS[G.currentWeather] || '';
-    const w = WEATHERS[G.currentWeather];
-    return `${icon} ${w ? w.name : G.currentWeather}`;
-  }
 
   function getTimeDisplay(G) {
     if (!G) return '';
@@ -1754,7 +2087,7 @@ window.UI = (() => {
     const isPos = item.isPositive !== false;
     const catColor = isPos ? 'var(--green-down)' : 'var(--red-up)';
     const emoji = isPos ? '📈' : '📉';
-    showToast(`${emoji} [${item.category}] ${item.text}`, 3000);
+    showToast(emoji, `[${item.category}] ${item.text}`, '', 3000);
   }
 
   // ========== 暂停/继续按钮（原"退休"改为"暂停"） ==========
@@ -1876,7 +2209,7 @@ window.UI = (() => {
       G.loans.forEach((loan, i) => {
         html += '<div style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">' +
           '<span>贷款 ' + formatMoneyComma(loan.amount) + ' | 利率 ' + (loan.rate*100).toFixed(1) + '% | 剩余 ' + loan.ticksRemaining + ' Tick</span>' +
-          '<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="SGame.repayLoan(' + i + ');UI.renderAll();">还款</button>' +
+          '<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="SGame.repayLoan(' + loan.id + ');UI.renderAll();">还款</button>' +
         '</div>';
       });
     }
@@ -1932,6 +2265,203 @@ window.UI = (() => {
     return null;
   }
 
+  // ===================================================
+  //  资产/拍卖行渲染器
+  // ===================================================
+
+  function renderAssetPanel(panel) {
+    if (!panel) return;
+    var G = SGame.G;
+    if (!G) return;
+    var html = '';
+
+    // 标题栏
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">';
+    html += '<button onclick="UI.switchPanel(\'dashboard\')" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:6px 14px;font-size:13px;cursor:pointer;font-family:var(--font);">← 返回</button>';
+    html += '<div style="font-size:16px;font-weight:700;color:var(--accent-gold);">💎 资产中心</div>';
+    html += '<div style="font-size:11px;color:var(--text-secondary);">总估值 ' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(SGame.getTotalAssetValue ? SGame.getTotalAssetValue() : 0) : '0') + ' | 持有 ' + G.assets.length + ' 件</div>';
+    html += '</div>';
+
+    // ===== 第一行：市场 + 我的资产 =====
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;">';
+
+    // 左侧：资产市场
+    html += '<div style="flex:1;min-width:320px;">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--accent-cyan);margin-bottom:8px;">📈 资产市场</div>';
+    var listings = G.assetMarketListings || [];
+    if (listings.length === 0) {
+      html += '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;">市场暂无挂牌资产，等待刷新...</div>';
+    } else {
+      html += '<div style="max-height:360px;overflow-y:auto;">';
+      for (var i = 0; i < listings.length; i++) {
+        var l = listings[i];
+        var typeName = (typeof SGame.getAssetTypeName === 'function') ? SGame.getAssetTypeName(l.type) : l.type;
+        var rarityName = (typeof SGame.getRarityLabel === 'function') ? SGame.getRarityLabel(l.rarity) : l.rarity;
+        var rarityColor = { common:'var(--text-secondary)', uncommon:'var(--accent-green)', rare:'var(--accent-blue)', epic:'var(--purple)' }[l.rarity] || 'var(--text-secondary)';
+        var canBuy = G.money >= l.price && G.assets.length < ((typeof CONFIG !== 'undefined' && CONFIG.ASSET_MAX_SLOTS) || 20);
+        html += '<div class="asset-card" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;background:rgba(255,255,255,0.02);">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div>';
+        html += '<span style="color:' + rarityColor + ';font-weight:700;font-size:13px;">' + l.name + '</span>';
+        html += '<span style="font-size:10px;color:var(--text-muted);margin-left:8px;">' + typeName + '</span>';
+        html += '<span style="font-size:10px;color:' + rarityColor + ';margin-left:4px;">[' + rarityName + ']</span>';
+        html += '</div>';
+        html += '<div style="text-align:right;">';
+        html += '<div style="font-size:14px;font-weight:700;color:var(--accent-gold);">' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(l.price) : l.price) + '</div>';
+        html += '<button onclick="SGame.buyAsset(' + i + ');UI.renderAssetPanel(document.getElementById(\'center-panel\'));" ' +
+          (canBuy ? 'class=\'btn\' style=\'font-size:11px;padding:3px 10px;\'' : 'disabled style=\'font-size:11px;padding:3px 10px;opacity:0.3;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text-muted);\'') +
+          '>' + (canBuy ? '购买' : (G.money < l.price ? '资金不足' : '槽位满')) + '</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="font-size:10px;color:var(--text-secondary);margin-top:4px;">' + (l.desc || '') + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;text-align:center;">市场每 ' + ((typeof CONFIG !== 'undefined' && CONFIG.ASSET_REFRESH_TICKS) || 12) + ' Tick 刷新</div>';
+    html += '</div>';
+
+    // 右侧：我的资产
+    html += '<div style="flex:1;min-width:320px;">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--accent-gold);margin-bottom:8px;">🏠 我的资产 (' + G.assets.length + '/' + ((typeof CONFIG !== 'undefined' && CONFIG.ASSET_MAX_SLOTS) || 20) + ')</div>';
+    if (G.assets.length === 0) {
+      html += '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;">暂无资产，去市场逛逛吧</div>';
+    } else {
+      html += '<div style="max-height:360px;overflow-y:auto;">';
+      for (var j = 0; j < G.assets.length; j++) {
+        var a = G.assets[j];
+        var aTypeName = (typeof SGame.getAssetTypeName === 'function') ? SGame.getAssetTypeName(a.type) : a.type;
+        var aRarityColor = { common:'var(--text-secondary)', uncommon:'var(--accent-green)', rare:'var(--accent-blue)', epic:'var(--purple)' }[a.rarity] || 'var(--text-secondary)';
+        var curVal = a.currentPrice || a.purchasePrice;
+        var pnl = curVal - a.purchasePrice;
+        var pnlColor = pnl >= 0 ? 'var(--red-up)' : 'var(--green-down)';
+        var pnlSign = pnl >= 0 ? '+' : '';
+        var inAuction = G.assetAuctionList && G.assetAuctionList.some(function(auc) { return auc.assetId === a.id; });
+
+        html += '<div class="owned-asset-card" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;background:rgba(255,255,255,0.02);' + (inAuction ? 'border-color:var(--accent-cyan);' : '') + '">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div>';
+        html += '<span style="color:' + aRarityColor + ';font-weight:700;font-size:13px;">' + a.name + '</span>';
+        html += '<span style="font-size:10px;color:var(--text-muted);margin-left:6px;">' + aTypeName + '</span>';
+        if (inAuction) html += '<span style="font-size:10px;color:var(--accent-cyan);margin-left:6px;">🔨 拍卖中</span>';
+        html += '</div>';
+        html += '<div style="text-align:right;">';
+        html += '<div style="font-size:14px;font-weight:700;color:var(--accent-gold);">' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(curVal) : curVal) + '</div>';
+        html += '<div style="font-size:10px;color:' + pnlColor + ';">' + pnlSign + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(pnl) : pnl) + '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+        if (!inAuction) {
+          // 挂牌按钮
+          var defaultAsk = Math.round(curVal * 1.05);
+          html += '<button onclick="var p=prompt(\'挂牌价（市场价' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(curVal) : curVal) + '）:\', ' + defaultAsk + ');if(p){SGame.listAssetForAuction(\'' + a.id + '\',parseInt(p));UI.renderAssetPanel(document.getElementById(\'center-panel\'));}" ' +
+            'class=\'btn\' style=\'font-size:11px;padding:3px 10px;\'>🔨 挂牌</button>';
+          // 典当按钮
+          html += '<button onclick="if(confirm(\'⚠️ 典当将以市场价的38%-55%紧急变现，确认？\')){SGame.pawnAsset(\'' + a.id + '\');UI.renderAssetPanel(document.getElementById(\'center-panel\'));}" ' +
+            'class=\'btn\' style=\'font-size:11px;padding:3px 10px;background:rgba(239,68,68,0.15);\'>💸 典当</button>';
+        } else {
+          // 取消拍卖
+          var aucIdx = -1;
+          for (var ai = 0; ai < G.assetAuctionList.length; ai++) {
+            if (G.assetAuctionList[ai].assetId === a.id) { aucIdx = ai; break; }
+          }
+          if (aucIdx >= 0) {
+            var auc = G.assetAuctionList[aucIdx];
+            var remainingTicks = auc.sellTick - G.tickCount;
+            html += '<span style="font-size:10px;color:var(--text-secondary);">剩余 ' + remainingTicks + ' Tick</span>';
+            html += '<button onclick="SGame.cancelAuction(\'' + auc.assetId + '\');UI.renderAssetPanel(document.getElementById(\'center-panel\'));" ' +
+              'class=\'btn\' style=\'font-size:11px;padding:3px 10px;\'>取消拍卖</button>';
+          }
+        }
+        html += '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>'; // end flex row
+
+    // ===== 拍卖行 =====
+    if (G.assetAuctionList && G.assetAuctionList.length > 0) {
+      html += '<div style="margin-top:20px;">';
+      html += '<div style="font-size:13px;font-weight:700;color:var(--accent-cyan);margin-bottom:8px;">🔨 拍卖行（进行中）</div>';
+      html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+      for (var ak = 0; ak < G.assetAuctionList.length; ak++) {
+        var aucItem = G.assetAuctionList[ak];
+        var ast = null;
+        for (var ai = 0; ai < G.assets.length; ai++) {
+          if (G.assets[ai].id === aucItem.assetId) { ast = G.assets[ai]; break; }
+        }
+        if (!ast) continue;
+        var remaining = aucItem.sellTick - G.tickCount;
+        html += '<div style="border:1px solid var(--accent-cyan);border-radius:8px;padding:10px;min-width:180px;background:rgba(6,182,212,0.05);">';
+        html += '<div style="font-size:12px;font-weight:700;">' + ast.name + '</div>';
+        html += '<div style="font-size:10px;color:var(--text-secondary);">要价：' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(aucItem.askPrice) : aucItem.askPrice) + '</div>';
+        html += '<div style="font-size:10px;color:' + (remaining <= 0 ? 'var(--green-down)' : 'var(--text-secondary)') + ';">' + (remaining <= 0 ? '即将成交' : '剩余 ' + remaining + ' Tick') + '</div>';
+        html += '</div>';
+      }
+      html += '</div></div>';
+    }
+
+    panel.innerHTML = html;
+  }
+
+  // ===================================================
+  //  LLM 增强渲染器 (#5, #7, #9)
+  // ===================================================
+
+  // #9: 市场情绪渲染
+  function renderMarketSentiment() {
+    // 仪表盘会通过 renderDashboard 整体刷新，因此此处仅做标记
+    // 非仪表盘视图时不需要额外渲染
+    if (currentPanel === 'dashboard') renderDashboard();
+  }
+
+  // #5: 商业新闻渲染（在右侧面板中展示）
+  function renderNewsFeed() {
+    var logEl = document.getElementById('event-log');
+    if (!logEl) return; // 如果不存在独立日志区则合并到事件日志
+    var G = SGame.G;
+    if (!G || !G.newsFeed || !G.newsFeed.length) return;
+
+    // 在事件日志顶部插入最新一条 LLM 新闻
+    var existingNews = logEl.querySelector('.llm-news-entry');
+    if (existingNews) existingNews.remove();
+
+    var latest = G.newsFeed[0];
+    var newsDiv = document.createElement('div');
+    newsDiv.className = 'log-entry llm-news-entry';
+    newsDiv.style.cssText = 'border-left: 2px solid var(--accent-cyan); padding-left: 8px; background: rgba(6,182,212,0.05); border-radius: 4px;';
+    newsDiv.innerHTML = '<span class="log-time">Tick' + latest.tick + '</span> <span style="font-size:10px;color:var(--accent-cyan)">📰 商业快讯</span><br><span class="log-text">' + latest.text + '</span>';
+    if (logEl.firstChild) {
+      logEl.insertBefore(newsDiv, logEl.firstChild);
+    } else {
+      logEl.appendChild(newsDiv);
+    }
+  }
+
+  // #7: 竞争对手情报渲染（在右侧面板展示）
+  function renderRivalReport() {
+    var logEl = document.getElementById('event-log');
+    if (!logEl) return;
+    var G = SGame.G;
+    if (!G || !G.rivalReportData || !G.rivalReportData.length) return;
+
+    var existingReport = logEl.querySelector('.llm-rival-entry');
+    if (existingReport) existingReport.remove();
+
+    var latest = G.rivalReportData[0];
+    var reportDiv = document.createElement('div');
+    reportDiv.className = 'log-entry llm-rival-entry';
+    reportDiv.style.cssText = 'border-left: 2px solid var(--purple); padding-left: 8px; background: rgba(168,85,247,0.05); border-radius: 4px;';
+    reportDiv.innerHTML = '<span class="log-time">Tick' + latest.tick + '</span> <span style="font-size:10px;color:var(--purple)">🔍 竞争情报</span><br><span class="log-text">' + latest.text + '</span>';
+    if (logEl.firstChild) {
+      logEl.insertBefore(reportDiv, logEl.firstChild);
+    } else {
+      logEl.appendChild(reportDiv);
+    }
+  }
+
   return {
     renderAll,
     renderStats, renderRegions, renderBusinessList,
@@ -1947,6 +2477,7 @@ window.UI = (() => {
     renderManualButton, doManualWork, startCdTimer,
     openSkillTree, buySkill,
     showBankruptcyPanel,
+    showCityOverview, closeCityOverview,
     showTutorial, nextTutorialStep, skipTutorial, closeTutorial,
     renderAutoButton, toggleAutoMode,
     showToast, showMilestone, renderStatPanel,
@@ -1956,6 +2487,9 @@ window.UI = (() => {
     switchPanel, openSettings,
     renderRankingPanel, showNewsDetail, retireGame,
     renderTechPanel, renderStockPanel,
+    // 事件日志搜索辅助方法 (#19)
+    _eventLogSearch: function(val) { eventLogSearch = val; renderEventLog(); },
+    _clearEventLogSearch: function() { eventLogSearch = ''; renderEventLog(); },
     // 新增功能
     showOfflineIncomePopup, claimOfflineIncome,
     batchHire,
@@ -1963,5 +2497,9 @@ window.UI = (() => {
     // HR 统管
     batchTrainDept, batchHireDept, toggleDeptDetail,
     renderMilestonePanel,
+    buildPanelTabs,
+    // LLM 增强渲染 (#5, #7, #9)
+    renderNewsFeed, renderRivalReport, renderMarketSentiment,
+    renderAssetPanel,
   };
 })();

@@ -144,7 +144,7 @@ window.NPCSystem = (() => {
 
     // NPC特定动作
     if (npcId === 'zhaolei') {
-      actions.push({ text: '询问行业趋势（人脉+1，好感+2）', fn: () => { changeFavor('zhaolei', 2); SGame.G.connections++; EventSystem.addLog('赵磊分享了一些行业见解。'); } });
+      actions.push({ text: '询问行业趋势（人脉+1，好感+2）', fn: () => { changeFavor('zhaolei', 2); addConnections(1); EventSystem.addLog('赵磊分享了一些行业见解。'); } });
       actions.push({ text: '谈合作（需求：资金100万）', fn: () => {
         if (SGame.G.money < 1e6) { EventSystem.addLog('资金不足，无法与赵磊合作。'); return; }
         SGame.G.money -= 1e6; changeFavor('zhaolei', 10); EventSystem.addLog('你与赵磊达成了技术合作。');
@@ -194,10 +194,12 @@ window.NPCSystem = (() => {
 
     // idx 2+ 是各 NPC 特定动作
     if (npcId === 'zhaolei') {
-      if (idx === 2) { changeFavor('zhaolei', 2); SGame.G.connections++; EventSystem.addLog('赵磊分享了一些行业见解。'); }
+      if (idx === 2) { changeFavor('zhaolei', 2); SGame.addConnections(1); EventSystem.addLog('赵磊分享了一些行业见解。'); }
       else if (idx === 3) {
         if (SGame.G.money < 1e6) { EventSystem.addLog('资金不足，无法与赵磊合作。'); closeDialog(); return; }
-        SGame.G.money -= 1e6; changeFavor('zhaolei', 10); EventSystem.addLog('你与赵磊达成了技术合作。');
+        SGame.G.money -= 1e6; changeFavor('zhaolei', 10);
+        SGame.addConnections(2); // 谈合作附带人脉
+        EventSystem.addLog('你与赵磊达成了技术合作。');
       }
     } else if (npcId === 'lichu') {
       if (idx === 2) { changeFavor('lichu', 1); EventSystem.addLog('李处帮你解读了最新政策。'); }
@@ -287,7 +289,7 @@ window.NPCSystem = (() => {
     if (favor >= 80) {
       // 亲密：永久加成
       SGame.G.money += Math.floor(Math.random() * 50000) + 20000;
-      SGame.G.connections += 3;
+      SGame.addConnections(2); // 深度合作，人脉+2
       changeFavor(npcId, 3);
       EventSystem.addLog(`${npc.name}：「咱们是老朋友了，这个项目稳赚！」（获得资金+人脉加成）`);
       result = { ok: true, msg: '深度合作达成，获得大幅加成' };
@@ -309,7 +311,7 @@ window.NPCSystem = (() => {
     } else if (favor >= 30) {
       // 中立：小收益
       SGame.G.money += Math.floor(Math.random() * 8000) + 3000;
-      SGame.G.connections += 1;
+      SGame.addConnections(1);
       changeFavor(npcId, 2);
       EventSystem.addLog(`${npc.name}：「可以试试，但别抱太大期望。」`);
       result = { ok: true, msg: '初步合作，获得小额收益' };
@@ -492,8 +494,9 @@ window.NPCSystem = (() => {
 
     // 人脉
     if (reward.connections) {
-      SGame.G.connections = (SGame.G.connections || 0) + reward.connections;
-      EventSystem.addLog(`人脉 ${reward.connections > 0 ? '+' : ''}${reward.connections}`);
+      const scaled = Math.floor(reward.connections * ((typeof CONFIG !== 'undefined' && CONFIG.CONNECTIONS_GAIN_SCALE) || 0.6));
+      SGame.addConnections(scaled);
+      EventSystem.addLog(`人脉 ${scaled > 0 ? '+' : ''}${scaled}`);
     }
 
     // NPC好感度（含联动传播）

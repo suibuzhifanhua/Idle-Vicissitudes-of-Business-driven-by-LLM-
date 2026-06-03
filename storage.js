@@ -1,31 +1,20 @@
 // storage.js - 文件存档适配层（仅通过 server.py API 读写游戏目录下的 saves/ 文件夹）
 window.Storage = (() => {
-  // 缓存：从 __preloadData 初始化，之后同步读写
+  // 缓存：从 __preloadPromise 异步初始化
   const cache = {};
   let serverReady = false;
 
-  // 从预加载数据填充缓存（index.html 中的内联脚本已同步获取）
-  if (window.__preloadData) {
-    Object.assign(cache, window.__preloadData);
-    serverReady = true;
-  }
-
-  // 异步确认服务器状态，成功后把数据写入缓存
-  fetch('/api/preload')
-    .then(r => {
-      if (r.ok) {
-        serverReady = true;
-        return r.json();
-      }
-      throw new Error('preload not ok');
-    })
+  // 单一异步预加载入口（不阻塞页面渲染），暴露 ready Promise 供 main.js 等待
+  const _readyPromise = (window.__preloadPromise || Promise.resolve(null))
     .then(data => {
       if (data && typeof data === 'object') {
         Object.assign(cache, data);
-        console.log('[Storage] async preload ok, keys:', Object.keys(data));
+        serverReady = true;
+        console.log('[Storage] preload ok, keys:', Object.keys(data));
       }
+      return serverReady;
     })
-    .catch(() => { serverReady = false; });
+    .catch(() => { serverReady = false; return false; });
 
   // 同步从服务器读取单个 key（get 的兜底）
   function syncLoadFromServer(key) {
@@ -65,5 +54,7 @@ window.Storage = (() => {
     // 不再清除 localStorage
   }
 
-  return { get, set, remove };
+  function ready() { return _readyPromise; }
+
+  return { get, set, remove, ready };
 })();

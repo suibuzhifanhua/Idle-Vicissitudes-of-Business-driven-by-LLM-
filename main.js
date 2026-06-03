@@ -49,32 +49,22 @@
     }
   }
 
-  // 带重试的存档检查：等 Storage 异步 preload 完成后再试一次
-  function checkSaveWithRetry() {
-    const found = checkSave();
-    if (found) return;
-    // 没找到存档，等 3 秒让异步 preload 完成，再试一次
-    console.log('[商海浮沉] save not found, will retry after 3s...');
-    setTimeout(() => {
-      console.log('[商海浮沉] retrying checkSave() after delay...');
-      const found2 = checkSave();
-      if (!found2) {
-        // 两次都没找到，显示出身选择界面
-        console.log('[商海浮沉] still no save, showing origin screen');
-        renderOriginCards();
-        const btn = document.getElementById('start-btn');
-        if (btn) {
-          btn.addEventListener('click', function() {
-            const selected = document.querySelector('.origin-card.selected');
-            if (!selected) return;
-            const nameInput = document.getElementById('player-name-input');
-            const playerName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : null;
-            if (!confirm('⚠️ 一旦踏上商海征途，便再无回头之路。\n\n每一个决策都将改写命运，确定要开始吗？')) return;
-            SGame.startGame(selected.dataset.origin, playerName);
-          });
-        }
-      }
-    }, 3000);
+  // 带重试的存档检查：等 Storage 异步预加载完成后再检查
+  function checkSaveOrShowOrigin() {
+    if (checkSave()) return;
+    // 没找到存档，显示出身选择界面
+    renderOriginCards();
+    const btn = document.getElementById('start-btn');
+    if (btn) {
+      btn.addEventListener('click', function() {
+        const selected = document.querySelector('.origin-card.selected');
+        if (!selected) return;
+        const nameInput = document.getElementById('player-name-input');
+        const playerName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : null;
+        if (!confirm('⚠️ 一旦踏上商海征途，便再无回头之路。\n\n每一个决策都将改写命运，确定要开始吗？')) return;
+        SGame.startGame(selected.dataset.origin, playerName);
+      });
+    }
   }
 
   // ========== 启动游戏循环 ==========
@@ -123,13 +113,25 @@
     checkLLMWithRetry();
     // 每30秒重检
     setInterval(() => { if (typeof LLM !== 'undefined' && !LLM.available) LLM.check(); }, 30000);
-    // 检查存档（带重试：先同步读，3秒后再异步确认一次）
-    console.log('[商海浮沉] checking save... typeof SGame:', typeof SGame);
-    checkSaveWithRetry();
-    console.log('[商海浮沉] checkSaveWithRetry dispatched');
+    // 检查存档：等待 Storage 异步预加载完成后再检查（不再用 3 秒重试）
+    console.log('[商海浮沉] waiting for Storage.ready()... typeof Storage:', typeof Storage);
+    if (typeof Storage !== 'undefined' && Storage.ready) {
+      Storage.ready().then(() => {
+        console.log('[商海浮沉] Storage ready, checking save...');
+        checkSaveOrShowOrigin();
+      });
+    } else {
+      // 兜底：Storage 不可用时直接检查
+      checkSaveOrShowOrigin();
+    }
     // 时钟
     setInterval(() => UI.renderClock(), 60000);
     UI.renderClock();
+
+    // 构建面板标签栏
+    if (typeof UI !== 'undefined' && typeof UI.buildPanelTabs === 'function') {
+      UI.buildPanelTabs();
+    }
 
     // 键盘快捷键
     setupKeyboardShortcuts();
@@ -141,6 +143,22 @@
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+      // Space 键：用 e.code 检测更可靠（e.key 在不同浏览器可能不一致）
+      if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        if (typeof SGame !== 'undefined' && SGame.G) {
+          const result = SGame.manualWork();
+          if (typeof UI !== 'undefined' && UI.showToast) {
+            if (result.success) {
+              UI.showToast('💰', '拉项目成功', result.msg || '收益已到账');
+            } else {
+              UI.showToast('⏳', '拉项目', result.msg || '操作失败');
+            }
+          }
+        }
+        return;
+      }
+
       switch (e.key) {
         case '1': UI.switchPanel && UI.switchPanel('dashboard'); break;
         case '2': UI.switchPanel && UI.switchPanel('region'); break;
@@ -149,12 +167,10 @@
         case '5': UI.switchPanel && UI.switchPanel('achievement'); break;
         case '6': UI.switchPanel && UI.switchPanel('stats'); break;
         case '7': UI.switchPanel && UI.switchPanel('ranking'); break;
+        case '8': UI.switchPanel && UI.switchPanel('asset'); break;
         case 'r': case 'R':
-          UI.switchPanel && UI.switchPanel('ranking');
-          break;
-        case ' ': case 'Spacebar':
-          e.preventDefault();
-          if (typeof SGame !== 'undefined' && SGame.G) SGame.manualWork();
+          UI.switchPanel && UI.switchPanel('milestone');
+          if (typeof UI !== 'undefined' && UI.showToast) UI.showToast('🏅', '里程碑', '查看里程碑与成就进度');
           break;
         case 'a': case 'A':
           if (typeof UI !== 'undefined' && typeof UI.toggleAutoMode === 'function') UI.toggleAutoMode();

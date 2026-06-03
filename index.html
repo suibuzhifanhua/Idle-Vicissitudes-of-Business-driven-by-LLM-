@@ -94,6 +94,9 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
 ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 @keyframes slideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+@keyframes autoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.6)} 50%{box-shadow:0 0 0 6px rgba(34,197,94,0)} }
+.auto-dot { width:8px;height:8px;background:#22c55e;border-radius:50%;display:inline-block;animation:autoPulse 2s infinite;margin-right:6px; }
+.auto-banner { background:linear-gradient(90deg,rgba(34,197,94,0.1),rgba(34,197,94,0.02));border:1px solid rgba(34,197,94,0.2);border-radius:6px;padding:6px 10px;margin:6px 0 4px; }
 .ach-reward-tag { display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;background:rgba(245,158,11,0.15);color:var(--accent-gold);margin-left:4px; }
 .skill-exclusive { border-left:2px solid var(--accent-gold) !important; }
 .skill-exclusive::after { content:'⚡互斥';font-size:8px;color:var(--accent-gold);position:absolute;top:6px;right:8px; }
@@ -222,71 +225,6 @@ body.time-dawn {
   --accent-gold: #d4a040;
 }
 
-/* === 天气效果 === */
-/* 雨天 - 微弱雨滴 */
-body.weather-rainy {
-  background-image:
-    linear-gradient(transparent 0%, rgba(60,120,200,0.03) 100%);
-  animation: rainyShimmer 3s ease-in-out infinite alternate;
-}
-@keyframes rainyShimmer { from { background-position: 0 0; } to { background-position: 0 5px; } }
-
-/* 暴风雨 - 闪电效果 */
-body.weather-storm {
-  animation: stormFlash 6s ease-in-out infinite;
-}
-@keyframes stormFlash {
-  0%, 95%, 100% { background: var(--bg-primary); }
-  95.5% { background: #1a1a30; }
-  96% { background: var(--bg-primary); }
-  96.5% { background: #252540; }
-  97% { background: var(--bg-primary); }
-}
-
-/* 雾天 - 半透明遮罩 */
-body.weather-foggy::before {
-  content: '';
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(200,210,230,0.08);
-  pointer-events: none;
-  z-index: 9999;
-  animation: fogDrift 8s ease-in-out infinite alternate;
-}
-@keyframes fogDrift { from { opacity: 0.06; } to { opacity: 0.12; } }
-
-/* 雪天 - 飘雪粒子 */
-body.weather-snow {
-  position: relative;
-}
-body.weather-snow::after {
-  content: '';
-  position: fixed;
-  top: -10px; left: 0; right: 0; bottom: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background:
-    radial-gradient(1.5px 1.5px at 20px 30px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 80px 120px, #fff, transparent),
-    radial-gradient(1px 1px at 150px 70px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 240px 200px, #fff, transparent),
-    radial-gradient(1px 1px at 340px 60px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 420px 180px, #fff, transparent),
-    radial-gradient(1px 1px at 520px 40px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 600px 160px, #fff, transparent),
-    radial-gradient(1px 1px at 700px 90px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 780px 210px, #fff, transparent),
-    radial-gradient(1px 1px at 860px 30px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 940px 140px, #fff, transparent),
-    radial-gradient(1px 1px at 1020px 80px, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 1120px 190px, #fff, transparent);
-  animation: snowfall 4s linear infinite;
-}
-@keyframes snowfall {
-  0% { transform: translateY(-10px); opacity: 0.7; }
-  100% { transform: translateY(20px); opacity: 0.4; }
-}
-
 </style>
 </head>
 <body>
@@ -329,6 +267,7 @@ window.addEventListener('unhandledrejection', function(e) {
   <button class="btn topbar-btn" onclick="UI.openAchievementPanel()" style="background:linear-gradient(135deg,var(--purple),#7c3aed);">🏆 成就</button>
   <button class="btn topbar-btn" onclick="UI.openSkillTree()" style="background:linear-gradient(135deg,var(--teal),#0d9488);">📚 技能树</button>
   <button class="btn topbar-btn" onclick="UI.switchPanel('worldmap')" style="background:linear-gradient(135deg,#6366f1,#4f46e5);">🗺 世界地图</button>
+  <button class="btn topbar-btn" onclick="UI.showCityOverview()" style="background:linear-gradient(135deg,#0ea5e9,#0284c7);">🏙️ 城市</button>
   <button class="btn topbar-btn" onclick="UI.switchPanel('milestone')" style="background:linear-gradient(135deg,#f59e0b,#b45309);">🏅 里程碑</button>
   <button class="btn topbar-btn" onclick="UI.retireGame()" style="background:linear-gradient(135deg,#6b7280,#374151);margin-right:4px;">⏸ 暂停</button>
 </div>
@@ -386,30 +325,31 @@ window.addEventListener('unhandledrejection', function(e) {
 <div class="modal-overlay" id="modal-npc"><div class="modal"><button class="modal-close" onclick="UI.closeModal('npc')">&times;</button><div class="modal-title" id="npc-modal-title">NPC对话</div><div id="npc-dialog-content"></div></div></div>
 <div class="modal-overlay" id="modal-settings"><div class="modal" style="max-width:480px;"><button class="modal-close" onclick="UI.closeModal('settings')">&times;</button><div class="modal-title">⚙ LLM设置</div><div id="settings-content"></div></div></div>
 <div class="modal-overlay" id="modal-achievements"><div class="modal" style="max-width:520px;"><button class="modal-close" onclick="UI.closeModal('achievements')">&times;</button><div class="modal-title">🏆 成就</div><div id="achievements-content"></div></div></div>
+<div class="modal-overlay" id="modal-city-overview"><div class="modal" style="max-width:600px;"><button class="modal-close" onclick="UI.closeCityOverview()">&times;</button><div class="modal-title">🏙️ 城市总览</div><div id="city-overview-content"></div></div></div>
 <div class="modal-overlay" id="modal-skills"><div class="modal" style="max-width:600px;"><button class="modal-close" onclick="UI.closeModal('skills')">&times;</button><div class="modal-title">📚 技能树</div><div id="skills-content" class="modal-skills-content"></div></div></div>
 <div id="tutorial-overlay"><div class="tutorial-box" id="tutorial-content"></div></div>
 <div id="toast-container"></div>
 <div id="milestone-overlay"></div>
 <div id="keyboard-hints">
-  <span class="key-hint"><span class="key-badge">1-7</span>面板切换</span>
-  <span class="key-hint"><span class="key-badge">R</span>排行榜</span>
+  <span class="key-hint"><span class="key-badge">1</span>仪表盘</span>
+  <span class="key-hint"><span class="key-badge">2</span>区域</span>
+  <span class="key-hint"><span class="key-badge">3</span>业务</span>
+  <span class="key-hint"><span class="key-badge">4</span>NPC</span>
+  <span class="key-hint"><span class="key-badge">5</span>成就</span>
+  <span class="key-hint"><span class="key-badge">6</span>统计</span>
+  <span class="key-hint"><span class="key-badge">7</span>排行榜</span>
+  <span class="key-hint"><span class="key-badge">8</span>资产</span>
+  <span class="key-hint"><span class="key-badge">R</span>里程碑</span>
   <span class="key-hint"><span class="key-badge">Space</span>拉项目</span>
   <span class="key-hint"><span class="key-badge">A</span>托管</span>
   <span class="key-hint"><span class="key-badge">S</span>设置</span>
 </div>
 
-<!-- 预加载存档数据（同步 XHR，在所有模块初始化前完成） -->
+<!-- 预加载存档数据（异步 fetch，不阻塞页面渲染） -->
 <script>
-window.__preloadData = {};
-try {
-  var _xhr = new XMLHttpRequest();
-  _xhr.open('GET', '/api/preload', false);
-  _xhr.timeout = 2000;
-  _xhr.send();
-  if (_xhr.status === 200) {
-    window.__preloadData = JSON.parse(_xhr.responseText);
-  }
-} catch(e) {}
+window.__preloadPromise = fetch('/api/preload')
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .catch(function() { return null; });
 </script>
 
 <!-- 游戏逻辑分文件加载 -->
@@ -419,6 +359,9 @@ try {
 <script src="settings.js"></script>
 <script src="llm.js"></script>
 <script src="core.js"></script>
+<script src="core-stock.js"></script>
+<script src="core-research.js"></script>
+<script src="core-rival.js"></script>
 <script src="events.js"></script>
 <script src="npc.js"></script>
 <script src="ui.js"></script>

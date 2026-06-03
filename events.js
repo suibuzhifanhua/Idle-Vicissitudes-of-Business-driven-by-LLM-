@@ -75,12 +75,20 @@ window.EventSystem = (() => {
     const card = document.createElement('div');
     card.className = `event-card ${isDecision ? 'decision' : ''}`;
     card.id = `event-${event.id}`;
+
+    // 决策事件额外增加决策叙事区域
+    var decisionNarrativeHTML = '';
+    if (isDecision) {
+      decisionNarrativeHTML = '<div class="event-decision-narrative" id="event-decision-${event.id}" style="font-size:11px;color:var(--accent-gold);line-height:1.6;margin-bottom:8px;padding:8px 10px;background:rgba(245,158,11,0.06);border-radius:6px;border-left:3px solid var(--accent-gold);font-style:italic;min-height:20px;"></div>';
+    }
+
     card.innerHTML = `
       <div class="event-title">
         ${isDecision ? '⚡' : '📰'} ${event.title}
         ${isDecision ? '<span class="act-badge" style="background:#1a2e1a;color:var(--green-down);margin-left:8px;">决策</span>' : ''}
       </div>
       <div class="event-text" id="event-desc-${event.id}">${desc}</div>
+      ${decisionNarrativeHTML}
       ${choicesHTML}
       <div class="event-meta">Tick ${SGame.G.tickCount}</div>
     `;
@@ -93,12 +101,14 @@ window.EventSystem = (() => {
     // 限制事件卡片数量
     while (area.children.length > 20) area.removeChild(area.lastChild);
 
-    // 如果是决策型且有LLM，尝试生成叙事
+    // 决策事件：调用专用的决策叙事生成器（新功能 #1）
     if (isDecision && typeof LLM !== 'undefined') {
-      LLM.generateNarrative(event, desc).then(narrative => {
-        const el = document.getElementById(`event-desc-${event.id}`);
-        if (el) el.textContent = narrative;
-      }).catch(() => {});
+      LLM.generateDecisionNarrative(event).then(function(narrative) {
+        if (narrative) {
+          var el = document.getElementById('event-decision-' + event.id);
+          if (el) el.textContent = '🎯 ' + narrative;
+        }
+      }).catch(function() {});
     }
   }
 
@@ -130,6 +140,9 @@ window.EventSystem = (() => {
 
     addLog(`[选择] ${event.title} → ${choice.text}`);
 
+    // 从延迟队列中移除已处理事件
+    eventQueue = eventQueue.filter(qe => qe.id !== eventId);
+
     // 重新渲染UI
     if (typeof UI !== 'undefined') UI.renderAll();
   }
@@ -137,13 +150,23 @@ window.EventSystem = (() => {
   function applyEffects(eff) {
     if (!eff) return;
     const G = SGame.G;
-    if (eff.money) G.money *= (eff.money > 0 && eff.money < 1) ? eff.money : (1 + eff.money / 10000);
+    // eff.money: 0~1范围内视为乘数, 否则视为绝对增减量
+    if (eff.money) {
+      if (eff.money > -1 && eff.money < 1 && eff.money !== 0) {
+        G.money *= eff.money;
+      } else {
+        G.money += eff.money;
+      }
+    }
     if (eff.moneyAbs) G.money += eff.moneyAbs;
     if (eff.reputation) G.reputation = Math.max(0, Math.min(100, G.reputation + eff.reputation));
     if (eff.stress) G.stress = Math.max(0, Math.min(100, G.stress + eff.stress));
-    if (eff.connections) G.connections = Math.max(0, G.connections + eff.connections);
-    if (eff.reputationMul) G.reputation = Math.min(100, G.reputation * eff.reputationMul);
-    if (eff.stressMul) G.stress = Math.min(100, G.stress * eff.stressMul);
+    if (eff.connections) {
+      const scaled = Math.floor(eff.connections * (CONFIG.CONNECTIONS_GAIN_SCALE || 0.6));
+      G.connections = Math.min(CONFIG.MAX_CONNECTIONS || 100, Math.max(0, G.connections + scaled));
+    }
+    if (eff.reputationMul) G.reputation = Math.max(0, Math.min(100, G.reputation * eff.reputationMul));
+    if (eff.stressMul) G.stress = Math.max(0, Math.min(100, G.stress * eff.stressMul));
     // NPC好感度处理
     if (eff.npcFavor) {
       Object.entries(eff.npcFavor).forEach(([npcId, delta]) => {

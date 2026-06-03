@@ -7,6 +7,11 @@ const CONFIG = {
   TICK_MS: 30000,          // 30秒/Tick
   LLM_BASE: 'http://localhost:11434',
   LLM_MODEL: 'qwen3.5:4b',
+  LLM_CHECK_TIMEOUT: 3000,    // LLM 检测超时(ms)
+  LLM_GENERATE_TIMEOUT: 15000, // LLM 生成超时(ms)
+  LLM_MAX_CONCURRENT: 2,       // LLM 最大并发请求数
+  LLM_FAILURE_COOLDOWN: 60000, // 连续失败后冷却时间(ms)
+  LLM_MAX_FAILURES: 3,         // 连续失败多少次进入冷却
   EVENT_CHECK_INTERVAL: 6, // 事件检查间隔（秒），约每 Tick 触发 0~5 次（概率判定）
   EVENT_BASE_PROB: 0.25,
   MAX_PENDING_DECISIONS: 5, // 事件队列增大
@@ -19,6 +24,8 @@ const CONFIG = {
   STRESS_NATURAL_DECAY: 0.05,
   LOYALTY_DECAY: 0.17,
   REPUTATION_DECAY: 0.08,
+  MAX_CONNECTIONS: 100,        // 人脉上限
+  CONNECTIONS_GAIN_SCALE: 0.6, // 人脉获取比例缩放
   // ---- 维护成本 ----
   MAINTENANCE_BASE_RATE: 0.02,   // 每Tick维护成本 = 业务收入 × 此比例
   MAINTENANCE_LEVEL_SCALE: 0.005, // 每级额外增加0.5%
@@ -30,8 +37,8 @@ const CONFIG = {
   SUPPLY_CHAIN_RISK: 0.008,       // 供应链断裂概率/tick
   SUPPLY_CHAIN_RECOVER_TICKS: 6,  // 供应链恢复tick数
   // ---- 员工深度 ----
-  EMP_FATIGUE_RATE: 0.3,          // 疲劳增长/tick
-  EMP_FATIGUE_DECAY: 0.5,         // 疲劳自然恢复/tick
+  EMP_FATIGUE_RATE: 0.15,         // 疲劳增长/tick（净增=此值-衰减）
+  EMP_FATIGUE_DECAY: 0.08,        // 疲劳自然恢复/tick
   EMP_TRAINING_COST_BASE: 20000,  // 培训基础费用
   EMP_SKILL_MAX: 5,               // 技能最高5级
   // ---- HR 统管 ----
@@ -39,10 +46,18 @@ const CONFIG = {
   HR_THRESHOLD_WITH_HR: 5,        // 有HR时进入统管的最低员工数
   HR_HIRE_DISCOUNT: 0.8,          // HR批量招聘成本折扣
   HR_TRAIN_DISCOUNT: 0.7,         // HR部门培训成本折扣
-  HR_SALARY_DISCOUNT: 0.95,       // HR总工资折扣
-  HR_AUTO_FATIGUE_REDUCTION: 2,   // HR每Tick自动降疲劳值
+  HR_SALARY_DISCOUNT: 0.85,       // HR总工资折扣
+  HR_AUTO_FATIGUE_REDUCTION: 0.8, // HR每Tick自动降疲劳值
   // ---- 离线收益 ----
   OFFLINE_EFFICIENCY: 0.7,        // 离线收益效率70%
+  // ---- 资产系统 ----
+  ASSET_REFRESH_TICKS: 12,        // 资产市场刷新间隔(tick)
+  ASSET_MARKET_SIZE: 8,           // 市场同时展示资产数
+  ASSET_AUCTION_MIN_TICKS: 3,     // 拍卖最短等待
+  ASSET_AUCTION_MAX_TICKS: 8,     // 拍卖最长等待
+  ASSET_PAWN_RATIO_MIN: 0.38,     // 典当最低回款比例
+  ASSET_PAWN_RATIO_MAX: 0.55,     // 典当最高回款比例
+  ASSET_MAX_SLOTS: 20,            // 资产槽位上限
 };
 
 // ---- 时间系统 ----
@@ -76,19 +91,19 @@ const REGIONS = {
   },
   xinghai: {
     id:'xinghai', name:'星海区', type:'科技创新区', cityId:'xinhai',
-    unlocked:false, unlockCond:{ money:60000000 },
+    unlocked:false, unlockCond:{ money:15000000 },
     bonus:{ tech:1.15, burnoutProb:1.1, rdBonus:1.15, desc:'科技类研发速度+15%，员工Burnout+10%' },
     actUnlock:1, npcFrom:'程序员、产品经理、CTO、天使投资人',
   },
   jinwan: {
     id:'jinwan', name:'金湾区', type:'金融中心区', cityId:'xinhai',
-    unlocked:false, unlockCond:{ money:60000000 },
+    unlocked:false, unlockCond:{ money:25000000 },
     bonus:{ finance:1.08, negativeEventProb:1.12, desc:'金融类收益+8%，负面事件+12%' },
     actUnlock:2, npcFrom:'投行家、基金经理、证券分析师',
   },
   jinxiu: {
     id:'jinxiu', name:'锦绣区', type:'商业文化区', cityId:'xinhai',
-    unlocked:false, unlockCond:{ money:60000000 },
+    unlocked:false, unlockCond:{ money:25000000 },
     bonus:{ repGain:1.08, rumorSpread:1.2, desc:'声誉获取+8%，负面舆论传播+20%' },
     actUnlock:2, npcFrom:'广告总监、KOL、媒体记者',
   },
@@ -100,7 +115,7 @@ const REGIONS = {
   },
   tiexi: {
     id:'tiexi', name:'铁西区', type:'工业物流区', cityId:'xinhai',
-    unlocked:false, unlockCond:{ money:300000000 },
+    unlocked:false, unlockCond:{ money:50000000 },
     bonus:{ opsCost:0.9, policyEventProb:1.15, desc:'运营类成本-10%，政策合规事件+15%' },
     actUnlock:3, npcFrom:'工厂经理、物流总监、环保局官员',
   },
@@ -114,7 +129,7 @@ const REGIONS = {
   // ========== 京都市（500万解锁） ==========
   jd_cbd: {
     id:'jd_cbd', name:'中央商务区', type:'CBD', cityId:'jingdu',
-    unlocked:false, unlockCond:{ money:5000000, cityId:'jingdu' },
+    unlocked:false, unlockCond:{ money:50000000, cityId:'jingdu' },
     bonus:{ finance:1.07, desc:'金融收益+7%' },
     actUnlock:1, npcFrom:'央企高管、部委官员',
   },
@@ -408,7 +423,7 @@ const RANK_TIERS = [
 const ORIGINS = [
   {
     id:'elite', name:'大厂精英', icon:'💻',
-    money:500000, reputation:30, stress:20, connections:15,
+    money:1000000, reputation:30, stress:20, connections:15,
     stats:{ management:4, tech:2, social:3, finance:2 },
     bonus:{ techIncome:1.1 },
     special:'科技类业务收益+10%，前同事赵磊会作为早期NPC出现',
@@ -417,10 +432,10 @@ const ORIGINS = [
   },
   {
     id:'sales', name:'销售奇才', icon:'🤝',
-    money:250000, reputation:40, stress:15, connections:30,
+    money:500000, reputation:40, stress:15, connections:30,
     stats:{ management:3, tech:1, social:5, finance:2 },
-    bonus:{ retailIncome:1.15, hireSpeed:1.2 },
-    special:'零售类业务收益+15%，员工招聘速度+20%',
+    bonus:{ retailIncome:1.25, hireSpeed:1.2 },
+    special:'零售类业务收益+25%，员工招聘速度+20%',
     desc:'你是某知名快消品公司的王牌销售，手握大量客户资源。与老板分红分歧后，带着客户名单自立门户。',
     defaultName:'陈明',
   },
@@ -435,7 +450,7 @@ const ORIGINS = [
   },
   {
     id:'rich2nd', name:'富二代', icon:'💎',
-    money:1000000, reputation:10, stress:35, connections:40,
+    money:2000000, reputation:10, stress:35, connections:40,
     stats:{ management:2, tech:1, social:4, finance:3 },
     bonus:{ unlockCost:0.8, repGain:0.7 },
     special:'所有业务解锁价格-20%，但声誉获取速度-30%',
@@ -448,121 +463,121 @@ const ORIGINS = [
 const BUSINESS_DEFS = [
   {
     id:'retail', name:'便利连锁', icon:'🏪', regions:['yongning'],
-    baseIncome:0.3, unlockMoney:0, unlockAct:0,
+    unlockMoney:0, unlockAct:0,
     desc:'永宁区的老牌生意，现金流虽薄但稳定，是你事业的起点。街角的灯光永远为夜归人亮着。',
     levels:[
       { level:1, name:'街角小店', income:0.04, cost:0 },
-      { level:2, name:'社区便利店', income:0.09, cost:120 },
-      { level:3, name:'连锁便利(3家)', income:0.18, cost:400 },
+      { level:2, name:'社区便利店', income:0.09, cost:80 },
+      { level:3, name:'连锁便利(3家)', income:0.18, cost:280 },
       { level:4, name:'区域品牌(10家)', income:0.35, cost:1200 },
       { level:5, name:'城市配送网络', income:0.60, cost:3000 },
-      { level:6, name:'区域配送中心', income:0.75, cost:6000, reqCond:{ techLv:2 } },
-      { level:7, name:'智能仓储物流', income:0.90, cost:12000, reqCond:{ techLv:3 } },
-      { level:8, name:'全渠道零售', income:1.1, cost:25000, reqCond:{ techLv:3, npcFavor:{ zhaolei:40 } } },
-      { level:9, name:'新零售生态', income:1.3, cost:50000, reqCond:{ techLv:4 } },
-      { level:10, name:'零售帝国', income:1.5, cost:100000, reqCond:{ techLv:5, rep:70 } },
+      { level:6, name:'区域配送中心', income:0.80, cost:6000, reqCond:{ techLv:2 } },
+      { level:7, name:'智能仓储物流', income:1.00, cost:12000, reqCond:{ techLv:3 } },
+      { level:8, name:'全渠道零售', income:1.25, cost:25000, reqCond:{ techLv:3, npcFavor:{ zhaolei:40 } } },
+      { level:9, name:'新零售生态', income:1.50, cost:50000, reqCond:{ techLv:4 } },
+      { level:10, name:'零售帝国', income:1.80, cost:100000, reqCond:{ techLv:5, rep:70 } },
     ]
   },
   {
     id:'tech', name:'科技工作室', icon:'💻', regions:['xinghai'],
-    baseIncome:0.5, unlockMoney:2000000, unlockAct:1,
+    unlockMoney:2000000, unlockAct:1,
     desc:'星海区的科技创业热土，凌晨三点的写字楼里代码还在编译。高回报伴随高风险。',
     levels:[
       { level:1, name:'独立开发者', income:0.15, cost:0 },
-      { level:2, name:'小型工作室(5人)', income:0.25, cost:300 },
-      { level:3, name:'产品化运营', income:0.45, cost:900 },
+      { level:2, name:'小型工作室(5人)', income:0.25, cost:200 },
+      { level:3, name:'产品化运营', income:0.45, cost:600 },
       { level:4, name:'明星产品', income:0.75, cost:2500 },
       { level:5, name:'行业标杆', income:1.2, cost:6000 },
-      { level:6, name:'SaaS平台', income:1.5, cost:12000, reqCond:{ techLv:2 } },
-      { level:7, name:'AI产品矩阵', income:1.8, cost:25000, reqCond:{ techLv:3 } },
-      { level:8, name:'技术生态圈', income:2.2, cost:50000, reqCond:{ techLv:4, npcFavor:{ linjiaoshou:40 } } },
-      { level:9, name:'行业基础设施', income:2.6, cost:100000, reqCond:{ techLv:4 } },
-      { level:10, name:'科技帝国', income:3.0, cost:200000, reqCond:{ techLv:5, rep:75 } },
+      { level:6, name:'SaaS平台', income:1.6, cost:12000, reqCond:{ techLv:2 } },
+      { level:7, name:'AI产品矩阵', income:2.0, cost:25000, reqCond:{ techLv:3 } },
+      { level:8, name:'技术生态圈', income:2.5, cost:50000, reqCond:{ techLv:4, npcFavor:{ zhaolei:40 } } },
+      { level:9, name:'行业基础设施', income:3.0, cost:100000, reqCond:{ techLv:4 } },
+      { level:10, name:'科技帝国', income:3.5, cost:200000, reqCond:{ techLv:5, rep:75 } },
     ]
   },
   {
     id:'office', name:'写字楼租赁', icon:'🏢', regions:['jinwan'],
-    baseIncome:0.8, unlockMoney:5000000, unlockAct:2,
+    unlockMoney:5000000, unlockAct:2,
     desc:'金湾区的钢筋森林，每一层楼都是一个商业故事。被动收入，细水长流。',
     levels:[
       { level:1, name:'单层办公室', income:0.30, cost:0 },
-      { level:2, name:'整层租赁', income:0.50, cost:800 },
-      { level:3, name:'独立写字楼', income:0.90, cost:2500 },
+      { level:2, name:'整层租赁', income:0.50, cost:550 },
+      { level:3, name:'独立写字楼', income:0.90, cost:1700 },
       { level:4, name:'商务园区', income:1.8, cost:7000 },
       { level:5, name:'城市地标', income:3.2, cost:18000 },
-      { level:6, name:'综合商务体', income:3.8, cost:35000, reqCond:{ techLv:2, money:100000000 } },
-      { level:7, name:'甲级写字楼群', income:4.5, cost:70000, reqCond:{ techLv:3 } },
-      { level:8, name:'城市综合体', income:5.2, cost:140000, reqCond:{ techLv:3, npcFavor:{ chenzong:40 } } },
-      { level:9, name:'商业地产帝国', income:6.0, cost:280000, reqCond:{ techLv:4 } },
-      { level:10, name:'地标之城', income:7.0, cost:550000, reqCond:{ techLv:5, rep:80 } },
+      { level:6, name:'综合商务体', income:4.2, cost:35000, reqCond:{ techLv:2, money:100000000 } },
+      { level:7, name:'甲级写字楼群', income:5.5, cost:70000, reqCond:{ techLv:3 } },
+      { level:8, name:'城市综合体', income:7.0, cost:140000, reqCond:{ techLv:3, npcFavor:{ chenzong:40 } } },
+      { level:9, name:'商业地产帝国', income:8.5, cost:280000, reqCond:{ techLv:4 } },
+      { level:10, name:'地标之城', income:10.0, cost:550000, reqCond:{ techLv:5, rep:80 } },
     ]
   },
   {
     id:'fund', name:'量化基金', icon:'📈', regions:['jinwan'],
-    baseIncome:1.5, unlockMoney:15000000, unlockAct:2,
+    unlockMoney:15000000, unlockAct:2,
     desc:'金湾区的金融丛林，数字在屏幕上跳动间就是亿万的博弈。高风险，高智商，更高回报。',
     levels:[
       { level:1, name:'小额试水', income:0.50, cost:0 },
-      { level:2, name:'私募基金', income:1.2, cost:3000 },
-      { level:3, name:'量化交易系统', income:2.5, cost:8000 },
+      { level:2, name:'私募基金', income:1.2, cost:2000 },
+      { level:3, name:'量化交易系统', income:2.5, cost:5500 },
       { level:4, name:'对冲基金', income:5.0, cost:22000 },
       { level:5, name:'金融帝国', income:10.0, cost:55000 },
-      { level:6, name:'量化2.0', income:12.0, cost:110000, reqCond:{ techLv:3 } },
-      { level:7, name:'全球配置', income:14.0, cost:220000, reqCond:{ techLv:3, npcFavor:{ chenzong:50 } } },
-      { level:8, name:'跨境金融', income:16.0, cost:450000, reqCond:{ techLv:4 } },
-      { level:9, name:'衍生品帝国', income:18.0, cost:900000, reqCond:{ techLv:4, rep:75 } },
-      { level:10, name:'金融王朝', income:20.0, cost:1800000, reqCond:{ techLv:5, rep:85 } },
+      { level:6, name:'量化2.0', income:13.0, cost:110000, reqCond:{ techLv:3 } },
+      { level:7, name:'全球配置', income:16.5, cost:220000, reqCond:{ techLv:3, npcFavor:{ chenzong:50 } } },
+      { level:8, name:'跨境金融', income:20.0, cost:450000, reqCond:{ techLv:4 } },
+      { level:9, name:'衍生品帝国', income:24.0, cost:900000, reqCond:{ techLv:4, rep:75 } },
+      { level:10, name:'金融王朝', income:28.0, cost:1800000, reqCond:{ techLv:5, rep:85 } },
     ]
   },
   {
     id:'media', name:'媒体矩阵', icon:'📺', regions:['jinxiu'],
-    baseIncome:3.0, unlockMoney:50000000, unlockAct:3,
+    unlockMoney:50000000, unlockAct:3,
     desc:'锦绣区的舆论战场，一条爆款可以改变一家公司的命运。流量就是新时代的石油。',
     levels:[
       { level:1, name:'自媒体账号', income:1.0, cost:0 },
-      { level:2, name:'MCN机构', income:2.5, cost:8000 },
-      { level:3, name:'垂直媒体', income:5.5, cost:20000 },
+      { level:2, name:'MCN机构', income:2.5, cost:5500 },
+      { level:3, name:'垂直媒体', income:5.5, cost:14000 },
       { level:4, name:'全媒体矩阵', income:12.0, cost:50000 },
       { level:5, name:'媒体帝国', income:22.0, cost:120000 },
-      { level:6, name:'直播电商', income:25.0, cost:250000, reqCond:{ techLv:2, npcFavor:{ zhangye:40 } } },
-      { level:7, name:'短视频生态', income:28.0, cost:500000, reqCond:{ techLv:3 } },
-      { level:8, name:'内容AI工厂', income:32.0, cost:1000000, reqCond:{ techLv:4 } },
-      { level:9, name:'文化输出平台', income:36.0, cost:2000000, reqCond:{ techLv:4, rep:70 } },
-      { level:10, name:'传媒王朝', income:40.0, cost:4000000, reqCond:{ techLv:5, rep:80 } },
+      { level:6, name:'直播电商', income:29.0, cost:250000, reqCond:{ techLv:2, npcFavor:{ zhangye:40 } } },
+      { level:7, name:'短视频生态', income:36.0, cost:500000, reqCond:{ techLv:3 } },
+      { level:8, name:'内容AI工厂', income:44.0, cost:1000000, reqCond:{ techLv:4 } },
+      { level:9, name:'文化输出平台', income:52.0, cost:2000000, reqCond:{ techLv:4, rep:70 } },
+      { level:10, name:'传媒王朝', income:60.0, cost:4000000, reqCond:{ techLv:5, rep:80 } },
     ]
   },
   {
     id:'food_chain', name:'餐饮连锁', icon:'🍽️', regions:['yongning','jinxiu'],
-    baseIncome:0.35, unlockMoney:800000, unlockAct:0,
+    unlockMoney:800000, unlockAct:0,
     desc:'从街头小吃到连锁品牌，每一道菜都承载着城市的烟火气。永宁区的老味道，锦绣区的新风尚。',
     levels:[
       { level:1, name:'街头小吃摊', income:0.12, cost:0 },
-      { level:2, name:'社区餐厅', income:0.20, cost:200 },
-      { level:3, name:'连锁品牌(5家)', income:0.38, cost:800 },
+      { level:2, name:'社区餐厅', income:0.20, cost:140 },
+      { level:3, name:'连锁品牌(5家)', income:0.38, cost:550 },
       { level:4, name:'区域餐饮集团', income:0.75, cost:2500 },
       { level:5, name:'城市美食地标', income:1.6, cost:7000 },
-      { level:6, name:'中央厨房', income:2.0, cost:15000, reqCond:{ techLv:2 } },
-      { level:7, name:'预制菜品牌', income:2.4, cost:30000, reqCond:{ techLv:3 } },
-      { level:8, name:'餐饮数字化', income:2.8, cost:60000, reqCond:{ techLv:3, npcFavor:{ zhaolei:40 } } },
-      { level:9, name:'美食生态链', income:3.2, cost:120000, reqCond:{ techLv:4 } },
-      { level:10, name:'食神帝国', income:3.8, cost:250000, reqCond:{ techLv:5, rep:65 } },
+      { level:6, name:'中央厨房', income:2.2, cost:15000, reqCond:{ techLv:2 } },
+      { level:7, name:'预制菜品牌', income:2.8, cost:30000, reqCond:{ techLv:3 } },
+      { level:8, name:'餐饮数字化', income:3.5, cost:60000, reqCond:{ techLv:3, npcFavor:{ zhaolei:40 } } },
+      { level:9, name:'美食生态链', income:4.2, cost:120000, reqCond:{ techLv:4 } },
+      { level:10, name:'食神帝国', income:5.0, cost:250000, reqCond:{ techLv:5, rep:65 } },
     ]
   },
   {
     id:'new_energy', name:'新能源开发', icon:'⚡', regions:['tiexi','xinghai'],
-    baseIncome:0.25, unlockMoney:12000000, unlockAct:3,
+    unlockMoney:12000000, unlockAct:3,
     desc:'铁西区的烟囱与星海区的光伏板，新旧能源的交汇。政府补贴是这个行业最好的催化剂。',
     levels:[
       { level:1, name:'小型光伏电站', income:0.08, cost:0 },
-      { level:2, name:'风电项目', income:0.22, cost:600 },
-      { level:3, name:'储能电站', income:0.60, cost:2000 },
+      { level:2, name:'风电项目', income:0.22, cost:400 },
+      { level:3, name:'储能电站', income:0.60, cost:1400 },
       { level:4, name:'区域能源网络', income:1.5, cost:6000 },
       { level:5, name:'绿色能源巨头', income:4.0, cost:18000 },
-      { level:6, name:'氢能实验站', income:5.0, cost:38000, reqCond:{ techLv:2 } },
-      { level:7, name:'碳交易平台', income:6.0, cost:75000, reqCond:{ techLv:3, rep:50 } },
-      { level:8, name:'虚拟电厂', income:7.0, cost:150000, reqCond:{ techLv:4 } },
-      { level:9, name:'绿色电网', income:8.0, cost:300000, reqCond:{ techLv:4, npcFavor:{ lichu:40 } } },
-      { level:10, name:'能源新纪元', income:9.5, cost:600000, reqCond:{ techLv:5, rep:75 } },
+      { level:6, name:'氢能实验站', income:5.2, cost:38000, reqCond:{ techLv:2 } },
+      { level:7, name:'碳交易平台', income:6.5, cost:75000, reqCond:{ techLv:3, rep:50 } },
+      { level:8, name:'虚拟电厂', income:8.0, cost:150000, reqCond:{ techLv:4 } },
+      { level:9, name:'绿色电网', income:9.5, cost:300000, reqCond:{ techLv:4, npcFavor:{ lichu:40 } } },
+      { level:10, name:'能源新纪元', income:11.0, cost:600000, reqCond:{ techLv:5, rep:75 } },
     ]
   },
 ];
@@ -570,17 +585,17 @@ const BUSINESS_DEFS = [
 
 // ---- 员工角色 ----
 const EMP_ROLES = [
-  { id:'intern',       name:'实习生',   baseSalary:0.8, icon:'🎓', effect:'低成本劳动力',                                   req:null, incomeBonus:0.003 },
-  { id:'developer',    name:'开发者',   baseSalary:6.0, icon:'💻', effect:'科技+15%',                                   req:{ business:'tech' }, incomeBonus:0.005 },
-  { id:'designer',     name:'设计师',   baseSalary:2.5, icon:'🎨', effect:'媒体/零售+10%',                                req:null, incomeBonus:0.005 },
-  { id:'sales',        name:'销售',     baseSalary:4.5, icon:'🤝', effect:'零售/合作+20%，人脉+2/月',                     req:null, incomeBonus:0.005 },
-  { id:'analyst',      name:'分析师',   baseSalary:2.8, icon:'📊', effect:'负面事件-3%/人',                                 req:null, incomeBonus:0.005 },
-  { id:'manager',      name:'管理者',   baseSalary:4.5, icon:'📋', effect:'分配业务+30%，忠诚衰减-50%',                   req:{ empCount:5 }, incomeBonus:0.008 },
-  { id:'lawyer',       name:'律师',     baseSalary:4.0, icon:'⚖️', effect:'监管伤害-50%',                                 req:{ money:5000000 }, incomeBonus:0.005 },
-  { id:'hr',           name:'HR',       baseSalary:2.5, icon:'👥', effect:'忠诚衰减-50%，招聘成本-20%',                    req:null, incomeBonus:0.005 },
-  { id:'finance_emp',  name:'财务',     baseSalary:3.2, icon:'💰', effect:'税务优化+5%，资金周转+10%',                      req:null, incomeBonus:0.005 },
-  { id:'marketer',     name:'市场',     baseSalary:2.2, icon:'📣', effect:'声誉+15%，产品发布+20%',                        req:null, incomeBonus:0.005 },
-  { id:'cto',          name:'CTO',      baseSalary:6.0, icon:'♟', effect:'全局科技+20%',                                req:{ techLv:5, empCount:8 }, incomeBonus:0.02 },
+  { id:'intern',       name:'实习生',   baseSalary:0.03, icon:'🎓', effect:'低成本劳动力',                                   req:null, incomeBonus:0.003 },
+  { id:'developer',    name:'开发者',   baseSalary:0.25, icon:'💻', effect:'科技+15%',                                   req:{ business:'tech' }, incomeBonus:0.005 },
+  { id:'designer',     name:'设计师',   baseSalary:0.10, icon:'🎨', effect:'媒体/零售+10%',                                req:null, incomeBonus:0.005 },
+  { id:'sales',        name:'销售',     baseSalary:0.19, icon:'🤝', effect:'零售/合作+20%，人脉+2/月',                     req:null, incomeBonus:0.005 },
+  { id:'analyst',      name:'分析师',   baseSalary:0.12, icon:'📊', effect:'负面事件-3%/人',                                 req:null, incomeBonus:0.005 },
+  { id:'manager',      name:'管理者',   baseSalary:0.25, icon:'📋', effect:'分配业务+30%，忠诚衰减-50%',                   req:{ empCount:5 }, incomeBonus:0.008 },
+  { id:'lawyer',       name:'律师',     baseSalary:0.17, icon:'⚖️', effect:'监管伤害-50%',                                 req:{ money:5000000 }, incomeBonus:0.005 },
+  { id:'hr',           name:'HR',       baseSalary:0.10, icon:'👥', effect:'忠诚衰减-50%，招聘成本-20%',                    req:null, incomeBonus:0.005 },
+  { id:'finance_emp',  name:'财务',     baseSalary:0.13, icon:'💰', effect:'税务优化+5%，资金周转+10%',                      req:null, incomeBonus:0.005 },
+  { id:'marketer',     name:'市场',     baseSalary:0.09, icon:'📣', effect:'声誉+15%，产品发布+20%',                        req:null, incomeBonus:0.005 },
+  { id:'cto',          name:'CTO',      baseSalary:0.50, icon:'♟', effect:'全局科技+20%',                               req:{ techLv:5, empCount:8 }, incomeBonus:0.02 },
 ];
 
 // ---- 实际工资计算（与资产、产业挂钩） ----
@@ -588,7 +603,15 @@ function calcActualSalary(baseSalary, G) {
   if (!baseSalary) return 0;
   if (!G || !G.businesses) return baseSalary;
   const totalAssets = G.money || 0;
-  const businessCount = G.businesses ? Object.values(G.businesses).filter(b => b.level > 0).length : 0;
+  const businessCount = (() => {
+    if (!G || !G.cities) return 0;
+    let cnt = 0;
+    Object.values(G.cities).forEach(city => {
+      if (!city.unlocked || !city.businesses) return;
+      Object.values(city.businesses).forEach(biz => { if (biz.level > 0) cnt++; });
+    });
+    return cnt;
+  })();
   // 资产系数：资产超1000万开始生效，对数增长，上限0.5
   let assetFactor = 0;
   if (totalAssets > 10000000) {
@@ -662,7 +685,7 @@ const ACHIEVEMENTS = [
   // ---- 资产里程碑（更密集） ----
   { id:'money_1w',    name:'小有积蓄',   desc:'资产达到1万',         icon:'💰', cond:{ type:'money',           value:10000 } },
   { id:'money_10w',   name:'十万小老板', desc:'资产达到10万',        icon:'💵', cond:{ type:'money',           value:100000 } },
-  { id:'first_income',  name:'第一桶金',   desc:'首次获得收益',         icon:'🪙', cond:{ type:'money',           value:10000 } },
+  { id:'first_income',  name:'第一桶金',   desc:'通过经营获得首笔收益',  icon:'🪙', cond:{ type:'total_income_earned', value:10000 } },
   { id:'money_1m',      name:'百万小老板', desc:'资产达到100万',        icon:'💎', cond:{ type:'money',           value:1000000 } },
   { id:'money_3m',      name:'三百万资产', desc:'资产达到300万',        icon:'🏅', cond:{ type:'money',           value:3000000 } },
   { id:'money_10m',     name:'千万富翁',   desc:'资产达到1000万',      icon:'🌟', cond:{ type:'money',           value:10000000 } },
@@ -685,7 +708,7 @@ const ACHIEVEMENTS = [
   { id:'biz_2',         name:'业务扩展',   desc:'解锁第二个业务',       icon:'🏢', cond:{ type:'biz_count',       count:2 } },
   { id:'biz_3',         name:'多元经营',   desc:'解锁3个业务',         icon:'🎯', cond:{ type:'biz_count',       count:3 } },
   { id:'biz_4',         name:'跨界大佬',   desc:'解锁4个业务',         icon:'🎪', cond:{ type:'biz_count',       count:4 } },
-  { id:'biz_all',        name:'全能商人',   desc:'解锁所有5类业务',      icon:'🎯', cond:{ type:'biz_count',       count:5 } },
+  { id:'biz_all',        name:'全能商人',   desc:'解锁全部7类业务',      icon:'🎯', cond:{ type:'biz_count',       count:7 } },
   { id:'region_2',       name:'走出永宁',   desc:'解锁第二个区域',       icon:'🗺️', cond:{ type:'region_count',    count:2 } },
   { id:'region_4',       name:'区域大亨',   desc:'解锁4个区域',         icon:'🏔️', cond:{ type:'region_count',    count:4 } },
   { id:'region_all',     name:'新海之王',   desc:'解锁所有7大区域',      icon:'👑', cond:{ type:'regions_all' } },
@@ -722,10 +745,9 @@ const ACHIEVEMENTS = [
   { id:'stress_never_high', name:'从容不迫', desc:'压力从未超过60',    icon:'😌', cond:{ type:'stress_never_high' } },
   { id:'no_debt',       name:'现金为王',   desc:'资金从未低于运营成本×3', icon:'💵', cond:{ type:'money_never_low' } },
   { id:'speed_run',     name:'极速传说',   desc:'60分钟内达到100万',    icon:'⚡', cond:{ type:'speed_run',      value:1000000, time:3600 } },
-  { id:'all_endings',   name:'商海老手',   desc:'游戏时间超过24小时',      icon:'🎬', cond:{ type:'play_time', hours:24 } },
+  { id:'play_24h',   name:'商海老手',   desc:'游戏时间超过24小时',      icon:'🎬', cond:{ type:'play_time', hours:24 } },
 
   // ---- 新增成就 (10) ----
-  { id:'diversifying',   name:'多元化经营',   desc:'拥有4条以上不同业务线',       icon:'🎯', cond:{ type:'biz_count', count:4 } },
   { id:'region_dominator',name:'区域霸主',     desc:'在单个区域拥有3条以上业务',     icon:'🏰', cond:{ type:'biz_in_region', count:3 } },
   { id:'social_butterfly',name:'社交达人',     desc:'与3个以上NPC好感度达到50+',   icon:'🦋', cond:{ type:'npc_favor_high', count:3, value:50 } },
   { id:'crisis_survivor', name:'危机管理者',   desc:'成功度过5次负面事件',         icon:'🛡️', cond:{ type:'negative_events', count:5 } },
@@ -745,6 +767,7 @@ const ACHIEVEMENTS = [
 // 每个成就解锁后提供永久加成。这些加成是游戏的核心成长来源。
 const ACHIEVEMENT_REWARDS = {
   // 资产类 — 越富有越有杠杆
+  first_income: { desc:'员工招聘成本-3%',  hireCost:0.97 },
   money_1w:     { desc:'所有业务收入+2%',  incomeMult:0.02 },
   money_10w:    { desc:'所有业务收入+3%',  incomeMult:0.03 },
   money_1m:     { desc:'运营成本-3%',       opCost:0.97 },
@@ -808,10 +831,9 @@ const ACHIEVEMENT_REWARDS = {
   stress_never_high:  { desc:'压力上限-10',           stressCap:10 },
   no_debt:            { desc:'运营成本-5%',           opCost:0.95 },
   speed_run:          { desc:'初始资金+50万',          startMoney:500000 },
-  all_endings:        { desc:'全局收入+10%',          incomeMult:0.10 },
+  play_24h:        { desc:'全局收入+10%',          incomeMult:0.10 },
   
   // 新增成就
-  diversifying:       { desc:'跨业务协同+6%',         crossBizSynergy:0.06 },
   region_dominator:   { desc:'区域加成翻倍',           regionBonusDouble:true },
   social_butterfly:   { desc:'NPC好感获取+10%',       favorGain:0.10 },
   crisis_survivor:    { desc:'危机事件损失-15%',      crisisLoss:0.85 },
@@ -877,7 +899,7 @@ const TECH_TREE = {
 };
 
 // 哪些业务类型每级产出研发点数
-const TECH_RPT_RATES = { tech:1.5, media:1.0, fund:0.8, office:0.3, trade:0.2 };
+const TECH_RPT_RATES = { tech:1.5, media:1.0, fund:0.8, office:0.3, food_chain:0.3, new_energy:0.6 };
 
 // ========== 股票市场 ==========
 const STOCKS = {
@@ -891,7 +913,22 @@ const STOCKS = {
   stk_ai:    { name:'深脑科技', sector:'AI',   basePrice:60, volatility:0.22 },
 };
 
-// ========== 礼物类型 ==========
+// ========== 配置安全访问辅助函数 ==========
+// 统一处理 typeof CONFIG !== 'undefined' 检查，避免 20+ 处重复模式
+function cfg(key, defaultVal) {
+  if (typeof defaultVal === 'undefined') defaultVal = null;
+  return (typeof CONFIG !== 'undefined' && CONFIG && CONFIG[key] !== undefined) ? CONFIG[key] : defaultVal;
+}
+
+// ========== 里程碑数据（数据驱动） ==========
+const MILESTONES = [
+  { money: 1000000,      act: 1, name: '第一桶金',   eventId: 'milestone_1m',  desc: '资产突破100万' },
+  { money: 10000000,     act: 2, name: '小有成就',   eventId: 'milestone_10m', desc: '资产突破1000万' },
+  { money: 100000000,    act: 3, name: '事业有成',   eventId: 'milestone_100m',desc: '资产突破1亿' },
+  { money: 1000000000,   act: 4, name: '商业帝国',   eventId: 'milestone_1b',  desc: '资产突破10亿' },
+  { money: 10000000000,  act: 5, name: '传奇人物',   eventId: 'milestone_10b', desc: '资产突破100亿' },
+];
+
 const GIFT_TYPES = {
   wine:   { name:'名酒',     cost:8000,  desc:'一瓶陈年佳酿' },
   book:   { name:'书籍',     cost:5000,  desc:'一套精装典藏书' },
