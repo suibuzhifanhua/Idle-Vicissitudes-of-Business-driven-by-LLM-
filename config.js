@@ -25,7 +25,7 @@ const CONFIG = {
   LOYALTY_DECAY: 0.17,
   REPUTATION_DECAY: 0.08,
   MAX_CONNECTIONS: 100,        // 人脉上限
-  CONNECTIONS_GAIN_SCALE: 0.6, // 人脉获取比例缩放
+  CONNECTIONS_GAIN_SCALE: 0.45, // 人脉获取比例缩放（降低以避免过快满值）
   // ---- 维护成本 ----
   MAINTENANCE_BASE_RATE: 0.02,   // 每Tick维护成本 = 业务收入 × 此比例
   MAINTENANCE_LEVEL_SCALE: 0.005, // 每级额外增加0.5%
@@ -41,6 +41,11 @@ const CONFIG = {
   EMP_FATIGUE_DECAY: 0.08,        // 疲劳自然恢复/tick
   EMP_TRAINING_COST_BASE: 20000,  // 培训基础费用
   EMP_SKILL_MAX: 5,               // 技能最高5级
+  // ---- 实习生转正 ----
+  INTERN_SALARY_RATIO: 0.5,         // 实习期工资为正式工资的50%
+  INTERN_TICKS_TO_CONVERT: 20,      // 实习期持续20 tick（约10分钟）
+  INTERN_CONVERT_ATTR_BONUS: 10,    // 转正时属性提升幅度
+  INTERN_CONVERT_LOYALTY_BONUS: 15, // 转正时忠诚度加成
   // ---- HR 统管 ----
   HR_THRESHOLD_DEFAULT: 8,        // 无HR时进入统管的最低员工数
   HR_THRESHOLD_WITH_HR: 5,        // 有HR时进入统管的最低员工数
@@ -585,7 +590,7 @@ const BUSINESS_DEFS = [
 
 // ---- 员工角色 ----
 const EMP_ROLES = [
-  { id:'intern',       name:'实习生',   baseSalary:0.03, icon:'🎓', effect:'低成本劳动力',                                   req:null, incomeBonus:0.003 },
+  { id:'intern',       name:'实习生',   baseSalary:0.03, icon:'🎓', effect:'实习期后可转正为正式员工',                       req:null, incomeBonus:0.003, internConvertTo:['developer','sales','analyst','designer','marketer','hr','finance_emp'] },
   { id:'developer',    name:'开发者',   baseSalary:0.25, icon:'💻', effect:'科技+15%',                                   req:{ business:'tech' }, incomeBonus:0.005 },
   { id:'designer',     name:'设计师',   baseSalary:0.10, icon:'🎨', effect:'媒体/零售+10%',                                req:null, incomeBonus:0.005 },
   { id:'sales',        name:'销售',     baseSalary:0.19, icon:'🤝', effect:'零售/合作+20%，人脉+2/月',                     req:null, incomeBonus:0.005 },
@@ -922,11 +927,12 @@ function cfg(key, defaultVal) {
 
 // ========== 里程碑数据（数据驱动） ==========
 const MILESTONES = [
-  { money: 1000000,      act: 1, name: '第一桶金',   eventId: 'milestone_1m',  desc: '资产突破100万' },
-  { money: 10000000,     act: 2, name: '小有成就',   eventId: 'milestone_10m', desc: '资产突破1000万' },
-  { money: 100000000,    act: 3, name: '事业有成',   eventId: 'milestone_100m',desc: '资产突破1亿' },
-  { money: 1000000000,   act: 4, name: '商业帝国',   eventId: 'milestone_1b',  desc: '资产突破10亿' },
-  { money: 10000000000,  act: 5, name: '传奇人物',   eventId: 'milestone_10b', desc: '资产突破100亿' },
+  // money, repMin, bizSumMin（所有城市业务等级总和）, act, ...
+  { money: 1000000,      repMin: 15, bizSumMin: 3,  act: 1, name: '第一桶金',   eventId: 'milestone_1m',  desc: '资产破百万，人脉起步，初具业务雏形' },
+  { money: 10000000,     repMin: 30, bizSumMin: 8,  act: 2, name: '小有成就',   eventId: 'milestone_10m', desc: '资产破千万，社交圈拓展，业务扩张中' },
+  { money: 100000000,    repMin: 50, bizSumMin: 15, act: 3, name: '事业有成',   eventId: 'milestone_100m',desc: '资产破亿，名利双收，多城布局' },
+  { money: 1000000000,   repMin: 65, bizSumMin: 25, act: 4, name: '商业帝国',   eventId: 'milestone_1b',  desc: '资产破十亿，声名鹊起，帝国初现' },
+  { money: 10000000000,  repMin: 80, bizSumMin: 40, act: 5, name: '传奇人物',   eventId: 'milestone_10b', desc: '资产破百亿，行业领袖，传奇缔造' },
 ];
 
 const GIFT_TYPES = {

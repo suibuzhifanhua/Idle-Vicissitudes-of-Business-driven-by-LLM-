@@ -4,6 +4,7 @@
 
 window.NPCSystem = (() => {
   let currentNPC = null;
+  let currentActions = [];  // 存储当前渲染的动作回调列表
 
   // ========== 获取NPC状态 ==========
   function getFavor(npcId) {
@@ -28,6 +29,11 @@ window.NPCSystem = (() => {
 
   // ========== 好感度变化（含NPC联动传播） ==========
   function changeFavor(npcId, delta) {
+    // 区域人脉加成：connGain 放大正向好感变化
+    if (delta > 0 && SGame.G && typeof SGame.getRegionModifiers === 'function') {
+      var rm = SGame.getRegionModifiers();
+      if (rm && rm.connGain) delta = Math.round(delta * rm.connGain);
+    }
     const old = getFavor(npcId);
     SGame.G.npcFavor[npcId] = Math.max(-50, Math.min(100, old + delta));
     const newLv = getFavorLevel(npcId);
@@ -169,9 +175,114 @@ window.NPCSystem = (() => {
       }});
     } else if (npcId === 'xiaoc') {
       actions.push({ text: '表达意向', fn: () => { changeFavor('xiaoc', 2); EventSystem.addLog('你向小C表达了投资合作意向。'); } });
+    } else if (npcId === 'sujie') {
+      actions.push({ text: '推荐人才（人脉+2，好感+2）', fn: () => {
+        changeFavor('sujie', 2); SGame.addConnections(2);
+        var talentPool = ['资深工程师','产品经理','运营总监','数据分析师','销售主管'];
+        var pick = talentPool[Math.floor(Math.random() * talentPool.length)];
+        EventSystem.addLog('苏姐推荐了一位' + pick + '候选人来面试。');
+      }});
+      actions.push({ text: '快速招聘通道（费用5万，立即获得一名员工）', fn: () => {
+        if (SGame.G.money < 5e4) { EventSystem.addLog('资金不足，无法使用快速招聘通道。'); closeDialog(); return; }
+        SGame.G.money -= 5e4; changeFavor('sujie', 5);
+        var roles = ['manager','developer','sales','marketer'];
+        var role = roles[Math.floor(Math.random() * roles.length)];
+        var roleNames = { manager:'管理者', developer:'研发人员', sales:'销售', marketer:'市场' };
+        var emp = {
+          id: 'emp_' + Date.now(), name: '新员工' + Date.now().toString(36).slice(-3).toUpperCase(),
+          role: role, skill: 2, loyalty: 60, fatigue: 0, happiness: 60
+        };
+        if (!SGame.G.employees) SGame.G.employees = [];
+        SGame.G.employees.push(emp);
+        EventSystem.addLog('苏姐帮你物色了一位' + roleNames[role] + '！');
+      }});
+    } else if (npcId === 'jinhangzhang') {
+      actions.push({ text: '咨询贷款方案（好感+1）', fn: () => { changeFavor('jinhangzhang', 1); EventSystem.addLog('金行长给你分析了当前最优的贷款策略。'); } });
+      actions.push({ text: '申请特别信贷额度（声誉>50，获得一笔低息贷款）', fn: () => {
+        if (SGame.G.reputation < 50) { EventSystem.addLog('声誉不够，金行长表示按规矩不能破例。'); closeDialog(); return; }
+        var loanAmt = 500000;
+        var loan = { id: Date.now(), amount: loanAmt, duration: 24, remaining: 24, interestRate: 6.0, interestPerTick: Math.round(loanAmt * 0.06 / 24), repaid: false };
+        SGame.G.loans.push(loan); SGame.G.money += loanAmt; changeFavor('jinhangzhang', 5);
+        SGame.G.neverLoaned = false;
+        EventSystem.addLog('金行长特批：' + SGame.formatMoney(loanAmt) + '低息贷款到账！');
+      }});
+    } else if (npcId === 'qianlaoban') {
+      actions.push({ text: '请钱老板估价（随机评估一件持有资产）', fn: () => {
+        if (!SGame.G.assets || SGame.G.assets.length === 0) { EventSystem.addLog('你还没有任何资产可以估价。'); closeDialog(); return; }
+        var ast = SGame.G.assets[Math.floor(Math.random() * SGame.G.assets.length)];
+        var estVal = Math.round(ast.purchasePrice * (0.8 + Math.random() * 1.4));
+        changeFavor('qianlaoban', 2);
+        EventSystem.addLog('钱老板看了你手中的' + ast.name + '，估价约' + SGame.formatMoney(estVal) + '。');
+      }});
+      actions.push({ text: '打听拍卖行情（了解当前热门资产）', fn: () => {
+        changeFavor('qianlaoban', 3); SGame.addConnections(1);
+        var trends = ['艺术品','商业地产','科技专利','矿产权益','古董收藏'];
+        var hot = trends[Math.floor(Math.random() * trends.length)];
+        EventSystem.addLog('钱老板透露：最近' + hot + '类资产行情看涨。');
+      }});
+      actions.push({ text: '委托拍卖资产（选择一件资产上拍）', fn: () => {
+        if (!SGame.G.assets || SGame.G.assets.length === 0) { EventSystem.addLog('没有资产可以委托拍卖。'); closeDialog(); return; }
+        var ast = SGame.G.assets[0];
+        var askPrice = Math.round(ast.purchasePrice * (1.1 + Math.random() * 0.5));
+        if (!SGame.G.assetAuctionList) SGame.G.assetAuctionList = [];
+        SGame.G.assetAuctionList.push({ assetId: ast.id, askPrice: askPrice, sellTick: SGame.G.tickCount + 5 + Math.floor(Math.random() * 10) });
+        changeFavor('qianlaoban', 5);
+        EventSystem.addLog('已将' + ast.name + '委托拍卖，底价' + SGame.formatMoney(askPrice) + '。');
+      }});
+    } else if (npcId === 'sunmishu') {
+      actions.push({ text: '打听政策动向（人脉+1，好感+1）', fn: () => { changeFavor('sunmishu', 1); SGame.addConnections(1); EventSystem.addLog('孙秘书透露了近期几个政策调整方向。'); } });
+      actions.push({ text: '获取区域评估报告（了解最适合业务的区域）', fn: () => {
+        changeFavor('sunmishu', 2);
+        var recRegions = Object.values(REGIONS).filter(function(r) { return r.unlocked && r.bonus.retail; }).slice(0, 3);
+        var names = recRegions.map(function(r) { return r.name; }).join('、');
+        if (!names) names = '暂无特别推荐';
+        EventSystem.addLog('孙秘书建议重点关注：' + names + '。');
+      }});
+      actions.push({ text: '协助办理区域入驻手续（费用2万，关键区域提前解锁）', fn: () => {
+        if (SGame.G.money < 2e4) { EventSystem.addLog('费用不足。'); closeDialog(); return; }
+        SGame.G.money -= 2e4; changeFavor('sunmishu', 4);
+        var lockedRegions = Object.values(REGIONS).filter(function(r) { return !r.unlocked && r.actUnlock <= SGame.G.act; });
+        if (lockedRegions.length > 0) {
+          var r = lockedRegions[0];
+          r.unlocked = true; SGame.G.unlockedRegions.push(r.id);
+          EventSystem.addLog('孙秘书帮你走了快速通道，' + r.name + '提前解锁！');
+        } else {
+          EventSystem.addLog('孙秘书表示暂时没有需要特批的区域。');
+        }
+      }});
+    } else if (npcId === 'wujiaolian') {
+      actions.push({ text: '团队效率诊断（好感+1）', fn: () => { changeFavor('wujiaolian', 1); EventSystem.addLog('吴教练给你的团队做了一次快速评估，指出了几个改进方向。'); } });
+      actions.push({ text: '强化培训（花费3万，随机选一个员工技能+1）', fn: () => {
+        if (SGame.G.money < 3e4) { EventSystem.addLog('培训费不足。'); closeDialog(); return; }
+        if (!SGame.G.employees || SGame.G.employees.length === 0) { EventSystem.addLog('公司还没有员工。'); closeDialog(); return; }
+        SGame.G.money -= 3e4;
+        var emp = SGame.G.employees[Math.floor(Math.random() * SGame.G.employees.length)];
+        emp.skill = Math.min(5, (emp.skill || 1) + 1);
+        emp.loyalty = Math.min(100, (emp.loyalty || 0) + 8);
+        changeFavor('wujiaolian', 4);
+        EventSystem.addLog('吴教练对' + emp.name + '进行了特训，技能升至' + emp.skill + '级！');
+      }});
+    } else if (npcId === 'liukuaiji') {
+      actions.push({ text: '财务审计（发现漏洞，可能获得退款）', fn: () => {
+        changeFavor('liukuaiji', 2);
+        var found = Math.floor(Math.random() * 80000) + 10000;
+        SGame.G.money += found;
+        EventSystem.addLog('刘会计帮你审计后发现了一笔' + SGame.formatMoney(found) + '的多缴款项，已退回。');
+      }});
+      actions.push({ text: '税务优化咨询（降低当前维护成本10%，持续12Tick）', fn: () => {
+        if (SGame.G.money < 3e4) { EventSystem.addLog('咨询费不足。'); closeDialog(); return; }
+        SGame.G.money -= 3e4; changeFavor('liukuaiji', 4);
+        if (!SGame.G._taxOptBuff) SGame.G._taxOptBuff = { remaining: 0, discount: 0 };
+        SGame.G._taxOptBuff.remaining = 12;
+        SGame.G._taxOptBuff.discount = 0.10;
+        EventSystem.addLog('刘会计帮你优化了税务结构，维护成本临时降低10%（持续12Tick）。');
+      }});
     }
 
     actions.push({ text: '关闭对话', fn: () => { document.getElementById('modal-npc').classList.remove('active'); } });
+
+    // 存储到模块变量供 doAction 引用
+    currentActions = actions;
 
     container.innerHTML = actions.map(a =>
       `<button class="event-choice" onclick="NPCSystem.doAction(${actions.indexOf(a)})">${a.text}</button>`
@@ -182,6 +293,13 @@ window.NPCSystem = (() => {
     const npcId = currentNPC;
     if (!npcId) return;
 
+    // 优先使用闭包回调（支持动态索引，兼容任务线动态插入）
+    if (currentActions[idx] && typeof currentActions[idx].fn === 'function') {
+      currentActions[idx].fn();
+      return;
+    }
+
+    // 兜底：兼容旧版硬编码逻辑（仅原有 8 位 NPC）
     // idx 0 总是送礼菜单
     if (idx === 0) { openGiftMenu(npcId); return; }
     // idx 1 总是商务约谈
@@ -192,13 +310,12 @@ window.NPCSystem = (() => {
       return;
     }
 
-    // idx 2+ 是各 NPC 特定动作
     if (npcId === 'zhaolei') {
       if (idx === 2) { changeFavor('zhaolei', 2); SGame.addConnections(1); EventSystem.addLog('赵磊分享了一些行业见解。'); }
       else if (idx === 3) {
         if (SGame.G.money < 1e6) { EventSystem.addLog('资金不足，无法与赵磊合作。'); closeDialog(); return; }
         SGame.G.money -= 1e6; changeFavor('zhaolei', 10);
-        SGame.addConnections(2); // 谈合作附带人脉
+        SGame.addConnections(2);
         EventSystem.addLog('你与赵磊达成了技术合作。');
       }
     } else if (npcId === 'lichu') {
@@ -222,7 +339,7 @@ window.NPCSystem = (() => {
       if (idx === 2) { changeFavor('xiaoc', 2); EventSystem.addLog('你向小C表达了投资合作意向。'); }
     }
 
-    // 关闭对话（关闭按钮 idx 4+ 会落在这里）
+    // 关闭对话
     closeDialog();
     if (typeof UI !== 'undefined') UI.renderAll();
   }
@@ -245,7 +362,17 @@ window.NPCSystem = (() => {
       return { ok: false, msg: `资金不足（需要${SGame.formatMoney(gift.cost)}）` };
     }
 
-    SGame.G.money -= gift.cost;
+    // 区域加成：socialCost 增加送礼实际花费
+    var actualCost = gift.cost;
+    if (typeof SGame.getRegionModifiers === 'function') {
+      var rm = SGame.getRegionModifiers();
+      if (rm && rm.socialCost > 1.0) actualCost = Math.round(gift.cost * rm.socialCost);
+    }
+    if (SGame.G.money < actualCost) {
+      return { ok: false, msg: `资金不足（需要${SGame.formatMoney(actualCost)}，${gift.name}标价${SGame.formatMoney(gift.cost)}）` };
+    }
+
+    SGame.G.money -= actualCost;
 
     // 根据偏好计算好感
     let favorDelta;

@@ -263,12 +263,25 @@ window.LLM = (() => {
     return final;
   }
 
-  // ---------- 员工背景故事 ----------
-  async function generateEmployeeBackground(roleName) {
+  // ---------- 员工背景故事（含属性评价） ----------
+  async function generateEmployeeBackground(roleNameOrEmp) {
+    // 支持传入角色名或完整员工对象
+    var roleName = typeof roleNameOrEmp === 'string' ? roleNameOrEmp : (roleNameOrEmp.roleName || '员工');
+    var attrs = null;
+    if (typeof roleNameOrEmp === 'object' && roleNameOrEmp.attrs) {
+      attrs = roleNameOrEmp.attrs;
+    }
     if (!Settings.get('employeeBg')) return '一名经验丰富的' + roleName + '，曾在多家公司任职。';
     var qBonus = getQualityBonus();
     var qualityHint = qBonus > 1 ? '要求更细腻有趣，展现人物个性。' : '';
-    var prompt = '为一名' + roleName + '生成一段50字以内的背景故事。\n要求：包含年龄、学历、一个有趣的经历或特点。用中文回答，简洁有趣。' + qualityHint;
+    var attrHint = '';
+    if (attrs && typeof SGame !== 'undefined' && SGame.EMP_ATTRIBUTES) {
+      attrHint = '属性：' + Object.entries(attrs).map(function(e) {
+        var def = SGame.EMP_ATTRIBUTES[e[0]];
+        return def ? def.name + e[1] : e[0] + e[1];
+      }).join('、') + '。';
+    }
+    var prompt = '为一名' + roleName + '生成一段50字以内的背景故事。\n' + attrHint + '\n要求：包含年龄、学历、一个有趣的经历或特点。用中文回答，简洁有趣。' + qualityHint;
     var result = await generate(prompt, 0.8);
     return result || '一名经验丰富的' + roleName + '，曾在多家公司任职。';
   }

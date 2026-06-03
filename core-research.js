@@ -28,6 +28,22 @@
     if (G.originBonus && G.originBonus.techRdSpeed) rptGain *= G.originBonus.techRdSpeed;
     // 联动：赵磊好感 > 40 → RPT 获取 +20%
     if ((G.npcFavor && G.npcFavor.zhaolei) > 40) rptGain *= 1.20;
+    // 联动：马记者好感 > 40 → RPT 获取 +20%（舆论情报加速研发）
+    if ((G.npcFavor && G.npcFavor.majizhe) > 40) rptGain *= 1.20;
+    // 联动：林教授好感 > 40 → RPT 获取 +15%（学术资源）
+    if ((G.npcFavor && G.npcFavor.linjiaoshou) > 40) rptGain *= 1.15;
+    // 区域加成：rdBonus 研发速度加成（遍历有业务的区域）
+    var rdRegionMul = 1.0;
+    Object.values(G.cities || {}).forEach(function(city) {
+      if (!city.unlocked) return;
+      Object.entries(city.businesses || {}).forEach(function(entry) {
+        var biz = entry[1];
+        if (!biz || biz.level <= 0 || !biz.region) return;
+        var reg = REGIONS[biz.region];
+        if (reg && reg.bonus.rdBonus) rdRegionMul *= reg.bonus.rdBonus;
+      });
+    });
+    if (rdRegionMul > 1.0) rptGain *= rdRegionMul;
     G.rpt += rptGain;
     G.rpt = Math.round(G.rpt * 100) / 100;
   };

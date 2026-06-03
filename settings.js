@@ -34,6 +34,8 @@ window.Settings = (() => {
       autoRepay: true,
       autoGift: false,
       giftBudget: 50000,
+      autoManualWork: true,
+      autoRest: true,
     },
   };
 
@@ -78,6 +80,8 @@ window.Settings = (() => {
           SGame.G.autoMode.autoRepay = savedAm.autoRepay ?? true;
           SGame.G.autoMode.autoGift = savedAm.autoGift ?? false;
           SGame.G.autoMode.giftBudget = savedAm.giftBudget ?? 50000;
+          SGame.G.autoMode.autoManualWork = savedAm.autoManualWork ?? true;
+          SGame.G.autoMode.autoRest = savedAm.autoRest ?? true;
         }
       }
     } catch(e2) { /* ignore */ }
@@ -125,220 +129,275 @@ window.Settings = (() => {
 
     const s = load();
 
+    const C = function(cls, body) { return '<div class="' + cls + '">' + body + '</div>'; };
+    const ICON = function(icon, label, h) { return '<span class="settings-section-icon">' + icon + '</span><span>' + label + '</span>' + (h ? '<span class="settings-section-hint">' + h + '</span>' : ''); };
+
     container.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <style>
+        .st-tabs{display:flex;gap:4px;margin-bottom:18px;background:var(--bg-primary);border-radius:10px;padding:4px;}
+        .st-tab{flex:1;padding:9px 0;cursor:pointer;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text-muted);border-radius:8px;transition:all .2s;font-family:var(--font);}
+        .st-tab.act{background:var(--bg-card);color:var(--accent-gold);box-shadow:0 2px 8px rgba(0,0,0,.2);}
+        .st-tab:hover:not(.act){color:var(--text-primary);}
+        .st-panel{display:none;}
+        .st-panel.act{display:block;}
+        .st-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+        .st-full{grid-column:span 2;}
+        .st-label{font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;font-weight:600;letter-spacing:.02em;}
+        .st-input{width:100%;padding:8px 10px;background:var(--bg-primary);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);font-size:12px;font-family:var(--font);box-sizing:border-box;transition:border-color .2s;}
+        .st-input:focus{border-color:var(--accent-gold);outline:none;box-shadow:0 0 0 3px rgba(245,158,11,.1);}
+        .st-range{width:100%;accent-color:var(--accent-gold);height:6px;margin:8px 0;}
+        .st-range-hint{display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);}
+        .st-toggle{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:12px;color:var(--text-primary);transition:all .15s;}
+        .st-toggle:hover{border-color:var(--accent-blue);}
+        .st-toggle input[type=checkbox]{accent-color:var(--accent-blue);width:16px;height:16px;margin:0;flex-shrink:0;}
+        .st-toggle-sm{font-size:11px;padding:5px 10px;}
+        .st-toggle-on{border-color:rgba(59,130,246,.35);background:rgba(59,130,246,.06);}
+        .st-card{background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;transition:border-color .15s;}
+        .st-card:hover{border-color:rgba(245,158,11,.2);}
+        .st-card-title{font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+        .st-card-title .st-card-icon{font-size:15px;}
+        .st-card-sub{font-size:10px;color:var(--text-muted);margin-bottom:8px;}
+        .st-radios{display:flex;gap:3px;flex-wrap:wrap;margin:6px 0;}
+        .st-radio{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;padding:5px 9px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-secondary);transition:all .15s;white-space:nowrap;}
+        .st-radio input[type=radio]{accent-color:var(--accent-gold);width:12px;height:12px;margin:0;}
+        .st-radio:has(input:checked){background:rgba(245,158,11,.12);border-color:var(--accent-gold);color:var(--accent-gold);font-weight:600;}
+        .st-radio:hover:not(:has(input:checked)){border-color:var(--text-muted);}
+        .st-master{display:flex;align-items:center;padding:12px 14px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px;margin-bottom:14px;cursor:pointer;transition:all .15s;}
+        .st-master:hover{border-color:rgba(34,197,94,.35);}
+        .st-master input[type=checkbox]{accent-color:#22c55e;width:18px;height:18px;flex-shrink:0;}
+        .st-master-label{flex:1;margin-left:10px;}
+        .st-master-label .st-master-title{font-size:13px;font-weight:700;color:var(--text-primary);}
+        .st-master-label .st-master-desc{font-size:10px;color:var(--text-muted);margin-top:2px;}
+        .st-btns{display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
+        .st-btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:var(--font);transition:all .2s;text-align:center;}
+        .st-btn-save{flex:3;background:linear-gradient(135deg,var(--accent-gold),#d97706);color:#fff;}
+        .st-btn-save:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(245,158,11,.3);}
+        .st-btn-test{flex:2;background:rgba(6,182,212,.12);color:var(--accent-cyan);border:1px solid rgba(6,182,212,.25);}
+        .st-btn-test:hover{background:rgba(6,182,212,.22);}
+        .st-btn-reset{flex:1;background:transparent;color:var(--text-muted);border:1px solid var(--border);}
+        .st-btn-reset:hover{color:var(--red-up);border-color:var(--red-up);}
+        .st-status{font-size:11px;color:var(--text-secondary);text-align:center;padding:8px 0;min-height:20px;}
+        #set-model-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;}
+        #set-model-list .st-model-chip{padding:3px 10px;background:var(--bg-hover);border:1px solid var(--border);border-radius:5px;font-size:10px;color:var(--text-secondary);cursor:pointer;font-family:var(--font);transition:all .15s;}
+        #set-model-list .st-model-chip:hover{color:var(--accent-cyan);border-color:var(--accent-cyan);}
+      </style>
 
-        <!-- API地址 -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;">Ollama API地址</label>
-          <input id="set-llmBase" type="text" value="${escHtml(s.llmBase)}"
-            style="width:100%;padding:8px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:12px;font-family:var(--font);">
-        </div>
+      <div class="st-tabs">
+        <button class="st-tab act" onclick="Settings.switchTab('tab-llm',this)">⚙ LLM设置</button>
+        <button class="st-tab" onclick="Settings.switchTab('tab-auto',this)">🤖 托管管理</button>
+      </div>
 
-        <!-- 模型名称 -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;">模型名称</label>
-          <div style="display:flex;gap:8px;">
-            <input id="set-llmModel" type="text" value="${escHtml(s.llmModel)}"
-              style="flex:1;padding:8px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:12px;font-family:var(--font);">
-            <button class="btn" onclick="Settings.fetchModels()" style="font-size:11px;white-space:nowrap;">🔍 获取模型</button>
+      <!-- ========== Tab 1: LLM 设置 ========== -->
+      <div class="st-panel act" id="tab-llm">
+        <div class="st-grid2">
+          <div class="st-full">
+            <label class="st-label">🔗 Ollama API 地址</label>
+            <input id="set-llmBase" type="text" class="st-input" value="${escHtml(s.llmBase)}" placeholder="http://localhost:11434">
           </div>
-          <div id="set-model-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;"></div>
-        </div>
-
-        <!-- Temperature -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;">
-            创意度 (Temperature): <span id="set-temp-val" style="color:var(--accent-gold);">${s.temperature.toFixed(1)}</span>
-          </label>
-          <input id="set-temperature" type="range" min="0" max="2" step="0.1" value="${s.temperature}"
-            style="width:100%;accent-color:var(--accent-gold);"
-            oninput="document.getElementById('set-temp-val').textContent=this.value">
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);">
-            <span>精确</span><span>均衡</span><span>创意</span>
+          <div class="st-full">
+            <label class="st-label">🧠 模型名称</label>
+            <div style="display:flex;gap:8px;">
+              <input id="set-llmModel" type="text" class="st-input" value="${escHtml(s.llmModel)}" placeholder="qwen3.5:4b" style="flex:1;">
+              <button class="st-btn st-btn-test" onclick="Settings.fetchModels()" style="flex:0 0 auto;padding:8px 14px;font-size:11px;white-space:nowrap;">🔍 获取模型</button>
+            </div>
+            <div id="set-model-list"></div>
+          </div>
+          <div>
+            <label class="st-label">🎨 创意度 <span id="set-temp-val" style="color:var(--accent-gold);font-weight:700;">${s.temperature.toFixed(1)}</span></label>
+            <input id="set-temperature" type="range" class="st-range" min="0" max="2" step="0.1" value="${s.temperature}"
+              oninput="document.getElementById('set-temp-val').textContent=parseFloat(this.value).toFixed(1)">
+            <div class="st-range-hint"><span>精确 0</span><span>均衡 1.0</span><span>创意 2.0</span></div>
+          </div>
+          <div>
+            <label class="st-label">📝 最大输出 <span id="set-tokens-val" style="color:var(--accent-gold);font-weight:700;">${s.maxTokens}</span> tokens</label>
+            <input id="set-maxTokens" type="range" class="st-range" min="50" max="1000" step="50" value="${s.maxTokens}"
+              oninput="document.getElementById('set-tokens-val').textContent=this.value">
+            <div class="st-range-hint"><span>简短 50</span><span>标准 500</span><span>详细 1000</span></div>
           </div>
         </div>
 
-        <!-- 最大输出token -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;">
-            最大输出长度: <span id="set-tokens-val" style="color:var(--accent-gold);">${s.maxTokens}</span>
-          </label>
-          <input id="set-maxTokens" type="range" min="50" max="1000" step="50" value="${s.maxTokens}"
-            style="width:100%;accent-color:var(--accent-gold);"
-            oninput="document.getElementById('set-tokens-val').textContent=this.value">
-        </div>
-
-        <!-- LLM功能开关 -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:6px;">LLM功能开关</label>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${toggleRow('set-eventNarrative', '事件叙事生成', s.eventNarrative)}
-            ${toggleRow('set-employeeBg', '员工背景故事', s.employeeBg)}
-            ${toggleRow('set-npcDialog', 'NPC对话生成', s.npcDialog)}
-            ${toggleRow('set-decisionNarrative', '决策叙事生成', s.decisionNarrative)}
+        <div style="margin:14px 0;">
+          <label class="st-label" style="margin-bottom:8px;">✨ LLM 功能开关</label>
+          <div class="st-grid2">
+            ${toggleRowV2('set-eventNarrative', '📖 事件叙事', '事件触发时生成沉浸式故事', s.eventNarrative)}
+            ${toggleRowV2('set-employeeBg', '👤 员工背景', '招聘时为员工生成背景故事', s.employeeBg)}
+            ${toggleRowV2('set-npcDialog', '💬 NPC对话', '与NPC互动时生成个性对话', s.npcDialog)}
+            ${toggleRowV2('set-decisionNarrative', '⚡ 决策叙事', '做出决策时生成情境描写', s.decisionNarrative)}
           </div>
         </div>
 
-        <!-- 音效开关 -->
-        <div>
-          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:6px;">音效设置</label>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${toggleRow('set-audioEnabled', '游戏音效', typeof AudioFX !== 'undefined' && AudioFX ? AudioFX.enabled : true)}
-          </div>
+        <div style="margin:14px 0;">
+          <label class="st-label" style="margin-bottom:8px;">🔊 音效设置</label>
+          ${toggleRowV2('set-audioEnabled', '🔊 游戏音效', '控制游戏内所有音效开关', typeof AudioFX !== 'undefined' && AudioFX ? AudioFX.enabled : true)}
         </div>
 
-        <!-- ==================== 托管管理 ==================== -->
-        <div style="border-top:2px solid var(--accent-gold);padding-top:14px;margin-top:4px;">
-          <label style="font-size:14px;font-weight:700;color:var(--accent-gold);display:block;margin-bottom:10px;">🤖 托管管理</label>
-          
-          <!-- 托管主开关 -->
-          <div style="margin-bottom:12px;padding:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:8px;">
-            ${toggleRow('set-autoMasterEnabled', '🔛 启用全自动托管（主开关）', getAutoMasterEnabled())}
-            <div style="font-size:10px;color:var(--text-muted);margin-top:4px;margin-left:24px;">开启后将自动管理以下所有项目，关闭则全部停止</div>
-          </div>
+        <div class="st-btns">
+          <button class="st-btn st-btn-test" onclick="Settings.testConnection()">🔗 测试连接</button>
+          <button class="st-btn st-btn-save" onclick="Settings.applyAndClose()">💾 保存并应用</button>
+          <button class="st-btn st-btn-reset" onclick="Settings.resetToDefaults()">↺ 重置</button>
+        </div>
+        <div id="set-status" class="st-status"></div>
+      </div>
 
+      <!-- ========== Tab 2: 托管管理 ========== -->
+      <div class="st-panel" id="tab-auto" style="max-height:52vh;overflow-y:auto;padding-right:4px;">
+        <!-- 主开关 -->
+        <label class="st-master">
+          <input id="set-autoMasterEnabled" type="checkbox" ${getAutoMasterEnabled()?'checked':''} style="margin:0;">
+          <div class="st-master-label">
+            <div class="st-master-title">🔛 启用全自动托管</div>
+            <div class="st-master-desc">开启后 AI 将接管游戏内所有决策，关闭则暂停自动操作</div>
+          </div>
+        </label>
+
+        <div class="st-grid2">
           <!-- 事件决策 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">📋 事件决策</label>
-            ${toggleRow('set-autoEventDecide', '自动决策事件', getAuto('eventDecide', true))}
-            <div style="margin-top:6px;">
-              <span style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px;">决策偏好</span>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${autoRadioRow('eventPreference', 'balanced', '均衡型', getAuto('eventPreference', 'balanced'), '综合评估')}
-                ${autoRadioRow('eventPreference', 'aggressive', '激进型', getAuto('eventPreference', 'balanced'), '永远选收益最高')}
-                ${autoRadioRow('eventPreference', 'conservative', '保守型', getAuto('eventPreference', 'balanced'), '优先避免损失')}
-                ${autoRadioRow('eventPreference', 'social', '社交型', getAuto('eventPreference', 'balanced'), '优先提升好感')}
-              </div>
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">📋</span> 事件决策</div>
+            ${toggleRowV2('set-autoEventDecide', '自动决策事件', '', getAuto('eventDecide', true), true)}
+            <div class="st-card-sub">决策偏好</div>
+            <div class="st-radios">
+              ${autoRadioRow('eventPreference', 'balanced', '⚖ 均衡', getAuto('eventPreference', 'balanced'), '综合评估')}
+              ${autoRadioRow('eventPreference', 'aggressive', '🚀 激进', getAuto('eventPreference', 'balanced'), '追高收益')}
+              ${autoRadioRow('eventPreference', 'conservative', '🛡 保守', getAuto('eventPreference', 'balanced'), '避免损失')}
+              ${autoRadioRow('eventPreference', 'social', '🤝 社交', getAuto('eventPreference', 'balanced'), '提升好感')}
             </div>
           </div>
 
           <!-- 业务管理 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">🏢 业务管理</label>
-            ${toggleRow('set-autoOpenBusiness', '自动开设业务', getAuto('autoOpenBusiness', true))}
-            ${toggleRow('set-autoUpgradeBusiness', '自动升级业务', getAuto('autoUpgradeBusiness', true))}
-            <div style="margin-top:6px;">
-              <span style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px;">升级资金阈值</span>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${autoRadioRow('upgradeThreshold', 'conservative', '保守(5x)', getAuto('upgradeThreshold', 'normal'), '资金需5倍升级费')}
-                ${autoRadioRow('upgradeThreshold', 'normal', '正常(3x)', getAuto('upgradeThreshold', 'normal'), '资金需3倍升级费')}
-                ${autoRadioRow('upgradeThreshold', 'aggressive', '激进(1.5x)', getAuto('upgradeThreshold', 'normal'), '资金仅需1.5倍')}
-              </div>
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">🏢</span> 业务管理</div>
+            ${toggleRowV2('set-autoOpenBusiness', '自动开设业务', '', getAuto('autoOpenBusiness', true), true)}
+            ${toggleRowV2('set-autoUpgradeBusiness', '自动升级业务', '', getAuto('autoUpgradeBusiness', true), true)}
+            <div class="st-card-sub">升级资金阈值</div>
+            <div class="st-radios">
+              ${autoRadioRow('upgradeThreshold', 'conservative', '保守 5x', getAuto('upgradeThreshold', 'normal'), '资金需5倍升级费')}
+              ${autoRadioRow('upgradeThreshold', 'normal', '正常 3x', getAuto('upgradeThreshold', 'normal'), '资金需3倍升级费')}
+              ${autoRadioRow('upgradeThreshold', 'aggressive', '激进 1.5x', getAuto('upgradeThreshold', 'normal'), '资金仅需1.5倍')}
             </div>
           </div>
 
           <!-- 员工管理 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">👥 员工管理</label>
-            ${toggleRow('set-autoHire', '自动招聘', getAuto('autoHire', true))}
-            <div style="margin-top:6px;">
-              <span style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px;">员工上限</span>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${autoRadioRow('maxEmployees', '4', '4人', String(getAuto('maxEmployees', 8)), '小团队')}
-                ${autoRadioRow('maxEmployees', '6', '6人', String(getAuto('maxEmployees', 8)), '中等团队')}
-                ${autoRadioRow('maxEmployees', '8', '8人', String(getAuto('maxEmployees', 8)), '标准团队')}
-                ${autoRadioRow('maxEmployees', '10', '10人', String(getAuto('maxEmployees', 8)), '大型团队')}
-                ${autoRadioRow('maxEmployees', '99', '不限', String(getAuto('maxEmployees', 8)), '有多少招多少')}
-              </div>
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">👥</span> 员工管理</div>
+            ${toggleRowV2('set-autoHire', '自动招聘', '', getAuto('autoHire', true), true)}
+            <div class="st-card-sub">员工上限（托管模式）</div>
+            <div class="st-radios">
+              ${autoRadioRow('maxEmployees', '8', '8人', String(getAuto('maxEmployees', 8)), '小团队')}
+              ${autoRadioRow('maxEmployees', '15', '15人', String(getAuto('maxEmployees', 8)), '中等团队')}
+              ${autoRadioRow('maxEmployees', '30', '30人', String(getAuto('maxEmployees', 8)), '标准团队')}
+              ${autoRadioRow('maxEmployees', '50', '50人', String(getAuto('maxEmployees', 8)), '大型团队')}
+              ${autoRadioRow('maxEmployees', '99', '不限', String(getAuto('maxEmployees', 8)), '有多少招多少')}
             </div>
-            ${toggleRow('set-autoFire', '自动解雇低忠诚度员工', getAuto('autoFire', false))}
-            <div style="margin-top:6px;">
-              <span style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px;">解雇忠诚度阈值</span>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${autoRadioRow('fireThreshold', '10', '10', String(getAuto('fireThreshold', 20)), '极低才解雇')}
-                ${autoRadioRow('fireThreshold', '20', '20', String(getAuto('fireThreshold', 20)), '较低就解雇')}
-                ${autoRadioRow('fireThreshold', '30', '30', String(getAuto('fireThreshold', 20)), '略低就解雇')}
-              </div>
+            ${toggleRowV2('set-autoFire', '自动解雇低忠诚度', '', getAuto('autoFire', false), true)}
+            <div class="st-card-sub">解雇阈值</div>
+            <div class="st-radios">
+              ${autoRadioRow('fireThreshold', '10', '≤10', String(getAuto('fireThreshold', 20)), '极低')}
+              ${autoRadioRow('fireThreshold', '20', '≤20', String(getAuto('fireThreshold', 20)), '较低')}
+              ${autoRadioRow('fireThreshold', '30', '≤30', String(getAuto('fireThreshold', 20)), '略低')}
             </div>
           </div>
 
           <!-- 区域与研发 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">🔬 区域与研发</label>
-            ${toggleRow('set-autoUnlockRegion', '自动解锁区域', getAuto('autoUnlockRegion', true))}
-            ${toggleRow('set-autoResearch', '自动启动研发', getAuto('autoResearch', true))}
-          </div>
-
-          <!-- 投资 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">📈 股票投资</label>
-            ${toggleRow('set-autoInvest', '自动股票投资', getAuto('autoInvest', false))}
-            <div style="margin-top:6px;">
-              <span style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px;">投资预算比例</span>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${autoRadioRow('investBudget', '0.05', '5%', String(getAuto('investBudget', 0.1)), '保守投资')}
-                ${autoRadioRow('investBudget', '0.1', '10%', String(getAuto('investBudget', 0.1)), '标准投资')}
-                ${autoRadioRow('investBudget', '0.2', '20%', String(getAuto('investBudget', 0.1)), '积极投资')}
-                ${autoRadioRow('investBudget', '0.3', '30%', String(getAuto('investBudget', 0.1)), '激进投资')}
-              </div>
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">🔬</span> 区域与研发</div>
+            ${toggleRowV2('set-autoUnlockRegion', '自动解锁区域', '', getAuto('autoUnlockRegion', true), true)}
+            ${toggleRowV2('set-autoResearch', '自动启动研发', '', getAuto('autoResearch', true), true)}
+            <div style="height:8px;"></div>
+            <div class="st-card-title"><span class="st-card-icon">📈</span> 股票投资</div>
+            ${toggleRowV2('set-autoInvest', '自动股票投资', '', getAuto('autoInvest', false), true)}
+            <div class="st-card-sub">投资预算</div>
+            <div class="st-radios">
+              ${autoRadioRow('investBudget', '0.05', '5%', String(getAuto('investBudget', 0.1)), '保守')}
+              ${autoRadioRow('investBudget', '0.1', '10%', String(getAuto('investBudget', 0.1)), '标准')}
+              ${autoRadioRow('investBudget', '0.2', '20%', String(getAuto('investBudget', 0.1)), '积极')}
+              ${autoRadioRow('investBudget', '0.3', '30%', String(getAuto('investBudget', 0.1)), '激进')}
             </div>
           </div>
 
           <!-- 贷款 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">🏦 贷款管理</label>
-            ${toggleRow('set-autoRepay', '自动还款', getAuto('autoRepay', true))}
-            ${toggleRow('set-autoLoan', '自动贷款（资金紧张时）', getAuto('autoLoan', false))}
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">🏦</span> 贷款管理</div>
+            ${toggleRowV2('set-autoRepay', '自动还款', '', getAuto('autoRepay', true), true)}
+            ${toggleRowV2('set-autoLoan', '自动贷款（资金紧张）', '', getAuto('autoLoan', false), true)}
           </div>
 
-          <!-- 社交 -->
-          <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">💝 NPC社交</label>
-            ${toggleRow('set-autoGift', '自动送礼', getAuto('autoGift', false))}
-            <div style="margin-top:6px;">
-              <span style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px;">单次送礼预算</span>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                ${autoRadioRow('giftBudget', '10000', '1万', String(getAuto('giftBudget', 50000)), '小礼物')}
-                ${autoRadioRow('giftBudget', '30000', '3万', String(getAuto('giftBudget', 50000)), '中等礼物')}
-                ${autoRadioRow('giftBudget', '50000', '5万', String(getAuto('giftBudget', 50000)), '好礼物')}
-                ${autoRadioRow('giftBudget', '100000', '10万', String(getAuto('giftBudget', 50000)), '贵重礼物')}
-              </div>
+          <!-- NPC社交 -->
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">💝</span> NPC社交</div>
+            ${toggleRowV2('set-autoGift', '自动送礼', '', getAuto('autoGift', false), true)}
+            <div class="st-card-sub">单次送礼预算</div>
+            <div class="st-radios">
+              ${autoRadioRow('giftBudget', '10000', '1万', String(getAuto('giftBudget', 50000)), '小礼物')}
+              ${autoRadioRow('giftBudget', '30000', '3万', String(getAuto('giftBudget', 50000)), '中等')}
+              ${autoRadioRow('giftBudget', '50000', '5万', String(getAuto('giftBudget', 50000)), '好礼')}
+              ${autoRadioRow('giftBudget', '100000', '10万', String(getAuto('giftBudget', 50000)), '贵重')}
             </div>
           </div>
+
+          <!-- 自动操作 -->
+          <div class="st-card">
+            <div class="st-card-title"><span class="st-card-icon">🤝</span> 自动操作</div>
+            ${toggleRowV2('set-autoManualWork', '自动拉项目/谈合作', 'CD到了自动点击', getAuto('autoManualWork', true), true)}
+            ${toggleRowV2('set-autoRest', '自动员工休息', '疲劳>60自动休息', getAuto('autoRest', true), true)}
+          </div>
         </div>
 
-        <!-- 按钮 -->
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="btn" onclick="Settings.testConnection()" style="flex:1;background:linear-gradient(135deg,var(--accent-cyan),#0891b2);font-size:12px;">🔗 测试连接</button>
-          <button class="btn" onclick="Settings.applyAndClose()" style="flex:2;font-size:13px;">💾 保存并应用</button>
+        <div class="st-btns">
+          <button class="st-btn st-btn-save" onclick="Settings.applyAndClose()">💾 保存并应用</button>
+          <button class="st-btn st-btn-reset" onclick="Settings.resetAutoDefaults()">↺ 恢复默认</button>
         </div>
-        <div id="set-status" style="font-size:11px;color:var(--text-secondary);text-align:center;"></div>
+        <div id="set-status-auto" class="st-status"></div>
       </div>
     `;
-    // 绑定托管开关的 onchange 事件
-    setTimeout(() => {
-      const keyMap = {
-        'set-autoMasterEnabled': 'enabled',
-        'set-autoEventDecide': 'eventDecide',
-        'set-autoOpenBusiness': 'autoOpenBusiness',
-        'set-autoUpgradeBusiness': 'autoUpgradeBusiness',
-        'set-autoHire': 'autoHire',
-        'set-autoFire': 'autoFire',
-        'set-autoUnlockRegion': 'autoUnlockRegion',
-        'set-autoResearch': 'autoResearch',
-        'set-autoInvest': 'autoInvest',
-        'set-autoLoan': 'autoLoan',
-        'set-autoRepay': 'autoRepay',
-        'set-autoGift': 'autoGift',
-      };
-      Object.entries(keyMap).forEach(([id, key]) => {
-        const el = document.getElementById(id);
-        if (el && !el._autoBound) {
-          el._autoBound = true;
-          el.addEventListener('change', function() {
-            Settings.onAutoToggleChange(key, this.checked);
-          });
-        }
-      });
-    }, 50);
+
+    // 绑定托管开关事件
+    setTimeout(() => { bindAutoToggles(); }, 50);
   }
 
-  function toggleRow(id, label, checked) {
-    return `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">
-      <input id="${id}" type="checkbox" ${checked?'checked':''} style="accent-color:var(--accent-blue);">
-      <span>${label}</span>
-    </label>`;
+  // ========== Tab 切换 ==========
+  function switchTab(tabId, btn) {
+    document.querySelectorAll('.st-tab').forEach(function(t) { t.classList.remove('act'); });
+    document.querySelectorAll('.st-panel').forEach(function(p) { p.classList.remove('act'); });
+    if (btn) btn.classList.add('act');
+    document.getElementById(tabId).classList.add('act');
+  }
+
+  function toggleRowV2(id, label, desc, checked, compact) {
+    var cls = 'st-toggle' + (compact ? ' st-toggle-sm' : '') + (checked ? ' st-toggle-on' : '');
+    var descHtml = desc ? '<span style="font-size:10px;color:var(--text-muted);margin-left:auto;">' + desc + '</span>' : '';
+    return '<label class="' + cls + '">' +
+      '<input id="' + id + '" type="checkbox" ' + (checked ? 'checked' : '') + '>' +
+      '<span>' + label + '</span>' + descHtml +
+      '</label>';
+  }
+
+  function bindAutoToggles() {
+    var keyMap = {
+      'set-autoMasterEnabled': 'enabled',
+      'set-autoEventDecide': 'eventDecide',
+      'set-autoOpenBusiness': 'autoOpenBusiness',
+      'set-autoUpgradeBusiness': 'autoUpgradeBusiness',
+      'set-autoHire': 'autoHire',
+      'set-autoFire': 'autoFire',
+      'set-autoUnlockRegion': 'autoUnlockRegion',
+      'set-autoResearch': 'autoResearch',
+      'set-autoInvest': 'autoInvest',
+      'set-autoLoan': 'autoLoan',
+      'set-autoRepay': 'autoRepay',
+      'set-autoGift': 'autoGift',
+      'set-autoManualWork': 'autoManualWork',
+      'set-autoRest': 'autoRest',
+    };
+    Object.entries(keyMap).forEach(function(e) {
+      var el = document.getElementById(e[0]);
+      if (el && !el._autoBound) {
+        el._autoBound = true;
+        el.addEventListener('change', function() {
+          Settings.onAutoToggleChange(e[1], this.checked);
+        });
+      }
+    });
   }
 
   function radioRow(name, value, label, currentValue, desc) {
@@ -366,9 +425,9 @@ window.Settings = (() => {
       if (models.length === 0) {
         listEl.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">未找到模型</span>';
       } else {
-        listEl.innerHTML = models.map(m =>
-          `<button class="btn" onclick="document.getElementById('set-llmModel').value='${escHtml(m)}';Settings.clearModelList();" style="font-size:10px;padding:3px 8px;background:var(--bg-hover);border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);">${escHtml(m)}</button>`
-        ).join('');
+        listEl.innerHTML = models.map(function(m) {
+          return '<button class="st-model-chip" onclick="document.getElementById(\'set-llmModel\').value=\'' + escHtml(m) + '\';Settings.clearModelList();">' + escHtml(m) + '</button>';
+        }).join('');
       }
     } catch(e) {
       listEl.innerHTML = `<span style="font-size:11px;color:var(--red-up);">获取失败: ${escHtml(e.message)}</span>`;
@@ -460,10 +519,10 @@ window.Settings = (() => {
 
   function autoRadioRow(name, value, label, currentValue, desc) {
     const checked = String(currentValue) === String(value) ? 'checked' : '';
-    return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;padding:6px 10px;background:${checked?'rgba(245,158,11,0.12)':'var(--bg-primary)'};border:1px solid ${checked?'var(--accent-gold)':'var(--border)'};border-radius:6px;color:${checked?'var(--accent-gold)':'var(--text-secondary)'};" title="${escHtml(desc)}">
-      <input type="radio" name="auto_${name}" value="${value}" ${checked} style="accent-color:var(--accent-gold);" onchange="Settings.onAutoSettingChange('${name}', '${value}')">
-      ${label}
-    </label>`;
+    return '<label class="st-radio" title="' + escHtml(desc) + '">' +
+      '<input type="radio" name="auto_' + name + '" value="' + value + '" ' + checked + ' onchange="Settings.onAutoSettingChange(\'' + name + '\', \'' + value + '\')">' +
+      label +
+      '</label>';
   }
 
   function onAutoSettingChange(key, value) {
@@ -543,6 +602,8 @@ window.Settings = (() => {
       auto_autoRepay: getChecked('set-autoRepay'),
       auto_autoGift: getChecked('set-autoGift'),
       auto_giftBudget: parseInt(getRadioValue('auto_giftBudget') || '50000'),
+      auto_autoManualWork: getChecked('set-autoManualWork'),
+      auto_autoRest: getChecked('set-autoRest'),
     };
 
     save(newSettings);
@@ -554,7 +615,8 @@ window.Settings = (() => {
         newSettings.auto_autoFire || newSettings.auto_autoResearch ||
         newSettings.auto_autoUnlockRegion || newSettings.auto_autoInvest ||
         newSettings.auto_autoLoan || newSettings.auto_autoRepay ||
-        newSettings.auto_autoGift;
+        newSettings.auto_autoGift || newSettings.auto_autoManualWork ||
+        newSettings.auto_autoRest;
       const masterCheck = document.getElementById('set-autoMasterEnabled');
       // 主开关已存在 → 完全按用户选择
       if (masterCheck) {
@@ -563,6 +625,26 @@ window.Settings = (() => {
         // 降级：任何子功能开启则启用
         SGame.G.autoMode.enabled = anyOn;
       }
+      // ★ 关键：同步所有子开关到 G.autoMode（否则需要刷新页面才生效）
+      SGame.G.autoMode.eventDecide = newSettings.auto_eventDecide;
+      SGame.G.autoMode.eventPreference = newSettings.auto_eventPreference;
+      SGame.G.autoMode.autoOpenBusiness = newSettings.auto_autoOpenBusiness;
+      SGame.G.autoMode.autoUpgradeBusiness = newSettings.auto_autoUpgradeBusiness;
+      SGame.G.autoMode.upgradeThreshold = upgradeThresholdMap(newSettings.auto_upgradeThreshold || 'normal');
+      SGame.G.autoMode.autoHire = newSettings.auto_autoHire;
+      SGame.G.autoMode.autoFire = newSettings.auto_autoFire;
+      SGame.G.autoMode.fireThreshold = newSettings.auto_fireThreshold;
+      SGame.G.autoMode.maxEmployees = newSettings.auto_maxEmployees;
+      SGame.G.autoMode.autoUnlockRegion = newSettings.auto_autoUnlockRegion;
+      SGame.G.autoMode.autoResearch = newSettings.auto_autoResearch;
+      SGame.G.autoMode.autoInvest = newSettings.auto_autoInvest;
+      SGame.G.autoMode.investBudget = newSettings.auto_investBudget;
+      SGame.G.autoMode.autoLoan = newSettings.auto_autoLoan;
+      SGame.G.autoMode.autoRepay = newSettings.auto_autoRepay;
+      SGame.G.autoMode.autoGift = newSettings.auto_autoGift;
+      SGame.G.autoMode.giftBudget = newSettings.auto_giftBudget;
+      SGame.G.autoMode.autoManualWork = newSettings.auto_autoManualWork;
+      SGame.G.autoMode.autoRest = newSettings.auto_autoRest;
       if (SGame.G.autoMode.enabled && typeof EventSystem !== 'undefined') {
         EventSystem.addLog('[托管] 全自动托管已开启');
       }
@@ -596,6 +678,60 @@ window.Settings = (() => {
     }
   }
 
+  // ========== 重置功能 ==========
+  function resetToDefaults() {
+    current = { ...defaults };
+    Storage.set(STORAGE_KEY, JSON.stringify(current));
+    if (typeof CONFIG !== 'undefined') {
+      CONFIG.LLM_BASE = current.llmBase;
+      CONFIG.LLM_MODEL = current.llmModel;
+    }
+    renderSettings();
+    var statusEl = document.getElementById('set-status');
+    if (statusEl) {
+      statusEl.textContent = '✅ 已恢复 LLM 默认设置';
+      statusEl.style.color = 'var(--green-down)';
+      setTimeout(function() { statusEl.textContent = ''; }, 2000);
+    }
+  }
+
+  function resetAutoDefaults() {
+    current.autoMode = { ...defaults.autoMode };
+    Storage.set(STORAGE_KEY, JSON.stringify(current));
+    try {
+      if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
+        var d = defaults.autoMode;
+        SGame.G.autoMode.eventDecide = d.eventDecide;
+        SGame.G.autoMode.eventPreference = d.eventPreference;
+        SGame.G.autoMode.autoOpenBusiness = d.autoOpenBusiness;
+        SGame.G.autoMode.autoUpgradeBusiness = d.autoUpgradeBusiness;
+        SGame.G.autoMode.upgradeThreshold = upgradeThresholdMap(d.upgradeThreshold);
+        SGame.G.autoMode.autoHire = d.autoHire;
+        SGame.G.autoMode.autoFire = d.autoFire;
+        SGame.G.autoMode.fireThreshold = d.fireThreshold;
+        SGame.G.autoMode.maxEmployees = d.maxEmployees;
+        SGame.G.autoMode.autoUnlockRegion = d.autoUnlockRegion;
+        SGame.G.autoMode.autoResearch = d.autoResearch;
+        SGame.G.autoMode.autoInvest = d.autoInvest;
+        SGame.G.autoMode.investBudget = d.investBudget;
+        SGame.G.autoMode.autoLoan = d.autoLoan;
+        SGame.G.autoMode.autoRepay = d.autoRepay;
+        SGame.G.autoMode.autoGift = d.autoGift;
+        SGame.G.autoMode.giftBudget = d.giftBudget;
+        SGame.G.autoMode.autoManualWork = d.autoManualWork;
+        SGame.G.autoMode.autoRest = d.autoRest;
+        if (typeof SGame.save === 'function') SGame.save();
+      }
+    } catch(e2) {}
+    renderSettings();
+    var statusEl = document.getElementById('set-status-auto');
+    if (statusEl) {
+      statusEl.textContent = '✅ 已恢复托管默认设置';
+      statusEl.style.color = 'var(--green-down)';
+      setTimeout(function() { statusEl.textContent = ''; }, 2000);
+    }
+  }
+
   // ========== 公开API ==========
   load(); // 启动时加载
 
@@ -603,12 +739,14 @@ window.Settings = (() => {
     load, save, get,
     defaults,
     get current() { return current; },
-    renderSettings,
+    renderSettings, switchTab,
     fetchModels, clearModelList,
     testConnection, applyAndClose,
+    resetToDefaults, resetAutoDefaults,
     onAutoPrefChange,
     onAutoSettingChange,
     onAutoToggleChange,
     getAuto,
+    bindAutoToggles,
   };
 })();

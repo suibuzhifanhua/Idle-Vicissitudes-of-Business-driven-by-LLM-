@@ -404,6 +404,332 @@ const NPCS = {
     ],
     npcLinks: { zhangye: 0.35, chenzong: 0.1, xiaoc: 0.1 },
   },
+
+  // ===== 第二轮新增 NPC（6位）=====
+  sujie: {
+    id:'sujie', name:'苏姐', title:'锐思猎头合伙人',
+    actUnlock:0, initFavor:10,
+    desc:'45岁，新海最顶尖的猎头，人脉极广，能用三句话判断一个人值不值',
+    favorLevels:['敌对','冷淡','中立','友好','亲密'],
+    dialogTypes:['greeting','headhunt','talent','recommend'],
+    giftPreferences: { love:['luxury','art'], like:['book'], neutral:['wine','tech'] },
+    giftQuote: '苏姐阅人无数，奢侈品和艺术品味是你唯一能让她正眼相看的东西。',
+    dialogs:{
+      greeting:['苏姐一边翻简历一边抬头："小林啊，你公司缺人吗？我手上正好有几个好苗子。"','"来得正好，最近市场上有几个大厂高管在找工作，你要不要先看看？"'],
+      headhunt:['"这个人的简历我看了三遍，如果是我自己开公司，第一个挖他。"','"我不卖人，我介绍缘分。但缘分也是有价格的。"'],
+      talent:['"你公司现在缺的是技术还是管理？思路不一样，人选也不一样。"','"这批候选人底子都不错，但有一个特别适合你现在的发展阶段。"'],
+    },
+    questLines: [
+      {
+        id: 'sujie_q1', name: '初次委托', desc: '苏姐想帮你物色第一批员工',
+        reqFavor: 10,
+        steps: [
+          { text: '苏姐约你在咖啡厅见面，聊了聊公司的人才需求', reward: { npcFavor: { sujie: 8 } } },
+          { text: '她推荐了一份精心筛选的候选人名单', reward: { connections: 3 } },
+          { text: '你面试了其中几位，录用了两个不错的人才', reward: { money: 30000, npcFavor: { sujie: 10 } } },
+        ]
+      },
+      {
+        id: 'sujie_q2', name: '高管挖角', desc: '帮你从竞争对手那里挖来一位核心高管',
+        reqFavor: 30,
+        steps: [
+          { text: '苏姐神神秘秘地告诉你，XX公司的CTO有跳槽意向', reward: { stress: 8 } },
+          { text: '她安排了秘密会面，过程惊心动魄', reward: { money: -80000 } },
+          { text: '挖角成功！新CTO给公司带来了技术突破', reward: { reputation: 8, connections: 5, money: 150000 } },
+        ]
+      },
+      {
+        id: 'sujie_q3', name: '人才储备计划', desc: '苏姐提议帮你建立长期人才储备库',
+        reqFavor: 50,
+        steps: [
+          { text: '苏姐建议你趁现在提前储备未来可能需要的人才', reward: {} },
+          { text: '她帮你建立了人才数据库和评估体系', reward: { connections: 8 } },
+          { text: '几个月后，当公司急需扩张时，你的人才库派上了大用场', reward: { money: 200000, reputation: 10, connections: 5 } },
+        ]
+      },
+      {
+        id: 'sujie_q4', name: '行业猎头联盟', desc: '苏姐邀请你加入她的人脉联盟',
+        reqFavor: 70,
+        steps: [
+          { text: '苏姐透露她正在组建一个跨行业的猎头联盟', reward: { reputation: 5 } },
+          { text: '作为首批合作企业，你获得了优先选人权', reward: { connections: 10 } },
+          { text: '你的公司在人才市场打出了口碑，求职者主动投递', reward: { reputation: 15, connections: 12, money: 100000 } },
+        ]
+      },
+    ],
+    npcLinks: { zhaolei: 0.15, zhangye: 0.2, chenzong: 0.1, wujiaolian: 0.25 },
+  },
+
+  jinhangzhang: {
+    id:'jinhangzhang', name:'金行长', title:'新海商业银行行长',
+    actUnlock:1, initFavor:0,
+    desc:'52岁，谨慎而精明的银行家，对数字极其敏感，好感度高可享受贷款优惠',
+    favorLevels:['敌对','冷淡','中立','友好','亲密'],
+    dialogTypes:['greeting','loan','invest','warn'],
+    giftPreferences: { love:['art','book'], like:['wine'], neutral:['tech','luxury'] },
+    giftQuote: '金行长是收藏家，古籍善本和名家字画最能打动他。',
+    dialogs:{
+      greeting:['金行长从一堆财务报表中抬起头："小林啊，最近资金周转怎么样？"','"来坐。我刚看了你公司上个季度的报表，增长不错。"'],
+      loan:['"利率的事好商量。关键是你得让我看到清晰的还款计划。"','"基于你的信用记录，我可以给你一个比市场低1个点的利率。"'],
+      invest:['"我不只是贷款给你，我看好你的企业。要不要考虑让我以个人身份参一股？"','"银行的资金是冰冷的，但我对你这家公司是有信心的。"'],
+    },
+    questLines: [
+      {
+        id: 'jinhangzhang_q1', name: '第一笔贷款', desc: '公司扩张需要资金，金行长愿意给你机会',
+        reqFavor: 15,
+        steps: [
+          { text: '你带着商业计划书敲开了金行长的办公室', reward: { stress: 5 } },
+          { text: '金行长认真看完计划书，问了几个尖锐的问题', reward: { npcFavor: { jinhangzhang: 8 } } },
+          { text: '贷款获批！金行长说："好好干，我相信你的判断。"', reward: { money: 200000, npcFavor: { jinhangzhang: 10 } } },
+        ]
+      },
+      {
+        id: 'jinhangzhang_q2', name: '信用评级提升', desc: '金行长帮你提高企业信用等级',
+        reqFavor: 35,
+        steps: [
+          { text: '金行长通知你行里的信用评级系统即将更新', reward: { stress: 5 } },
+          { text: '你按照他的建议整理了财务报表和经营数据', reward: {} },
+          { text: '信用评级提升至AA级！未来贷款额度翻倍', reward: { reputation: 8, connections: 3, money: 50000 } },
+        ]
+      },
+      {
+        id: 'jinhangzhang_q3', name: '供应链金融', desc: '金行长提议帮你做供应链金融',
+        reqFavor: 55,
+        steps: [
+          { text: '金行长介绍了银行的供应链金融方案', reward: {} },
+          { text: '你的供应商和客户都接入了这套系统', reward: { connections: 8, money: 100000 } },
+          { text: '现金流得到极大改善，运营效率大幅提升', reward: { money: 300000, reputation: 10 } },
+        ]
+      },
+      {
+        id: 'jinhangzhang_q4', name: '银企战略合作', desc: '与银行建立深度战略合作关系',
+        reqFavor: 75,
+        steps: [
+          { text: '金行长亲自带队来公司做战略调研', reward: { stress: 10, reputation: 5 } },
+          { text: '双方签署了战略合作协议，你获得了专属金融服务', reward: { connections: 12 } },
+          { text: '银行成为你最坚实的后盾，资金不再是瓶颈', reward: { money: 500000, reputation: 15, connections: 10 } },
+        ]
+      },
+    ],
+    npcLinks: { lichu: 0.3, chenzong: 0.2, wanglvshi: 0.15, liukuaiji: 0.2 },
+  },
+
+  qianlaoban: {
+    id:'qianlaoban', name:'钱老板', title:'新海拍卖行董事长',
+    actUnlock:1, initFavor:5,
+    desc:'60岁，古董鉴赏家+精明商人，掌握着新海最顶级的资产交易渠道',
+    favorLevels:['敌对','冷淡','中立','友好','亲密'],
+    dialogTypes:['greeting','auction','appraisal','collect'],
+    giftPreferences: { love:['art','wine'], like:['luxury'], neutral:['tech','book'] },
+    giftQuote: '钱老板是玩家，好酒配好画，人生才完整。',
+    dialogs:{
+      greeting:['钱老板正用放大镜看一件瓷器："小林来看看，这件东西妙不妙？"','"拍卖行最近收了批好东西，我想着你可能有兴趣。"'],
+      auction:['"这件资产底价两百万，但我估计成交价能到三百万。你要不要入场？"','"拍卖这东西，三分看眼力，七分看运气。"'],
+      appraisal:['"你这件资产我帮你估个价。保守估计能翻三倍，但得等市场热起来。"','"好东西不急着出手。放在手里捂一捂，价格自然就上去了。"'],
+    },
+    questLines: [
+      {
+        id: 'qianlaoban_q1', name: '初入拍场', desc: '钱老板邀请你参加首次拍卖会',
+        reqFavor: 15,
+        steps: [
+          { text: '收到一张烫金请柬：新海秋季艺术品拍卖会', reward: { stress: 5 } },
+          { text: '在拍卖会上你见识了真正的资本游戏', reward: { connections: 5 } },
+          { text: '你以低于市场价拍到了一件不错的资产', reward: { money: 50000, npcFavor: { qianlaoban: 10 } } },
+        ]
+      },
+      {
+        id: 'qianlaoban_q2', name: '捡漏高手', desc: '钱老板教你辨别资产价值',
+        reqFavor: 30,
+        steps: [
+          { text: '钱老板私下告诉你一件被低估的资产即将上拍', reward: { npcFavor: { qianlaoban: 8 } } },
+          { text: '你按照他的指点做了研究，确认了价值', reward: {} },
+          { text: '成功以低价拿到，转手翻了五倍', reward: { money: 250000, reputation: 5, npcFavor: { qianlaoban: 12 } } },
+        ]
+      },
+      {
+        id: 'qianlaoban_q3', name: 'VIP俱乐部', desc: '钱老板邀请你进入顶级藏家圈子',
+        reqFavor: 50,
+        steps: [
+          { text: '钱老板告诉你有一个私人拍卖俱乐部，只有少数人能进', reward: { stress: 8 } },
+          { text: '你缴纳了会费，获得了进入圈子的资格', reward: { money: -100000 } },
+          { text: '在俱乐部里你接触到了顶级资产和人脉', reward: { connections: 15, reputation: 10, money: 200000 } },
+        ]
+      },
+      {
+        id: 'qianlaoban_q4', name: '专属拍卖会', desc: '钱老板为你举办专场资产推介会',
+        reqFavor: 70,
+        steps: [
+          { text: '钱老板提议为你办一场个人资产专场推介会', reward: { reputation: 10 } },
+          { text: '你精心挑选了手中的优质资产进行展示', reward: { stress: 10 } },
+          { text: '推介会大获成功，资产估值翻了几倍', reward: { money: 500000, reputation: 20, connections: 15 } },
+        ]
+      },
+    ],
+    npcLinks: { chenzong: 0.25, jinhangzhang: 0.2, xiaoc: 0.15, zhangye: 0.1 },
+  },
+
+  sunmishu: {
+    id:'sunmishu', name:'孙秘书', title:'新海市府办副主任',
+    actUnlock:1, initFavor:0,
+    desc:'35岁，年轻有为的体制内精英，掌握着城市规划和政策的第一手信息',
+    favorLevels:['敌对','冷淡','中立','友好','亲密'],
+    dialogTypes:['greeting','policy','region','tip'],
+    giftPreferences: { love:['book','tech'], like:['art'], neutral:['wine','luxury'] },
+    giftQuote: '孙秘书是读书人出身，好书和前沿科技报告最能打开话题。',
+    dialogs:{
+      greeting:['孙秘书从公文堆中抬起头："林总，最近市里有几个新规划，你可能感兴趣。"','"你那个片区的规划调整方案已经批下来了，我提前跟你说一声。"'],
+      policy:['"这个政策文件下个月才公开，但我可以给你看一个摘要版。"','"市里在考虑调整高新区的税收优惠，你们企业符合条件的话要抓紧申请。"'],
+      region:['"永宁区那边的配套马上要升级了，现在入场时机正好。"','"蛇口港区要扩建保税仓，你的物流业务可以考虑往那边布局。"'],
+    },
+    questLines: [
+      {
+        id: 'sunmishu_q1', name: '政策咨询', desc: '孙秘书帮你解读最新的招商政策',
+        reqFavor: 15,
+        steps: [
+          { text: '你约孙秘书在茶馆见面，了解最新的优惠政策', reward: { npcFavor: { sunmishu: 8 } } },
+          { text: '他详细介绍了几个你可能符合条件的补贴项目', reward: { connections: 2 } },
+          { text: '你按照他的建议提交了申请，获批了一笔补贴', reward: { money: 80000, npcFavor: { sunmishu: 10 } } },
+        ]
+      },
+      {
+        id: 'sunmishu_q2', name: '区域拓展情报', desc: '孙秘书透露了几个优质区域的发展规划',
+        reqFavor: 30,
+        steps: [
+          { text: '孙秘书私下告诉你，某片区即将被划为自贸区', reward: { stress: 5 } },
+          { text: '你提前去考察了一圈，发现确实很有潜力', reward: {} },
+          { text: '你抢在规划公布前低价拿下了几个优质铺位', reward: { money: 150000, connections: 3, npcFavor: { sunmishu: 12 } } },
+        ]
+      },
+      {
+        id: 'sunmishu_q3', name: '招商引资推荐', desc: '孙秘书推荐你参加市政府招商团',
+        reqFavor: 50,
+        steps: [
+          { text: '市里要组织一个企业家代表团去外地招商，孙秘书推荐了你', reward: { reputation: 8 } },
+          { text: '考察期间你结识了多位外地企业家和政府官员', reward: { connections: 12 } },
+          { text: '你谈成了几个跨区域合作项目', reward: { money: 200000, reputation: 10, connections: 8 } },
+        ]
+      },
+      {
+        id: 'sunmishu_q4', name: '市企合作顾问', desc: '孙秘书邀请你加入市政府企业顾问团',
+        reqFavor: 70,
+        steps: [
+          { text: '市政府要组建企业顾问团，孙秘书提名了你', reward: { reputation: 15 } },
+          { text: '你在顾问团中为中小企业发声，获得广泛认可', reward: { connections: 15, reputation: 10 } },
+          { text: '你的建议被采纳写入了招商政策文件', reward: { reputation: 25, money: 100000, connections: 10 } },
+        ]
+      },
+    ],
+    npcLinks: { lichu: 0.35, linjiaoshou: 0.15, jinhangzhang: 0.1 },
+  },
+
+  wujiaolian: {
+    id:'wujiaolian', name:'吴教练', title:'卓越企管培训创始人',
+    actUnlock:1, initFavor:15,
+    desc:'42岁，前500强HR总监转型创业培训师，擅长把平庸团队打造成王牌之师',
+    favorLevels:['敌对','冷淡','中立','友好','亲密'],
+    dialogTypes:['greeting','train','coach','team'],
+    giftPreferences: { love:['book','tech'], like:['art'], neutral:['wine','luxury'] },
+    giftQuote: '吴教练是方法论狂人，专业书籍和效率工具是他的精神食粮。',
+    dialogs:{
+      greeting:['吴教练正在白板上画组织架构图："小林，你公司最近士气怎么样？"','"我刚从一家上市公司做完团队培训回来，感触很深。要不要聊聊？"'],
+      train:['"你的团队我看了一圈，潜力很大，但方法论需要升级。"','"不是员工不行，是培训没到位。给我两周，我帮你扭转局面。"'],
+      coach:['"企业家和经理人的区别，就是后者只会管，前者懂得激发。"','"你的管理风格偏温和，这对初创期是优势，但从长期看需要适当调整。"'],
+    },
+    questLines: [
+      {
+        id: 'wujiaolian_q1', name: '团队诊断', desc: '吴教练给你的团队做一次全面评估',
+        reqFavor: 15,
+        steps: [
+          { text: '吴教练花了一天时间观察你的团队工作状态', reward: { stress: 5 } },
+          { text: '他给每个人写了一份能力评估报告', reward: { npcFavor: { wujiaolian: 10 } } },
+          { text: '根据评估结果，他给出了几条价值很高的建议', reward: { connections: 3, npcFavor: { wujiaolian: 8 } } },
+        ]
+      },
+      {
+        id: 'wujiaolian_q2', name: '集中培训营', desc: '吴教练带你的核心团队做封闭培训',
+        reqFavor: 30,
+        steps: [
+          { text: '吴教练设计了一套两周的强化培训方案', reward: { money: -50000 } },
+          { text: '培训期间团队高强度磨合，虽然累但脱胎换骨', reward: { stress: 15 } },
+          { text: '培训结束后，团队战斗力明显提升', reward: { reputation: 8, connections: 5, money: 100000 } },
+        ]
+      },
+      {
+        id: 'wujiaolian_q3', name: '领导力教练', desc: '吴教练做你的私人领导力教练',
+        reqFavor: 50,
+        steps: [
+          { text: '吴教练说："作为创始人，你的天花板就是公司的天花板"', reward: { npcFavor: { wujiaolian: 10 } } },
+          { text: '每周一次的一对一辅导持续了三个月', reward: { stress: 8 } },
+          { text: '你的管理能力得到质的飞跃，员工对你的评价大幅上升', reward: { reputation: 15, connections: 8 } },
+        ]
+      },
+      {
+        id: 'wujiaolian_q4', name: '王牌之师', desc: '吴教练帮你打造行业顶尖团队',
+        reqFavor: 70,
+        steps: [
+          { text: '吴教练提出一个雄心勃勃的计划：帮你打造行业最强团队', reward: { reputation: 5 } },
+          { text: '他亲自驻场三个月，重新设计了整个组织架构和激励体系', reward: { money: -200000, stress: 15 } },
+          { text: '你的公司被评选为"最佳雇主"，团队成为行业标杆', reward: { reputation: 25, money: 300000, connections: 15 } },
+        ]
+      },
+    ],
+    npcLinks: { sujie: 0.25, zhaolei: 0.15, linjiaoshou: 0.1 },
+  },
+
+  liukuaiji: {
+    id:'liukuaiji', name:'刘会计', title:'诚达会计师事务所合伙人',
+    actUnlock:1, initFavor:5,
+    desc:'50岁，老派财务专家，一辈子跟数字打交道，能帮你合法省下大笔税费',
+    favorLevels:['敌对','冷淡','中立','友好','亲密'],
+    dialogTypes:['greeting','tax','audit','save'],
+    giftPreferences: { love:['wine','book'], like:['tech'], neutral:['art','luxury'] },
+    giftQuote: '刘会计只认两样东西：好酒和精准的账本。酒到位了，账就好谈。',
+    dialogs:{
+      greeting:['刘会计放下老花镜："小林啊，你这季度的报表我看了，有几个地方可以优化。"','"来得正好，我刚研究了一个新的税务筹划方案，能帮你省不少。"'],
+      tax:['"合理避税和逃税是两回事。我教你的是前者，完全合法。"','"这个抵扣项很多人不知道，但你们公司完全符合条件。"'],
+      audit:['"我帮你看看上个月的账……嗯，这里有个合规风险，建议立刻整改。"','"审计不是来找你麻烦的，是帮你提前发现问题的。"'],
+    },
+    questLines: [
+      {
+        id: 'liukuaiji_q1', name: '财务体检', desc: '刘会计免费帮你做一次财务体检',
+        reqFavor: 10,
+        steps: [
+          { text: '刘会计说新客户都有一次免费财务体检', reward: { npcFavor: { liukuaiji: 8 } } },
+          { text: '他发现了几个账务处理上的小问题', reward: { stress: 5 } },
+          { text: '修正之后，你的财务管理规范了很多', reward: { npcFavor: { liukuaiji: 10 }, money: 30000 } },
+        ]
+      },
+      {
+        id: 'liukuaiji_q2', name: '税务筹划', desc: '刘会计帮你制定年度税务优化方案',
+        reqFavor: 30,
+        steps: [
+          { text: '刘会计拿出了一份详细的分析报告', reward: { npcFavor: { liukuaiji: 8 } } },
+          { text: '他指出了几个可以合法优化的税务节点', reward: {} },
+          { text: '按照方案执行后，当年税费降低了三成', reward: { money: 150000, reputation: 5, npcFavor: { liukuaiji: 12 } } },
+        ]
+      },
+      {
+        id: 'liukuaiji_q3', name: '上市辅导', desc: '刘会计建议你开始做上市前的财务规范',
+        reqFavor: 50,
+        steps: [
+          { text: '刘会计说："如果你想上市，现在就得开始规范财务了。"', reward: { stress: 10 } },
+          { text: '他带领团队花了两个月帮你梳理财务体系', reward: { money: -100000, stress: 8 } },
+          { text: '财务体系焕然一新，为未来融资和上市扫清障碍', reward: { reputation: 12, connections: 10, money: 200000 } },
+        ]
+      },
+      {
+        id: 'liukuaiji_q4', name: '财务战略顾问', desc: '刘会计成为你的长期财务战略顾问',
+        reqFavor: 70,
+        steps: [
+          { text: '刘会计正式接受担任你公司独立财务顾问的邀请', reward: { reputation: 8 } },
+          { text: '他从战略高度帮你重新设计了财务架构和成本体系', reward: {} },
+          { text: '公司运营成本持续下降，利润率大幅提升', reward: { money: 400000, reputation: 15, connections: 8 } },
+        ]
+      },
+    ],
+    npcLinks: { jinhangzhang: 0.25, wanglvshi: 0.2, chenzong: 0.1, lichu: 0.1 },
+  },
+
 };
 
 // ---- 事件数据库 ----
@@ -1160,7 +1486,7 @@ const EVENTS = [
     getDesc:()=>'张野提出可以帮你策划一次大规模的媒体曝光，让你的品牌迅速出圈。费用不菲，但效果可能很惊人。',
     effects:{ money:[0.8,1.6], reputation:[20,50], stress:[15,40], npcFavor:{ zhangye:5 } },
     choices:[
-      { text:'全力投入，相信他的能力', effect:{ money:0.8, reputation:50, stress:40 }, label:'相信专业' },
+      { text:'全力投入，相信他的能力', effect:{ money:0.8, reputation:35, stress:40 }, label:'相信专业' },
       { text:'小额测试效果', effect:{ money:1.2, reputation:20, stress:15 }, label:'小额测试' },
       { text:'自己做媒体，不靠他', effect:{ money:1.4, reputation:30, stress:25 }, label:'独立自主' },
     ],
@@ -1249,7 +1575,7 @@ const EVENTS = [
     },
     effects:{ reputation:[25,40], stress:[-30,0], connections:[15,30] },
     choices:[
-      { text:'继续扩张，走向全国/全球', effect:{ reputation:40, connections:30, stress:0 }, label:'全球征途' },
+      { text:'继续扩张，走向全国/全球', effect:{ reputation:40, connections:18, stress:0 }, label:'全球征途' },
       { text:'写书/传承，影响更多人', effect:{ reputation:35, stress:-30 }, label:'经验传承' },
     ],
     milestone:1000000000,
@@ -1827,7 +2153,7 @@ const EVENTS = [
     effects:{ money:[1.1,2.2], reputation:[5,25], connections:[10,25] },
     choices:[
       { text:'签下头部主播，全力押注', effect:{ money:1.4, reputation:25, connections:20, stress:20 }, label:'签下主播' },
-      { text:'自建MCN矩阵，培养网红', effect:{ money:1.3, reputation:20, connections:25, stress:15 }, label:'自建MCN' },
+      { text:'自建MCN矩阵，培养网红', effect:{ money:1.3, reputation:20, connections:15, stress:15 }, label:'自建MCN' },
       { text:'投放广告，搭便车', effect:{ money:1.15, reputation:15, connections:10, stress:5 }, label:'投放广告' },
     ],
     fallbacks:['杭江市的直播间又卖疯了。','直播带货的下半场，谁能笑到最后？'],
@@ -1841,8 +2167,8 @@ const EVENTS = [
     getDesc:()=>'你在新加坡的业务发展迅速，现在有一个机会将新加坡业务升级为东南亚区域总部。这需要大量投资，但成功后可以辐射整个东南亚市场，并获得新加坡政府的税收优惠。',
     effects:{ money:[0.5,1.8], reputation:[20,50], connections:[15,30], stress:[10,35] },
     choices:[
-      { text:'升级为东南亚总部，放眼东盟', effect:{ money:0.5, reputation:50, connections:30, stress:35 }, label:'升格总部' },
-      { text:'保持新加坡分公司定位', effect:{ money:1.3, reputation:25, connections:20, stress:15 }, label:'保持现状' },
+      { text:'升级为东南亚总部，放眼东盟', effect:{ money:0.5, reputation:35, connections:18, stress:35 }, label:'升格总部' },
+      { text:'保持新加坡分公司定位', effect:{ money:1.3, reputation:25, connections:12, stress:15 }, label:'保持现状' },
       { text:'观望东南亚局势再决定', effect:{ money:1.8, reputation:10, connections:10, stress:5 }, label:'暂时观望' },
     ],
     fallbacks:['新加坡总部升格的机会来了。','在狮城设立东南亚总部，这是走向国际化的关键一步。'],
@@ -1882,8 +2208,8 @@ const EVENTS = [
     getDesc:()=>'东京动漫产业在全球市场持续增长，一部热门IP的授权费用水涨船高。在东京拥有媒体和文化产业布局的企业，可以切入动漫IP授权和衍生品开发的蓝海市场。',
     effects:{ money:[1.0,2.0], reputation:[10,30], connections:[15,30] },
     choices:[
-      { text:'拿下头部IP授权', effect:{ money:1.2, reputation:30, connections:25, stress:25 }, label:'头部IP' },
-      { text:'投资动漫制作公司', effect:{ money:1.4, reputation:25, connections:30, stress:20 }, label:'投资制作' },
+      { text:'拿下头部IP授权', effect:{ money:1.2, reputation:30, connections:15, stress:25 }, label:'头部IP' },
+      { text:'投资动漫制作公司', effect:{ money:1.4, reputation:25, connections:18, stress:20 }, label:'投资制作' },
       { text:'开发衍生品渠道', effect:{ money:1.6, reputation:15, connections:15, stress:10 }, label:'衍生品' },
     ],
     fallbacks:['东京秋叶原的动漫产业链正在外溢。','二次元经济学，比想象中更赚钱。'],
@@ -1897,7 +2223,7 @@ const EVENTS = [
     getDesc:()=>'投行找上门来了：他们认为你的公司已经具备在纽约证券交易所或纳斯达克上市的潜力。IPO可以让你的公司获得巨额融资和国际知名度，但也意味着接受更严格的监管和公众审视。',
     effects:{ money:[1.0,5.0], reputation:[30,80], connections:[20,50], stress:[20,60] },
     choices:[
-      { text:'启动IPO，冲击华尔街', effect:{ money:3.0, reputation:80, connections:50, stress:60 }, label:'启动IPO' },
+      { text:'启动IPO，冲击华尔街', effect:{ money:3.0, reputation:55, connections:28, stress:60 }, label:'启动IPO' },
       { text:'先做Pre-IPO私募融资', effect:{ money:2.0, reputation:50, connections:35, stress:30 }, label:'Pre-IPO' },
       { text:'保持私有化，暂不上市', effect:{ money:1.0, reputation:20, connections:15, stress:5 }, label:'保持私有' },
     ],
@@ -1910,8 +2236,8 @@ const EVENTS = [
     getDesc:()=>'一家拥有百年历史的美国公司深陷财务困境，但品牌价值依然巨大。收购它可以在短时间内获得美国市场的渠道和品牌认知。纽约的业务布局将发挥关键作用。',
     effects:{ money:[0.3,2.0], reputation:[20,60], connections:[20,40], stress:[30,60] },
     choices:[
-      { text:'蛇吞象，全力收购', effect:{ money:0.3, reputation:60, connections:40, stress:60 }, label:'蛇吞象' },
-      { text:'仅收购核心资产', effect:{ money:1.0, reputation:40, connections:30, stress:35 }, label:'收购核心' },
+      { text:'蛇吞象，全力收购', effect:{ money:0.3, reputation:42, connections:22, stress:60 }, label:'蛇吞象' },
+      { text:'仅收购核心资产', effect:{ money:1.0, reputation:40, connections:18, stress:35 }, label:'收购核心' },
       { text:'风险太高，放弃收购', effect:{ money:2.0, reputation:10, connections:5, stress:-10 }, label:'放弃收购' },
     ],
     fallbacks:['华尔街传来消息：一家百年美企正在寻找买家。','收购一家美国百年老店，这是中国企业家的新高度。'],
@@ -1925,9 +2251,9 @@ const EVENTS = [
     getDesc:()=>'英国脱欧后正积极寻求与非欧盟国家的贸易协定。一份新的中英商贸便利化协议即将签署，在伦敦有业务的企业将成为首批受益者，获得欧洲市场的绿色通道。',
     effects:{ money:[1.3,2.0], reputation:[20,50], connections:[15,40], stress:[5,25] },
     choices:[
-      { text:'率先布局欧洲各国', effect:{ money:1.5, reputation:50, connections:40, stress:25 }, label:'全面布局' },
-      { text:'先深耕英国市场', effect:{ money:1.3, reputation:35, connections:25, stress:10 }, label:'深耕英国' },
-      { text:'等待协议生效再行动', effect:{ money:1.8, reputation:15, connections:15, stress:0 }, label:'等待生效' },
+      { text:'率先布局欧洲各国', effect:{ money:1.5, reputation:35, connections:22, stress:25 }, label:'全面布局' },
+      { text:'先深耕英国市场', effect:{ money:1.3, reputation:35, connections:15, stress:10 }, label:'深耕英国' },
+      { text:'等待协议生效再行动', effect:{ money:1.8, reputation:15, connections:10, stress:0 }, label:'等待生效' },
     ],
     fallbacks:['伦敦传来了中英贸易协定的好消息。','借着伦敦的桥头堡，打开整个欧洲市场。'],
   },
@@ -1938,8 +2264,8 @@ const EVENTS = [
     getDesc:()=>'一个拥有150年历史的英国奢侈品牌正在出售。品牌在全球拥有极高的知名度和忠实的客户群。收购这个品牌将瞬间提升你公司的国际形象，但这笔交易代价不菲。',
     effects:{ money:[0.2,1.5], reputation:[30,80], connections:[20,40], stress:[25,50] },
     choices:[
-      { text:'果断出手，拿下英伦传奇', effect:{ money:0.2, reputation:80, connections:40, stress:50 }, label:'拿下传奇' },
-      { text:'只买品牌授权，轻资产运营', effect:{ money:0.8, reputation:45, connections:25, stress:25 }, label:'品牌授权' },
+      { text:'果断出手，拿下英伦传奇', effect:{ money:0.2, reputation:55, connections:22, stress:50 }, label:'拿下传奇' },
+      { text:'只买品牌授权，轻资产运营', effect:{ money:0.8, reputation:45, connections:15, stress:25 }, label:'品牌授权' },
       { text:'品牌溢价太高，不值得', effect:{ money:1.5, reputation:15, connections:10, stress:0 }, label:'不值得' },
     ],
     fallbacks:['一个百年英伦品牌正在拍卖。','买下一个传奇品牌的瞬间，你也买下了一段历史。'],
@@ -1953,8 +2279,8 @@ const EVENTS = [
     getDesc:()=>'迪拜的主权财富基金正在全球寻找投资标的。他们对你在中东的业务布局表现出浓厚兴趣，愿意提供巨额战略投资。石油资本的力量足以改变一家公司的命运。',
     effects:{ money:[2.0,5.0], reputation:[20,60], connections:[20,50], stress:[5,30] },
     choices:[
-      { text:'接受战略投资，全面合作', effect:{ money:5.0, reputation:50, connections:50, stress:25 }, label:'全面合作' },
-      { text:'接受财务投资，保持独立', effect:{ money:3.5, reputation:35, connections:35, stress:15 }, label:'财务投资' },
+      { text:'接受战略投资，全面合作', effect:{ money:5.0, reputation:35, connections:25, stress:25 }, label:'全面合作' },
+      { text:'接受财务投资，保持独立', effect:{ money:3.5, reputation:35, connections:18, stress:15 }, label:'财务投资' },
       { text:'婉拒，保持自主权', effect:{ money:2.0, reputation:10, connections:10, stress:0 }, label:'婉拒合作' },
     ],
     fallbacks:['迪拜的主权基金又出手了。','石油资本的钱，是世界上最聪明的钱之一。'],
@@ -2033,8 +2359,8 @@ const EVENTS = [
     getDesc:()=>'国家发布新一轮"一带一路"国际合作倡议，重点支持民营企业走出去。在海外有布局的企业可以获得政策、金融和外交的全方位支持，这是一次中国企业家全球化的历史机遇。',
     effects:{ money:[1.2,2.5], reputation:[20,60], connections:[15,40], stress:[5,25] },
     choices:[
-      { text:'积极响应，全面出海', effect:{ money:1.8, reputation:60, connections:40, stress:25 }, label:'全面出海' },
-      { text:'选择重点国家稳步布局', effect:{ money:1.5, reputation:40, connections:30, stress:15 }, label:'重点布局' },
+      { text:'积极响应，全面出海', effect:{ money:1.8, reputation:42, connections:22, stress:25 }, label:'全面出海' },
+      { text:'选择重点国家稳步布局', effect:{ money:1.5, reputation:40, connections:18, stress:15 }, label:'重点布局' },
       { text:'专注国内市场', effect:{ money:1.2, reputation:15, connections:10, stress:0 }, label:'专注国内' },
     ],
     fallbacks:['一带一路新倡议发布了。','中国企业家全球化的时代，已经到来。'],
@@ -2174,7 +2500,7 @@ const EVENTS = [
     getDesc:()=>'黄昏时分，某商会举办的高端社交酒会在城市酒店的顶层举行。觥筹交错间，各路商界精英汇聚一堂。这不仅是社交，更是信息和人脉的战场。',
     effects:{ money:[1.0,1.15], reputation:[5,15], connections:[10,25], stress:[-15,0] },
     choices:[
-      { text:'盛装出席，积极社交', effect:{ money:1.05, reputation:15, connections:25, stress:-5 }, label:'积极社交' },
+      { text:'盛装出席，积极社交', effect:{ money:1.05, reputation:15, connections:15, stress:-5 }, label:'积极社交' },
       { text:'低调出席，观察观察', effect:{ money:1.0, reputation:5, connections:10, stress:-15 }, label:'低调观察' },
     ],
     fallbacks:['酒会上的香槟很好，但信息更珍贵。','认识了几位新朋友，交换了名片。'],
@@ -2282,8 +2608,8 @@ const EVENTS = [
     getDesc:()=>'中秋月圆，又到了人情往来的旺季。月饼、礼盒、商务宴请——这个节日的社交含金量全年最高。送对了礼，一年的关系都稳了。',
     effects:{ money:[1.0,1.15], reputation:[10,30], connections:[10,30], stress:[-10,5] },
     choices:[
-      { text:'举办中秋商务联谊晚宴', effect:{ money:1.05, reputation:30, connections:25, stress:5, expense:25000 }, label:'联谊晚宴' },
-      { text:'给重要关系人送定制礼盒', effect:{ money:1.0, reputation:15, connections:30, stress:0, expense:18000, npcFavorAll:[3,8] }, label:'定制礼盒' },
+      { text:'举办中秋商务联谊晚宴', effect:{ money:1.05, reputation:30, connections:15, stress:5, expense:25000 }, label:'联谊晚宴' },
+      { text:'给重要关系人送定制礼盒', effect:{ money:1.0, reputation:15, connections:18, stress:0, expense:18000, npcFavorAll:[3,8] }, label:'定制礼盒' },
       { text:'回家陪家人赏月', effect:{ money:1.0, reputation:5, stress:-20 }, label:'陪家人' },
     ],
     fallbacks:['中秋月圆，人亦圆。','送月饼的学问，比做生意还深。'],
@@ -2348,7 +2674,7 @@ const EVENTS = [
     effects:{ money:[1.15,1.8], reputation:[10,25], connections:[10,30], stress:[-5,15] },
     choices:[
       { text:'冲刺海外圣诞促销', effect:{ money:1.8, reputation:20, connections:15, stress:15, expense:25000 }, label:'海外促销' },
-      { text:'给海外客户寄圣诞礼物', effect:{ money:1.1, reputation:25, connections:30, stress:-5, expense:15000 }, label:'圣诞礼物' },
+      { text:'给海外客户寄圣诞礼物', effect:{ money:1.1, reputation:25, connections:18, stress:-5, expense:15000 }, label:'圣诞礼物' },
       { text:'组织公司圣诞派对', effect:{ money:1.05, reputation:10, loyalty:[5,12], stress:-15, expense:8000 }, label:'圣诞派对' },
     ],
     fallbacks:['圣诞老人的礼物袋，装不下所有商机。','Jingle Bells，商机来敲门。'],
@@ -2469,8 +2795,8 @@ const EVENTS = [
     getDesc:()=>'行业协会邀请你参与制定下一版行业技术标准。拥有标准制定权意味着你的技术路线将成为全行业的风向标，竞争对手将不得不跟随你的脚步。',
     effects:{ money:[1.1,1.6], reputation:[20,50], connections:[15,30], stress:[10,25] },
     choices:[
-      { text:'积极主导标准制定', effect:{ money:1.3, reputation:50, connections:30, stress:25, expense:50000 }, label:'主导制定' },
-      { text:'参与但不主导', effect:{ money:1.2, reputation:35, connections:20, stress:15, expense:20000 }, label:'参与制定' },
+      { text:'积极主导标准制定', effect:{ money:1.3, reputation:35, connections:18, stress:25, expense:50000 }, label:'主导制定' },
+      { text:'参与但不主导', effect:{ money:1.2, reputation:35, connections:12, stress:15, expense:20000 }, label:'参与制定' },
       { text:'标准制定太累，专注业务', effect:{ money:1.5, reputation:10, connections:5, stress:5 }, label:'专注业务' },
     ],
     fallbacks:['得标准者得天下，这是亘古不变的真理。','坐在标准制定的桌子上，你说了算。'],
@@ -2498,7 +2824,7 @@ const EVENTS = [
     getDesc:()=>'你收到了一张高端慈善晚宴的邀请函。主办方是市工商联，出席的嘉宾非富即贵。晚宴的重头戏是慈善拍卖，拍品的溢价部分将捐给希望工程。',
     effects:{ money:[1.0,1.1], reputation:[15,40], connections:[10,30], stress:[-5,10] },
     choices:[
-      { text:'拍下最贵的拍品，一举成名', effect:{ money:1.0, reputation:40, connections:30, stress:10, expense:100000 }, label:'豪掷千金' },
+      { text:'拍下最贵的拍品，一举成名', effect:{ money:1.0, reputation:40, connections:18, stress:10, expense:100000 }, label:'豪掷千金' },
       { text:'适度参与，低调做慈善', effect:{ money:1.05, reputation:25, connections:15, stress:0, expense:20000 }, label:'适度慈善' },
       { text:'只出席不竞拍，社交为主', effect:{ money:1.08, reputation:10, connections:20, stress:-5, expense:2000 }, label:'社交为主' },
     ],
@@ -2550,8 +2876,8 @@ const EVENTS = [
     getDesc:()=>'全国行业峰会的组委会发来邀请：请你作为嘉宾发表主题演讲。台下坐着上千位行业精英和数十家媒体记者。这是提升个人和公司品牌的天赐良机。',
     effects:{ money:[1.0,1.15], reputation:[20,50], connections:[10,30], stress:[10,25] },
     choices:[
-      { text:'精心准备，做重磅演讲', effect:{ money:1.05, reputation:50, connections:30, stress:25 }, label:'重磅演讲' },
-      { text:'参加圆桌论坛，轻松一些', effect:{ money:1.08, reputation:30, connections:20, stress:15 }, label:'圆桌论坛' },
+      { text:'精心准备，做重磅演讲', effect:{ money:1.05, reputation:35, connections:18, stress:25 }, label:'重磅演讲' },
+      { text:'参加圆桌论坛，轻松一些', effect:{ money:1.08, reputation:30, connections:12, stress:15 }, label:'圆桌论坛' },
       { text:'婉拒，让VP代劳', effect:{ money:1.1, reputation:10, connections:5, stress:0 }, label:'VP代劳' },
     ],
     fallbacks:['站上行业峰会的舞台，你就是行业的代言人。','一次好的演讲，比一百次广告还有效。'],
@@ -2625,12 +2951,215 @@ const EVENTS = [
     fallbacks:['周海燕这步棋走得漂亮，国际化布局领先了。','远洋上市后，竞争格局又要变了。'],
   },
 
+
+  // ===== 人脉危机事件 (7) =====
+  {
+    id:'conn_crisis_01', type:'social', category:'decision',
+    acts:[0,1,2,3,4,5], cooldown:90, weight:8,
+    title:'朋友紧急借钱',
+    getDesc:()=>{
+      const names=['大学同学老周','前同事阿杰','远房表哥','创业伙伴小刘','老邻居张叔'];
+      const reasons=['生意周转不开','家人生病急需医药费','房贷断供','投资踩雷了','公司发不出工资'];
+      const n=names[Math.floor(Math.random()*names.length)];
+      const r=reasons[Math.floor(Math.random()*reasons.length)];
+      return `${n}深夜打来电话，声音焦急："${r}，能不能借我${30+Math.floor(Math.random()*70)}万周转一下？"你知道，这笔钱大概率是有去无回。`;
+    },
+    effects:{ money:[-300000,50000], connections:[-12,5], stress:[10,30] },
+    choices:[
+      { text:'爽快借出，不计回报', effect:{ money:-300000, connections:5, stress:10 }, label:'重情重义' },
+      { text:'借一半，打好欠条', effect:{ money:-150000, connections:0, stress:15 }, label:'半情半理' },
+      { text:'婉拒，推荐贷款渠道', effect:{ money:-10000, connections:-8, stress:25 }, label:'婉拒' },
+    ],
+    fallbacks:['深夜借钱电话，商场上常见的人情局。','钱和人情，哪个更重要？'],
+  },
+  {
+    id:'conn_crisis_02', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:85, weight:7,
+    title:'圈内丑闻波及',
+    getDesc:()=>{
+      const names=['商会副会长老郑','你的投资人李先生','合作伙伴王总','圈内大佬老马'];
+      const scandals=['被曝财务造假','涉嫌内幕交易被调查','卷入权色丑闻','被举报偷税漏税'];
+      const n=names[Math.floor(Math.random()*names.length)];
+      const s=scandals[Math.floor(Math.random()*scandals.length)];
+      return `${n}${s}。媒体深挖后发现你和${n}过往密切，已经有记者联系你求证。你的朋友圈开始有人悄悄取关。`;
+    },
+    effects:{ reputation:[-15,5], connections:[-15,5], stress:[20,40] },
+    choices:[
+      { text:'公开划清界限，表明立场', effect:{ reputation:5, connections:-15, stress:30 }, label:'划清界限' },
+      { text:'私下沟通但不公开表态', effect:{ reputation:-10, connections:-3, stress:20 }, label:'保持沉默' },
+      { text:'力挺朋友，共渡难关', effect:{ reputation:-15, connections:5, stress:40 }, label:'力挺' },
+    ],
+    fallbacks:['圈子里出了事，你也难独善其身。','你引以为傲的人脉，有时候也是定时炸弹。'],
+  },
+  {
+    id:'conn_crisis_03', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:80, weight:7,
+    title:'人情绑架',
+    getDesc:()=>{
+      const p=['帮你拉过投资的王叔','介绍过关键客户的赵姐','帮你摆平过麻烦的李哥'];
+      const fav=['让你投资他儿子的"稳赚"项目','要你给侄子安排高管职位','让你在政府招标中"通融通融"'];
+      const pers=p[Math.floor(Math.random()*p.length)];
+      const f=fav[Math.floor(Math.random()*fav.length)];
+      return `当年${pers}帮过你一个大忙，现在他来找你${f}。你知道这事不靠谱，但欠着人情不还，在圈子里口碑会崩。`;
+    },
+    effects:{ money:[0.7,1.1], connections:[-10,5], reputation:[-10,10], stress:[20,45] },
+    choices:[
+      { text:'咬牙答应，还人情债', effect:{ money:0.7, connections:5, reputation:-10, stress:45 }, label:'还人情' },
+      { text:'折中：出钱不出力', effect:{ money:0.85, connections:-2, reputation:0, stress:30 }, label:'折中' },
+      { text:'委婉拒绝，另找方式补偿', effect:{ money:1.1, connections:-10, reputation:10, stress:20 }, label:'拒绝' },
+    ],
+    fallbacks:['人情债，是商场最难偿还的东西。','欠人的，迟早要还。'],
+  },
+  {
+    id:'conn_crisis_04', type:'social', category:'decision',
+    acts:[0,1,2,3,4,5], cooldown:70, weight:6,
+    title:'社交倦怠',
+    getDesc:()=>{
+      const inst=['"新海商业领袖私董会"晚宴','"青年企业家俱乐部"游艇派对','"创投圈年终盛典"','"长江同学会"高尔夫球局'];
+      const e=inst[Math.floor(Math.random()*inst.length)];
+      return `本周你收到了${e}的邀请。但你最近已经连续三周在应酬了，疲惫不堪。助理提醒这种场合不去会被圈子遗忘，去了又实在扛不住。`;
+    },
+    effects:{ connections:[-8,3], stress:[-20,35], reputation:[-5,5] },
+    choices:[
+      { text:'硬着头皮去，保持曝光', effect:{ connections:3, stress:35, reputation:5 }, label:'硬撑' },
+      { text:'派公司高层代为出席', effect:{ connections:-3, stress:-5, reputation:0 }, label:'派人替' },
+      { text:'果断拒绝，专心工作', effect:{ connections:-8, stress:-20, reputation:-5 }, label:'拒绝' },
+    ],
+    fallbacks:['社交也是工作，累了也得撑着。','圈子需要你，你也需要圈子——但这根弦一直在绷着。'],
+  },
+  {
+    id:'conn_crisis_05', type:'social', category:'decision',
+    acts:[2,3,4,5], cooldown:100, weight:6,
+    title:'商业纠纷惊动圈内',
+    getDesc:()=>{
+      const biz=Object.values(SGame.G&&SGame.G.businesses||{}).find(b=>b.level>0);
+      const bizName=biz&&biz.name||'你的核心业务';
+      return `你的${bizName}与供应商发生了严重纠纷。对方在商协群里公开"曝光"你的"不诚信行为"。虽然事实并非如此，但谣言已经传开了。好几个合作方发来信息询问情况。`;
+    },
+    effects:{ connections:[-20,5], reputation:[-20,10], money:[0.8,1.05], stress:[25,50] },
+    choices:[
+      { text:'公开回应+律师函+请第三方调查', effect:{ connections:-5, reputation:10, money:0.85, stress:40 }, label:'正面回应' },
+      { text:'私下和解，赔偿了事', effect:{ connections:0, reputation:-5, money:0.8, stress:25 }, label:'花钱消灾' },
+      { text:'冷处理，等风头过去', effect:{ connections:-20, reputation:-20, money:1.05, stress:50 }, label:'冷处理' },
+    ],
+    fallbacks:['商业纠纷被公开后，圈内人会重新评估你。','名声和人脉，有时候比钱更脆弱。'],
+  },
+  {
+    id:'conn_crisis_06', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:75, weight:6,
+    title:'老友背刺',
+    getDesc:()=>{
+      const names=['多年的合作伙伴阿明','大学时期的创业搭档小方','曾经一起打天下的CTO老徐'];
+      const betrayals=['把你的商业计划泄露给了竞争对手','在你融资关键期散布你的负面消息','挖走了你三个核心团队成员'];
+      const n=names[Math.floor(Math.random()*names.length)];
+      const b=betrayals[Math.floor(Math.random()*betrayals.length)];
+      return `${n}${b}。你不敢相信——你们的关系一直很铁。但商场如战场，利益面前，有些人会选择背叛。`;
+    },
+    effects:{ connections:[-15,5], stress:[30,60], reputation:[-5,10], money:[0.75,1.0] },
+    choices:[
+      { text:'公开决裂，以儆效尤', effect:{ connections:-10, stress:30, reputation:10, money:0.9 }, label:'公开决裂' },
+      { text:'私下对质，解决问题', effect:{ connections:-5, stress:50, reputation:-5, money:0.85 }, label:'私下对质' },
+      { text:'忍着，先稳住局面再计较', effect:{ connections:-15, stress:60, reputation:0, money:0.75 }, label:'忍辱负重' },
+    ],
+    fallbacks:['你最信任的人，在你背后插了一刀。','背叛，是商场最残酷的一课。'],
+  },
+  {
+    id:'conn_crisis_07', type:'social', category:'decision',
+    acts:[2,3,4,5], cooldown:95, weight:5,
+    title:'圈子站队',
+    getDesc:()=>{
+      const factions=['传统实业派（以商会会长老郑为首）','新锐科技派（以AI新贵小陈为首）','资本运作派（以投资人赵雪琴为首）'];
+      const f1=factions[Math.floor(Math.random()*factions.length)];
+      const others=factions.filter(f=>f!==f1);
+      const f2=others[Math.floor(Math.random()*others.length)];
+      return `${f1}和${f2}之间爆发了激烈矛盾，双方的圈子都在逼成员"站队"。你的业务横跨两边，两边都有人看着你。无论选哪边，另一边的人脉都会断掉。`;
+    },
+    effects:{ connections:[-25,8], reputation:[-15,20], stress:[30,55] },
+    choices:[
+      { text:'公开支持一边，放弃另一边', effect:{ connections:-10, reputation:-15, stress:30 }, label:'站一边' },
+      { text:'保持中立，两边都不站', effect:{ connections:-25, reputation:5, stress:45 }, label:'保持中立' },
+      { text:'积极调解，做和事佬', effect:{ connections:-5, reputation:20, stress:55 }, label:'调解' },
+    ],
+    fallbacks:['圈子站队，得罪谁都是损失。','平衡是最难的——站哪边都是输掉一半。'],
+  },
+
+  // ===== 声誉危机事件 (4) =====
+  {
+    id:'rep_crisis_01', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:90, weight:7,
+    title:'负面新闻炒作',
+    getDesc:()=>{
+      const issues=['产品质量投诉被自媒体放大','前员工在脉脉匿名发帖黑你','某消费者协会点名批评你的产品','竞争对手买水军刷差评'];
+      const i=issues[Math.floor(Math.random()*issues.length)];
+      return `一则关于你的负面消息在社交媒体上发酵：#${i}#话题冲上热搜。尽管事实未必如此，但公众情绪已被点燃。品牌形象正在受损。`;
+    },
+    effects:{ reputation:[-20,5], money:[0.85,1.05], stress:[20,40] },
+    choices:[
+      { text:'召开发布会，公开澄清', effect:{ reputation:5, money:0.9, stress:30, expense:30000 }, label:'公开澄清' },
+      { text:'请公关公司删除舆情', effect:{ reputation:-5, money:0.95, stress:20, expense:80000 }, label:'舆情管控' },
+      { text:'冷处理，让时间证明一切', effect:{ reputation:-20, money:1.05, stress:40 }, label:'冷处理' },
+    ],
+    fallbacks:['负面新闻来得快，去得也快——如果不处理，可能伤害更大。','公众一旦形成负面印象，很难扭转。'],
+  },
+  {
+    id:'rep_crisis_02', type:'social', category:'decision',
+    acts:[2,3,4,5], cooldown:100, weight:6,
+    title:'行业口碑危机',
+    getDesc:()=>{
+      const events=['行业协会发布了年度不诚信企业名单','某媒体深度调查报道了你的行业乱象','你所在行业被央视3·15晚会曝光','供应链环节被曝出环境违规问题'];
+      const e=events[Math.floor(Math.random()*events.length)];
+      return `${e}。虽然你的公司并非主要问题方，但行业信誉整体受损，客户开始对整个行业持怀疑态度。你的声誉也因此被动下滑。`;
+    },
+    effects:{ reputation:[-15,8], money:[0.8,1.1], stress:[15,45] },
+    choices:[
+      { text:'高调宣布整改，树立行业标杆', effect:{ reputation:8, money:0.85, stress:35, expense:50000 }, label:'树标杆' },
+      { text:'联合同行成立自律联盟', effect:{ reputation:3, money:0.9, stress:25, expense:20000 }, label:'自律联盟' },
+      { text:'低调行事，等风波过去', effect:{ reputation:-15, money:1.1, stress:15 }, label:'低调' },
+    ],
+    fallbacks:['一个行业的声誉就是你的背景色。','行业口碑下跌，谁也逃不掉。'],
+  },
+  {
+    id:'rep_crisis_03', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:80, weight:6,
+    title:'公开场合失言',
+    getDesc:()=>{
+      const venues=['企业家论坛圆桌讨论','某财经媒体专访','公司年会公开演讲','行业峰会主题分享'];
+      const blunders=['随口说了一句\"穷人就应该买廉价产品\"','评论了竞争对手的私生活','不小心透露了下季度的商业机密','在回答提问时失态怼了记者'];
+      const v=venues[Math.floor(Math.random()*venues.length)];
+      const b=blunders[Math.floor(Math.random()*blunders.length)];
+      return `你在${v}上${b}。视频被传到网上后播放量迅速破百万，评论区炸了。你的个人形象——以及公司形象——正在遭受严重打击。`;
+    },
+    effects:{ reputation:[-20,8], connections:[-10,5], stress:[25,55] },
+    choices:[
+      { text:'立即录制道歉视频', effect:{ reputation:-5, connections:2, stress:35 }, label:'公开道歉' },
+      { text:'发声明说是\"断章取义\"', effect:{ reputation:-12, connections:-3, stress:25 }, label:'否认' },
+      { text:'自嘲式幽默回应，化解尴尬', effect:{ reputation:-2, connections:5, stress:55 }, label:'幽默化解' },
+    ],
+    fallbacks:['在公众场合，一句话可能毁掉十年积累。','公开失言是企业家最大的风险之一。'],
+  },
+  {
+    id:'rep_crisis_04', type:'social', category:'decision',
+    acts:[2,3,4,5], cooldown:95, weight:5,
+    title:'公益翻车事件',
+    getDesc:()=>{
+      const charities=['捐建希望小学被曝工程质量问题','公益基金会账目被质疑不透明','慈善晚宴被拍到铺张浪费','捐赠物资被发现过期'];
+      const c=charities[Math.floor(Math.random()*charities.length)];
+      return `你参与的公益项目${c}被媒体曝光。网友怒骂\"伪善\"\"作秀\"。本是好意，却变成了声誉灾难。公益形象——哪怕是无心的失误——都会被无限放大。`;
+    },
+    effects:{ reputation:[-25,5], money:[0.9,1.1], stress:[20,50] },
+    choices:[
+      { text:'全额退赔+公开检讨+引入第三方审计', effect:{ reputation:5, money:0.85, stress:45, expense:150000 }, label:'彻底整改' },
+      { text:'发声明解释情况+重新审核流程', effect:{ reputation:-8, money:0.95, stress:30, expense:30000 }, label:'亡羊补牢' },
+      { text:'停止项目，不再回应', effect:{ reputation:-25, money:1.1, stress:20 }, label:'中断项目' },
+    ],
+    fallbacks:['公益翻车比商业失误更伤声誉。','做好事却做成了坏事，这是一种特别的讽刺。'],
+  },
+
 ];
 
-// ---- 决策事件额外10个（补充到24个决策型）----
-// 加上之前的，现在总共有：市场12 + 员工10 + 政策8 + 运营8 + 个人6 + NPC10 + 里程碑5 = 59个
-// 再加 决策型专项事件 16个 = 75个，加上更多扩充到100+
-// 由于篇幅，先保证核心系统能跑，后续通过JS动态生成更多事件
+// ---- 事件总览 ----
+// 市场12 + 员工10 + 政策8 + 运营8 + 个人6 + NPC10 + 里程碑5 + 竞争对手事件5 + 人脉危机7 + 声誉危机4 = 75个
+// 决策型事件占比约 45%
 
 // ---- 热搜榜初始 ----
 

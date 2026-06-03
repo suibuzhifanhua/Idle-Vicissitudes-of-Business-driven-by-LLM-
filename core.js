@@ -113,6 +113,8 @@ window.SGame = (() => {
         autoRepay: true,
         autoGift: false,
         giftBudget: 50000,
+        autoManualWork: true,
+        autoRest: true,
         cooldowns: {},
       },
       // LLM 系统
@@ -315,15 +317,96 @@ window.SGame = (() => {
     }
     // 1. 计算压力模式
     updateStressMode();
+    // 1.5 预计算 NPC 被动加成（用于声誉衰减/政府补贴等）
+    var npcBonusForTick = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     // 2. 自然衰减
     const achRewards2 = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
     const stressDecayBonus = 1.0 + (achRewards2.stressDecay || 0);
     G.stress = Math.max(0, G.stress - CONFIG.STRESS_NATURAL_DECAY * stressDecayBonus);
-    G.reputation = Math.max(0, Math.min(100, G.reputation - (Math.random() < 0.1 ? CONFIG.REPUTATION_DECAY : 0)));
+    // 林教授被动：声誉衰减降低
+    const repDecayReduction = (npcBonusForTick._repGainPassive) ? npcBonusForTick._repGainPassive : 0;
+    const regionModsForTick = getRegionModifiers();
+    const rumorSpreadMod = regionModsForTick.rumorSpread || 1.0;
+    // 声誉分层衰减：名气越大越难维持
+    {
+      const rep = G.reputation || 0;
+      let repDecayProb = 0;
+      let repDecayAmt = 0;
+      if (rep > 85) { repDecayProb = 0.13; repDecayAmt = 2; }
+      else if (rep > 70) { repDecayProb = 0.09; repDecayAmt = 1; }
+      else if (rep > 50) { repDecayProb = 0.05; repDecayAmt = 1; }
+      else if (rep > 30) { repDecayProb = 0.03; repDecayAmt = 1; }
+      // 高压力下声誉维护困难
+      if ((G.stress || 0) > 70) repDecayProb *= 1.4;
+      // 林教授科研声誉保护
+      if (repDecayReduction > 0) repDecayProb *= (1.0 - repDecayReduction * 0.3);
+      // 区域谣言放大
+      if (rumorSpreadMod > 1.0) repDecayProb *= rumorSpreadMod;
+      // 「品牌管理」技能：衰减概率减半
+      if (G.skillEffects && G.skillEffects.repGain && G.skillEffects.repGain > 1.0) repDecayProb *= 0.5;
+      // 经济繁荣期声誉自然稳定
+      if (G.economicState === 'boom') repDecayProb *= 0.7;
+      if (Math.random() < repDecayProb) {
+        G.reputation = Math.max(0, (G.reputation || 0) - repDecayAmt);
+        if (rep > 80 && G.tickCount % 8 === 0) {
+          addLog('📰 声誉自然下滑：公众的记忆是短暂的');
+        }
+      }
+    }
+    // 人脉自然衰减：高人气维护成本递增
+    {
+      const conn = G.connections || 0;
+      let connDecayProb = 0;
+      if (conn > 85) connDecayProb = 0.12;
+      else if (conn > 70) connDecayProb = 0.08;
+      else if (conn > 50) connDecayProb = 0.04;
+      // 高压力下人脉维护困难
+      if ((G.stress || 0) > 70) connDecayProb *= 1.5;
+      // 区域谣言传播加速人脉流失
+      if (rumorSpreadMod > 1.0) connDecayProb *= rumorSpreadMod;
+      // 人脉技能减免：有"人脉网络"技能时衰减减半
+      const hasConnSkill = G.skillEffects && G.skillEffects.connGain && G.skillEffects.connGain > 1.0;
+      if (hasConnSkill) connDecayProb *= 0.5;
+      if (Math.random() < connDecayProb) {
+        addConnections(-1);
+        if (conn > 80 && G.tickCount % 10 === 0) {
+          addLog('📉 人脉自然流失：社交圈需要持续维护');
+        }
+      }
+    }
+    // NPC 好感自然衰减：不可能跟所有14位NPC都保持极深关系
+    {
+      if (G.npcFavor && G.tickCount % 3 === 0) { // 每3 Tick检查一次（节省性能）
+        const allNpcIds = Object.keys(G.npcFavor);
+        let decayLog = '';
+        allNpcIds.forEach(function(nid) {
+          const fav = G.npcFavor[nid] || 0;
+          let prob = 0;
+          if (fav > 85) prob = 0.10;
+          else if (fav > 65) prob = 0.06;
+          else if (fav > 45) prob = 0.03;
+          // 高压力顾不上维护关系
+          if ((G.stress || 0) > 70) prob *= 1.3;
+          if (Math.random() < prob) {
+            G.npcFavor[nid] = Math.max(0, fav - 1);
+            const npc = typeof NPCS !== 'undefined' && NPCS[nid] ? NPCS[nid] : null;
+            if (npc && fav === 86 && G.tickCount % 15 === 0) {
+              // 首次跌破85线时记录（仅偶尔提醒）
+              decayLog += (decayLog ? '，' : '') + npc.name;
+            }
+          }
+        });
+        if (decayLog) {
+          addLog('🤝 关系疏远：' + decayLog + '对你久不联络感到失望');
+        }
+      }
+    }
     // 3. 计算收益
     const income = calcTotalIncome();
     G.money += income;
     if (income > 0) G.totalIncomeEarned = (G.totalIncomeEarned || 0) + income;
+    // 李处被动：政府补贴
+    if (npcBonusForTick._govSubsidy) { G.money += npcBonusForTick._govSubsidy; }
     // 3.4 资产被动收入（每Tick产出微量收益）
     if (G.assets && G.assets.length > 0) {
       var assetIncome = 0;
@@ -356,17 +439,29 @@ window.SGame = (() => {
     if (G.tickCount % 3 === 0) checkSupplyChain();
     // 3.10 市场份额变化
     if (G.tickCount % 6 === 0) updateMarketShare();
-    // 4. 发工资（实际工资 = baseSalary × 规模系数，单位转为元）
+    // 4. 发工资（实际工资 = baseSalary × 规模系数，单位转为元；实习生工资打折）
     let totalSalary = 0;
     G.employees.forEach(emp => {
-      const actualSalary = calcActualSalary(emp.baseSalary || emp.salary, G);
+      let actualSalary = calcActualSalary(emp.baseSalary || emp.salary, G);
+      // 实习期工资打折
+      actualSalary = calcInternSalary(emp, actualSalary);
       totalSalary += actualSalary * 10000;
       // 忠诚度：基础衰减 + 幸福感正向牵引（happiness缩放0.005）
       emp.loyalty = Math.max(0, Math.min(100, emp.loyalty - CONFIG.LOYALTY_DECAY + (emp.happiness || 50) * 0.005));
       // 压力影响
       if (G.stress > 70) emp.happiness = Math.max(0, (emp.happiness || 50) - 2);
-      // 疲劳度：净增长 = 增速 - 衰减
-      emp.fatigue = Math.min(100, Math.max(0, (emp.fatigue || 0) + CONFIG.EMP_FATIGUE_RATE - CONFIG.EMP_FATIGUE_DECAY));
+      // 疲劳度：净增长 = 增速 - 衰减（受区域 burnonProb 影响）
+      var fatigueRate = CONFIG.EMP_FATIGUE_RATE;
+      // 员工效率属性降低疲劳增长（每10点效率减少3%疲劳增长）
+      if (emp.attrs && emp.attrs.efficiency) {
+        fatigueRate *= (1 - (emp.attrs.efficiency / 333));
+      }
+      var regionMods = getRegionModifiers();
+      if (regionMods.burnoutProb > 1.0) fatigueRate *= regionMods.burnoutProb;
+      // 苏姐被动：自动疲劳降低 10%
+      var npcBonFatigue = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+      if (npcBonFatigue._autoFatigueReduction) fatigueRate *= (1 - npcBonFatigue._autoFatigueReduction);
+      emp.fatigue = Math.min(100, Math.max(0, (emp.fatigue || 0) + fatigueRate - CONFIG.EMP_FATIGUE_DECAY));
       // 高疲劳影响忠诚
       if (emp.fatigue > 80) emp.loyalty = Math.max(0, emp.loyalty - 0.3);
       // 高疲劳影响效率（等效降收入）
@@ -384,7 +479,9 @@ window.SGame = (() => {
         G.totalExpense -= rebate;
       }
     }
-    // 4.5 自动存档（每20 tick到slot_1）
+    // 4.5 实习生转正检查
+    checkInternConversion();
+    // 4.6 自动存档（每20 tick到slot_1）
     if (G.autoSaveEnabled !== false && G.tickCount % 20 === 0) {
       autoSave();
     }
@@ -404,6 +501,8 @@ window.SGame = (() => {
     checkCityUnlocks();
     // 7.7 等级更新
     updateRank();
+    // 7.8 NPC 随机来访事件（每 tick 约 8% 概率 + 人气修正）
+    triggerNpcRandomVisit();
     // 8. 员工离开检查
     checkEmployeeLeave();
     // 9. 技能效果应用
@@ -577,18 +676,44 @@ window.SGame = (() => {
   function calcNpcBonus() {
     const bonus = {};
     const favor = (id) => (G.npcFavor && G.npcFavor[id]) || 0;
-    // 王律师好感 > 40：负面事件法律损失 -30%（不直接影响收入，但降低 stress）
-    // 林教授好感 > 40：研发 RPT 获取 +20%（在 generateRPT 中处理）
-    // 马记者好感 > 40：声誉获取 +15%（在事件中处理）
-    // 李处好感 > 50：政府补贴事件概率翻倍（在事件中处理）
+    // ---- 原有 NPC 被动 ----
+    // 王律师好感 > 40：法律保护 → 负面事件概率 -30%（在 isNegativeEvent 中消费）
+    if (favor('wanglvshi') > 40) bonus._lawProtect = true;
+    // 林教授好感 > 40：声誉获取被动 +5%（在 addReputation 中消费）
+    if (favor('linjiaoshou') > 40) bonus._repGainPassive = 0.05;
+    // 马记者好感 > 40：RPT 获取 +20%（在 generateRPT 中消费）
+    if (favor('majizhe') > 40) bonus._rptBoost = 0.20;
+    // 李处好感 > 50：政府补贴（每 tick 小额固定收入，在 doTick 中消费）
+    if (favor('lichu') > 50) bonus._govSubsidy = 2500;
     // 张野好感 > 40：媒体类业务收益 +8%
     if (favor('zhangye') > 40) bonus.media = (bonus.media || 0) + 0.08;
     // 陈总好感 > 50：基金类收益 +10%
     if (favor('chenzong') > 50) bonus.fund = (bonus.fund || 0) + 0.10;
     // 小C好感 > 40：员工效率微量提升（等效收入加成）
-    if (favor('xiaoc') > 40) { Object.keys(bonus).forEach(k => { bonus[k] += 0.02; }); }
+    if (favor('xiaoc') > 40) { Object.keys(bonus).forEach(k => { if (k.indexOf('_') !== 0) bonus[k] += 0.02; }); }
     // 赵磊好感 > 40：零售/餐饮 +5%
     if (favor('zhaolei') > 40) { bonus.retail = (bonus.retail || 0) + 0.05; bonus.food_chain = (bonus.food_chain || 0) + 0.05; }
+
+    // ---- 新增 NPC 被动 ----
+    // 苏姐好感 > 30：招聘成本折扣 15% / > 60：自动疲劳降低 10%
+    if (favor('sujie') > 30) bonus._hireDiscount = 0.15;
+    if (favor('sujie') > 60) bonus._autoFatigueReduction = 0.10;
+    // 金行长好感 > 30：贷款利率 -1.5% / > 60：贷款额度上限 +20%（在 applyLoan 中消费）
+    if (favor('jinhangzhang') > 30) bonus._loanRateBonus = 0.015;
+    if (favor('jinhangzhang') > 60) bonus._loanCapBonus = 0.20;
+    // 钱老板好感 > 30：资产购买折扣 10% / > 60：资产增值加速 5%
+    if (favor('qianlaoban') > 30) bonus._assetBuyDiscount = 0.10;
+    if (favor('qianlaoban') > 60) bonus._assetAppreciation = 0.05;
+    // 孙秘书好感 > 30：区域解锁费用 -15% / > 60：城市解锁门槛降低 10%
+    if (favor('sunmishu') > 30) bonus._regionCostDiscount = 0.15;
+    if (favor('sunmishu') > 60) bonus._cityUnlockDiscount = 0.10;
+    // 吴教练好感 > 30：培训成本 -20% / > 60：技能上限 +1（即 EMP_SKILL_MAX + 1）
+    if (favor('wujiaolian') > 30) bonus._trainCostDiscount = 0.20;
+    if (favor('wujiaolian') > 60) bonus._skillCapBonus = 1;
+    // 刘会计好感 > 30：维护成本 -10% / > 60：全局运营成本 -5%（已在 calcTotalIncome 中消费）
+    if (favor('liukuaiji') > 30) bonus._maintenanceDiscount = 0.10;
+    if (favor('liukuaiji') > 60) bonus._opsCostReduction = 0.05;
+
     return bonus;
   }
 
@@ -833,6 +958,8 @@ window.SGame = (() => {
     const achRewards = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
     const achIncomeMult = 1.0 + (achRewards.incomeMult || 0);
     const achOpCost = achRewards.opCost || 1.0;
+    // 预计算 NPC 被动用于 calcTotalIncome
+    var npcBonusForCalc = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
 
     let grandTotal = 0;
 
@@ -841,7 +968,7 @@ window.SGame = (() => {
     if (G.employees && G.employees.length > 0) {
       var m = { manager:0, developer:0, sales:0, marketer:0, others:0,
         skillBonus:0, lowLoyalty:0, sumFatigue:0, count: G.employees.length,
-        incomeBonusFromRoles: 0 };
+        incomeBonusFromRoles: 0, attrBonus: 0 };
       G.employees.forEach(function(emp) {
         var roleDef = EMP_ROLES.find(function(r) { return r.id === emp.role; });
         if (roleDef && roleDef.incomeBonus) m.incomeBonusFromRoles += roleDef.incomeBonus;
@@ -853,6 +980,10 @@ window.SGame = (() => {
         if (emp.loyalty < 20) m.lowLoyalty++;
         if (emp.skill && emp.skill > 1) m.skillBonus += (emp.skill - 1) * 0.03;
         m.sumFatigue += emp.fatigue || 0;
+        // 员工属性加成
+        if (typeof calcEmpAttrIncomeBonus === 'function') {
+          m.attrBonus += calcEmpAttrIncomeBonus(emp);
+        }
       });
       // 全局低忠诚度惩罚因子
       var lowRatio = m.lowLoyalty / m.count;
@@ -896,14 +1027,35 @@ window.SGame = (() => {
           income *= 0.7; // 下游断供，收入-30%
         }
 
-        // 区域加成
+        // 区域加成（含 regionBonusDouble 成就翻倍）
+        var regionMul = 1.0;
         if (bState.region && REGIONS[bState.region]) {
           const r = REGIONS[bState.region];
-          if (r.bonus.retail && bDef.id === 'retail') income *= r.bonus.retail;
-          if (r.bonus.tech && bDef.id === 'tech') income *= r.bonus.tech;
-          if (r.bonus.finance && (bDef.id === 'fund' || bDef.id === 'office')) income *= r.bonus.finance;
-          if (r.bonus.repGain) income *= (1 + (r.bonus.repGain - 1) * 0.3);
+          // 已实现：核心业务增益
+          if (r.bonus.retail && bDef.id === 'retail') regionMul *= r.bonus.retail;
+          if (r.bonus.tech && bDef.id === 'tech') regionMul *= r.bonus.tech;
+          if (r.bonus.finance && (bDef.id === 'fund' || bDef.id === 'office')) regionMul *= r.bonus.finance;
+          if (r.bonus.repGain) regionMul *= (1 + (r.bonus.repGain - 1) * 0.3);
+          // 新增：贸易加成 → retail/food_chain
+          if (r.bonus.trade && (bDef.id === 'retail' || bDef.id === 'food_chain')) regionMul *= r.bonus.trade;
+          // 新增：制造加成 → new_energy / 制造业统称
+          if (r.bonus.manufacturing && (bDef.id === 'new_energy' || bDef.id === 'manufacturing')) regionMul *= r.bonus.manufacturing;
+          // 新增：物流效率 → 减弱供应链断裂影响（每级物流+0.02 恢复系数）
+          if (r.bonus.logistics) {
+            var scState = (G.supplyChain && G.supplyChain[bDef.id]) || { upstream:'normal', downstream:'normal' };
+            if (scState.upstream === 'disrupted') income *= Math.min(1, income * r.bonus.logistics); // 部分恢复
+          }
+          // 新增：运营成本降低 → 等效收入加成
+          if (r.bonus.opsCost) regionMul *= (1 + (1 - r.bonus.opsCost) * 0.5);
+          // 新增：成本倍率 → 等效收入加成
+          if (r.bonus.cost && r.bonus.cost < 1) regionMul *= (1 + (1 - r.bonus.cost) * 0.4);
         }
+        // 成就：区域霸主 → 区域加成翻倍
+        var achRewardsR = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
+        if (achRewardsR.regionBonusDouble && regionMul > 1.0) {
+          regionMul = 1.0 + (regionMul - 1.0) * 2.0;
+        }
+        income *= regionMul;
 
         // 员工加成（#4 使用预计算摘要，避免重复遍历）
         var empMul = 1.0;
@@ -924,6 +1076,8 @@ window.SGame = (() => {
           // 全局惩罚
           empMul *= empSummary.loyaltyPenalty * empSummary.fatiguePenalty;
           empBonus = empSummary.incomeBonus;
+          // 员工属性加成：整体收入乘数
+          empMul += empSummary.attrBonus || 0;
         }
         income *= empMul;
         income *= (1 + empBonus);
@@ -1047,11 +1201,63 @@ window.SGame = (() => {
     grandTotal *= achIncomeMult;
     // 成就奖励运营成本减免（等效收入加成）
     if (achOpCost < 1.0) grandTotal *= (1.0 + (1.0 - achOpCost) * 0.5);
+    // 刘会计被动：运营成本 -5%（等效收入加成）
+    if (npcBonusForCalc._opsCostReduction) grandTotal *= (1 + npcBonusForCalc._opsCostReduction * 0.5);
     
     // 清除缓存
     G._synergyCache = null;
 
     return grandTotal;
+  }
+
+  // 计算单个业务的实际年收入（供UI显示）
+  function calcBizIncome(bizId, gameState) {
+    if (!gameState) gameState = G;
+    if (!gameState) return 0;
+    var bDef = BUSINESS_DEFS.find(function(b) { return b.id === bizId; });
+    if (!bDef) return 0;
+    // 查找该业务在所有城市中的状态
+    var totalIncome = 0;
+    if (gameState.cities) {
+      Object.entries(gameState.cities).forEach(function([cityId, cityData]) {
+        if (!cityData || !cityData.unlocked) return;
+        var bizState = cityData.businesses && cityData.businesses[bizId];
+        if (!bizState || bizState.level === 0) return;
+        var lv = bDef.levels[bizState.level - 1];
+        if (!lv) return;
+        totalIncome += lv.income;
+      });
+    }
+    // 旧格式兼容
+    if (totalIncome === 0 && gameState.businesses) {
+      var state = gameState.businesses[bizId];
+      if (state && state.level > 0) {
+        var lv = bDef.levels[state.level - 1];
+        if (lv) totalIncome = lv.income;
+      }
+    }
+    // 应用基础修正系数（简化版，不含全部联动）
+    var stressMul = getStressMultiplier();
+    var repMul = getRepMultiplier();
+    var originMul = getOriginMultiplier();
+    totalIncome *= stressMul * repMul * originMul;
+    return totalIncome;
+  }
+
+  function calcSynergyMultiplier() {
+    if (!G || !G.cities) return 1.0;
+    var mul = 1.0;
+    var cityCount = Object.values(G.cities).filter(function(c) { return c && c.unlocked; }).length;
+    if (cityCount >= 5) mul += 0.06;
+    else if (cityCount >= 4) mul += 0.04;
+    else if (cityCount >= 3) mul += 0.03;
+    else if (cityCount >= 2) mul += 0.02;
+    var intlCount = Object.entries(G.cities).filter(function(entry) {
+      var id = entry[0], c = entry[1];
+      return c && c.unlocked && CITIES[id] && CITIES[id].isInternational;
+    }).length;
+    if (intlCount > 0) mul += intlCount * 0.03;
+    return mul;
   }
 
   function calcCitySynergyMultiplier(cityData) {
@@ -1139,6 +1345,7 @@ window.SGame = (() => {
 
   // ========== 区域解锁 ==========
   function checkRegionUnlocks() {
+    var npcBonReg = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     Object.values(REGIONS).forEach(r => {
       if (r.unlocked) return;
       // 检查城市是否已解锁（新城市区域需要对应城市已解锁）
@@ -1149,7 +1356,9 @@ window.SGame = (() => {
       // 检查 act 前置
       if (r.actUnlock > 0 && G.act < r.actUnlock) return;
       if (r.unlockCond) {
-        if (r.unlockCond.money && G.money >= r.unlockCond.money) unlockRegion(r.id);
+        // 孙秘书被动：区域解锁资金阈值降低 15%
+        var effMoney = r.unlockCond.money ? r.unlockCond.money * (1 - (npcBonReg._regionCostDiscount || 0)) : 0;
+        if (r.unlockCond.money && G.money >= effMoney) unlockRegion(r.id);
         if (r.unlockCond.reputation && G.reputation >= r.unlockCond.reputation) unlockRegion(r.id);
         if (r.unlockCond.act && G.act >= r.unlockCond.act) unlockRegion(r.id);
       }
@@ -1167,10 +1376,13 @@ window.SGame = (() => {
 
   // ========== 城市解锁 ==========
   function checkCityUnlocks() {
+    var npcBonCity = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     Object.values(CITIES).forEach(city => {
       if (city.unlockMoney === 0 && city.minAct === 0) return; // 初始城市跳过
       if (G.cities[city.id] && G.cities[city.id].unlocked) return;
-      if (G.money >= city.unlockMoney && G.act >= city.minAct) {
+      // 孙秘书被动：城市解锁资金阈值降低 10%
+      var effUnlockMoney = city.unlockMoney * (1 - (npcBonCity._cityUnlockDiscount || 0));
+      if (G.money >= effUnlockMoney && G.act >= city.minAct) {
         G.cities[city.id] = { unlocked: true, businesses: {}, unlockedRegions: [] };
         // 初始化该城市所有业务默认条目
         BUSINESS_DEFS.forEach(bDef => {
@@ -1197,6 +1409,137 @@ window.SGame = (() => {
         }
       }
     });
+  }
+
+  // ========== NPC 随机来访事件 ==========
+  // 每 tick 有一定概率触发某位 NPC 主动来访，根据好感度产生不同效果
+  function triggerNpcRandomVisit() {
+    if (!G) return;
+    var prob = 0.08; // 基础 8%/tick
+    if (G.reputation > 60) prob += 0.03;
+    if (G.connections > 50) prob += 0.02;
+    if (Math.random() > prob) return;
+
+    // 选择来访 NPC（优先好感度中等的，既不是陌生也不是亲密）
+    var eligible = [];
+    var allNpcIds = Object.keys(NPCS);
+    for (var i = 0; i < allNpcIds.length; i++) {
+      var nid = allNpcIds[i];
+      var npc = NPCS[nid];
+      if (!npc || npc.actUnlock > G.act) continue;
+      var fav = (G.npcFavor && G.npcFavor[nid]) || 0;
+      if (fav < -20) continue; // 敌对的不会主动来访
+      eligible.push({ id: nid, favor: fav, npc: npc });
+    }
+    if (eligible.length === 0) return;
+
+    // 加权随机（好感度中等优先）
+    var totalW = 0;
+    for (var j = 0; j < eligible.length; j++) {
+      var f = eligible[j].favor;
+      // 权重：0分最低，中间最高，100分次高
+      if (f <= 0) eligible[j]._w = 1;
+      else if (f < 30) eligible[j]._w = 5;
+      else if (f < 60) eligible[j]._w = 8;
+      else if (f < 80) eligible[j]._w = 5;
+      else eligible[j]._w = 3;
+      totalW += eligible[j]._w;
+    }
+
+    var rand = Math.random() * totalW;
+    var acc = 0;
+    var visitor = eligible[0];
+    for (var k = 0; k < eligible.length; k++) {
+      acc += eligible[k]._w;
+      if (rand <= acc) { visitor = eligible[k]; break; }
+    }
+
+    // 根据好感等级选择来访类型
+    var npcName = visitor.npc.name;
+    var favor = visitor.favor;
+    if (favor < 10) {
+      // 陌生人试探：小额互动
+      var smallEvents = [
+        { text: npcName + '路过顺便进来坐坐，寒暄了几句。', effect: function() { G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 1; } },
+        { text: npcName + '听说你最近做得不错，发来一条祝贺消息。', effect: function() { G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; } },
+        { text: npcName + '在社交平台上转发了你公司的一条动态。', effect: function() { if (typeof addConnections === 'function') addConnections(1); } },
+      ];
+      var ev = smallEvents[Math.floor(Math.random() * smallEvents.length)];
+      addLog('👤 ' + ev.text);
+      ev.effect();
+    } else if (favor < 40) {
+      // 熟人：中等互动
+      var midEvents = [
+        { text: npcName + '带来了一些行业内部消息。', effect: function() { if (typeof addConnections === 'function') addConnections(2); G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; } },
+        { text: npcName + '约你喝茶，顺便介绍了一个潜在客户。', effect: function() { G.money += 15000 + Math.floor(Math.random() * 35000); G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 3; } },
+        { text: npcName + '提醒你注意一个正在酝酿的行业风险。', effect: function() { G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; G.reputation = Math.min(100, (G.reputation || 0) + 2); } },
+      ];
+      var ev2 = midEvents[Math.floor(Math.random() * midEvents.length)];
+      addLog('🤝 ' + ev2.text);
+      ev2.effect();
+    } else if (favor < 70) {
+      // 好友：有价值的互动
+      var goodEvents = [
+        { text: npcName + '主动提出帮你引荐一个重要人脉。', effect: function() { if (typeof addConnections === 'function') addConnections(5); G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; } },
+        { text: npcName + '私下给你透露了一个即将出台的政策利好。', effect: function() { G.money += 50000 + Math.floor(Math.random() * 100000); G.reputation = Math.min(100, (G.reputation || 0) + 3); } },
+        { text: npcName + '邀请你参加了一个高规格的私人聚会。', effect: function() { if (typeof addConnections === 'function') addConnections(8); G.reputation = Math.min(100, (G.reputation || 0) + 5); } },
+      ];
+      var ev3 = goodEvents[Math.floor(Math.random() * goodEvents.length)];
+      addLog('⭐ ' + ev3.text);
+      ev3.effect();
+    } else {
+      // 亲密：重大收益
+      var greatEvents = [
+        { text: npcName + '把一个重大商业机会优先给了你。', effect: function() { G.money += 100000 + Math.floor(Math.random() * 200000); if (typeof addConnections === 'function') addConnections(3); } },
+        { text: npcName + '力排众议为你争取到了一个独家合作。', effect: function() { G.money += 200000; G.reputation = Math.min(100, (G.reputation || 0) + 8); if (typeof addConnections === 'function') addConnections(5); } },
+        { text: npcName + '说了一句：「以后有事直接找我，不用客气。」', effect: function() { G.npcFavor[visitor.id] = Math.min(100, (G.npcFavor[visitor.id] || 0) + 8); G.money += 50000; } },
+      ];
+      var ev4 = greatEvents[Math.floor(Math.random() * greatEvents.length)];
+      addLog('🌟 ' + ev4.text);
+      ev4.effect();
+    }
+  }
+
+  // ========== 区域负面效果聚合 ==========
+  // 汇总玩家在所有已拥有业务的区域中承受的负面效果
+  function getRegionModifiers() {
+    var mods = {
+      burnoutProb: 1.0,
+      disasterProb: 1.0,
+      negativeEventProb: 1.0,
+      rumorSpread: 1.0,
+      socialCost: 1.0,
+      policyEventProb: 1.0,
+      connGain: 1.0,
+    };
+    if (!G || !G.businesses) return mods;
+    // 遍历所有城市中的业务，汇总所在区域的负面效果
+    Object.values(G.cities || {}).forEach(function(city) {
+      if (!city || !city.businesses) return;
+      Object.entries(city.businesses).forEach(function(entry) {
+        var biz = entry[1];
+        if (!biz || biz.level <= 0 || !biz.region) return;
+        var r = REGIONS[biz.region];
+        if (!r) return;
+        if (r.bonus.burnoutProb) mods.burnoutProb *= r.bonus.burnoutProb;
+        if (r.bonus.disasterProb) mods.disasterProb *= r.bonus.disasterProb;
+        if (r.bonus.negativeEventProb) mods.negativeEventProb *= r.bonus.negativeEventProb;
+        if (r.bonus.rumorSpread) mods.rumorSpread *= r.bonus.rumorSpread;
+        if (r.bonus.socialCost) mods.socialCost *= r.bonus.socialCost;
+        if (r.bonus.policyEventProb) mods.policyEventProb *= r.bonus.policyEventProb;
+        if (r.bonus.connGain) mods.connGain *= r.bonus.connGain;
+      });
+    });
+    // 王律师法律保护：每个负面惩罚降低 15%
+    var npcBonuses = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    if (npcBonuses._lawProtect) {
+      var prot = 0.85;
+      if (mods.burnoutProb > 1) mods.burnoutProb = 1 + (mods.burnoutProb - 1) * prot;
+      if (mods.disasterProb > 1) mods.disasterProb = 1 + (mods.disasterProb - 1) * prot;
+      if (mods.negativeEventProb > 1) mods.negativeEventProb = 1 + (mods.negativeEventProb - 1) * prot;
+      if (mods.policyEventProb > 1) mods.policyEventProb = 1 + (mods.policyEventProb - 1) * prot;
+    }
+    return mods;
   }
 
   // ========== 城市切换 ==========
@@ -1246,11 +1589,22 @@ window.SGame = (() => {
   // ========== 业务解锁 ==========
   function checkBusinessUnlocks() {
     BUSINESS_DEFS.forEach(b => {
+      // 检查并同步到 G.businesses（旧格式兼容）
       let state = G.businesses[b.id];
       if (!state) { G.businesses[b.id] = { level: 0, region: null, unlocked: false }; state = G.businesses[b.id]; }
-      if (state.unlocked) return;
-      if (b.unlockMoney > 0 && G.money >= b.unlockMoney) {
+      if (!state.unlocked && b.unlockMoney > 0 && G.money >= b.unlockMoney) {
         state.unlocked = true;
+        // 同步到所有已解锁城市的 businesses
+        if (G.cities) {
+          Object.values(G.cities).forEach(function(cityData) {
+            if (!cityData || !cityData.unlocked) return;
+            if (!cityData.businesses) return;
+            var cityBiz = cityData.businesses[b.id];
+            if (cityBiz && !cityBiz.unlocked) {
+              cityBiz.unlocked = true;
+            }
+          });
+        }
         addLog(`🔓 解锁新业务：${b.icon} ${b.name}！`);
       }
     });
@@ -1259,12 +1613,48 @@ window.SGame = (() => {
   // ========== 里程碑检查 ==========
   function checkMilestones() {
     if (typeof MILESTONES === 'undefined') return;
+    // 综合评分辅助函数
+    function getTotalBizLevels() {
+      let sum = 0;
+      if (!G.businesses) return 0;
+      Object.keys(G.businesses).forEach(function(cityId) {
+        const cityBiz = G.businesses[cityId] || {};
+        Object.keys(cityBiz).forEach(function(bizId) {
+          const b = cityBiz[bizId];
+          if (b && b.level) sum += b.level;
+        });
+      });
+      return sum;
+    }
+    function getCompositeDesc(m) {
+      const parts = [];
+      const ok = G.money >= m.money;
+      parts.push((ok ? '✅' : '⏳') + '资产 ≥ ' + (m.money / 10000).toFixed(0) + '万');
+      const repOk = (G.reputation || 0) >= m.repMin;
+      parts.push((repOk ? '✅' : '⏳') + '声誉 ≥ ' + m.repMin);
+      const bizSum = getTotalBizLevels();
+      const bizOk = bizSum >= m.bizSumMin;
+      parts.push((bizOk ? '✅' : '⏳') + '业务总等级 ≥ ' + m.bizSumMin + '（当前' + bizSum + '）');
+      return parts.join(' | ');
+    }
     MILESTONES.forEach(function(m, i) {
       if (G.money >= m.money && G.milestone === i) {
+        // 检查附加条件
+        const repOk = (G.reputation || 0) >= m.repMin;
+        const bizSum = getTotalBizLevels();
+        const bizOk = bizSum >= m.bizSumMin;
+        if (!repOk || !bizOk) {
+          // 条件不满足，提示当前进度（每30 Tick一次避免刷屏）
+          if (G.tickCount % 30 === 0) {
+            addLog('🎯 到' + m.name + '还差：' + getCompositeDesc(m));
+          }
+          return;
+        }
         G.milestone = i + 1;
         const oldAct = G.act;
         G.act = Math.max(G.act, m.act);
-        addLog('🎉 里程碑达成：' + m.name + '！' + m.desc + '！');
+        addLog('🎉 综合里程碑达成：' + m.name + '！' + m.desc + '！');
+        addLog('   ' + getCompositeDesc(m));
         showAchievement('🏆', m.name);
         if (typeof AudioFX !== 'undefined') AudioFX.playAchievement();
 
@@ -1703,9 +2093,14 @@ window.SGame = (() => {
         autoInvest: false, investBudget: 0.1,
         autoLoan: false, autoRepay: true,
         autoGift: false, giftBudget: 50000,
+        autoManualWork: true,
+        autoRest: true,
         cooldowns: {},
       };
     }
+    // 迁移：旧存档 autoMode 缺少新增字段
+    if (G.autoMode.autoManualWork === undefined) G.autoMode.autoManualWork = true;
+    if (G.autoMode.autoRest === undefined) G.autoMode.autoRest = true;
     // 迁移：旧存档没有新系统字段
     if (!G.marketShare) {
       G.marketShare = {};
@@ -1731,6 +2126,24 @@ window.SGame = (() => {
           emp.baseSalary = emp.salary;
           delete emp.salary;
         }
+        // 迁移：旧员工缺少多属性系统 attrs
+        if (!emp.attrs) {
+          var roleDef = EMP_ROLES.find(function(r) { return r.id === emp.role; });
+          var weights = (roleDef && EMP_ROLE_ATTR_WEIGHTS[roleDef.id]) || { ability: 0.5, efficiency: 0.5, creativity: 0.5, experience: 0.5, charisma: 0.5 };
+          emp.attrs = {};
+          Object.keys(EMP_ATTRIBUTES).forEach(function(key) {
+            var def = EMP_ATTRIBUTES[key];
+            var w = weights[key] || 1;
+            var base = Math.floor(Math.random() * 20) + 20; // 20-39 基础值
+            var bonus = Math.floor(Math.random() * w * 10);  // 角色权重加成
+            emp.attrs[key] = Math.min(def.max, Math.max(def.min, base + bonus));
+          });
+        }
+        // 迁移：旧员工缺少实习生字段
+        if (emp.isIntern === undefined) emp.isIntern = false;
+        if (emp.internTicks === undefined) emp.internTicks = 0;
+        if (emp.internConverted === undefined) emp.internConverted = false;
+        if (emp.internConvertTarget === undefined) emp.internConvertTarget = null;
       });
     }
     // 迁移：添加任务线字段
@@ -1892,6 +2305,22 @@ window.SGame = (() => {
                                (Array.isArray(e.effects.money) && e.effects.money[1] < 1.0);
         if (isNegativeNpc) w *= 1.3;
       }
+      // 王律师被动：法律保护 → 负面事件权重 -30%
+      var npcBonEvt = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+      if (npcBonEvt._lawProtect) {
+        const isCrisis = e.type === 'crisis' || (Array.isArray(e.effects.stress) && e.effects.stress[1] > 0);
+        if (isCrisis) w *= 0.7;
+      }
+      // 区域负面效果：负面事件/政策事件概率增加
+      var rMods = typeof getRegionModifiers === 'function' ? getRegionModifiers() : null;
+      if (rMods) {
+        if (rMods.negativeEventProb > 1.0 && (e.type === 'crisis' || (Array.isArray(e.effects.money) && e.effects.money[1] < 1.0))) {
+          w *= rMods.negativeEventProb;
+        }
+        if (rMods.policyEventProb > 1.0 && e.id && e.id.startsWith('policy_')) {
+          w *= rMods.policyEventProb;
+        }
+      }
       return w;
     });
 
@@ -1965,19 +2394,22 @@ window.SGame = (() => {
   function getEmpMax() {
     if (!G || !G.stats) return 5;
     let base = 3 + Math.floor((G.stats.management || 0) / 2);
-    // 每个产业+1上限（跨所有城市）
+    // 每个产业+2上限（跨所有城市）— 业务越多需要更多人
     if (G.cities) {
       Object.values(G.cities).forEach(city => {
         if (!city.unlocked || !city.businesses) return;
         Object.values(city.businesses).forEach(biz => {
-          if (biz.level > 0) base++;
+          if (biz.level > 0) base += 2;
         });
       });
     }
-    // 每个已解锁区域+1上限
+    // 每个已解锁区域+2上限
     if (G.unlockedRegions) {
-      base += G.unlockedRegions.length;
+      base += G.unlockedRegions.length * 2;
     }
+    // 资产规模加成：每达到一个富豪等级门槛+3
+    const moneyMilestones = [2000000, 20000000, 100000000, 500000000, 2000000000, 10000000000, 50000000000, 200000000000, 1000000000000, 10000000000000, 100000000000000];
+    moneyMilestones.forEach(m => { if (G.money >= m) base += 3; });
     if (G.skillEffects && G.skillEffects.empMaxBonus) base += G.skillEffects.empMaxBonus;
     return base;
   }
@@ -2031,6 +2463,8 @@ window.SGame = (() => {
         autoInvest: false, investBudget: 0.1,
         autoLoan: false, autoRepay: true,
         autoGift: false, giftBudget: 50000,
+        autoManualWork: true,
+        autoRest: true,
         cooldowns: {},
       };
     }
@@ -2220,11 +2654,13 @@ window.SGame = (() => {
     if (!G) return { ok: false, msg: '游戏未开始' };
     if (G.loans.length >= 3) return { ok: false, msg: '最多同时3笔贷款' };
     const totalAssets = G.money + getStockPortfolioValue();
-    const maxLoan = totalAssets * 0.5;
-    if (amount > maxLoan) return { ok: false, msg: `贷款额度上限 ${formatMoney(maxLoan)}（总资产50%）` };
+    // 金行长被动：贷款额度上限 +20%
+    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    var maxLoan = totalAssets * 0.5 * (1 + (npcBon._loanCapBonus || 0));
+    if (amount > maxLoan) return { ok: false, msg: `贷款额度上限 ${formatMoney(maxLoan)}（总资产50%${npcBon._loanCapBonus ? '(+金行长加成)' : ''}）` };
     if (amount < 10000) return { ok: false, msg: '最低贷款金额 10,000' };
-    // 利率：声誉越高利率越低（8%-15%）
-    const interestRate = Math.max(0.08, 0.15 - (G.reputation / 100) * 0.07);
+    // 利率：声誉越高利率越低 / 金行长被动：额外 -1.5%
+    const interestRate = Math.max(0.05, 0.15 - (G.reputation / 100) * 0.07 - (npcBon._loanRateBonus || 0));
     const interestPerTick = parseFloat((amount * interestRate / duration).toFixed(2));
     const loan = {
       id: Date.now(), amount, duration, remaining: duration,
@@ -2365,6 +2801,9 @@ window.SGame = (() => {
   function autoManager() {
     if (!G || !G.autoMode || !G.autoMode.enabled) return;
     const am = G.autoMode;
+    // 防御：确保新字段存在
+    if (am.autoManualWork === undefined) am.autoManualWork = true;
+    if (am.autoRest === undefined) am.autoRest = true;
     am.cooldowns = am.cooldowns || {};
     const now = G.tickCount;
     const cd = (key, interval) => (am.cooldowns[key] && (now - am.cooldowns[key]) < interval);
@@ -2389,32 +2828,42 @@ window.SGame = (() => {
       batchLogs = [];
     }
 
+    // 安全执行包装：防止单个策略崩溃阻断后续所有策略
+    function safeRun(label, fn) {
+      try { fn(); }
+      catch(e) { console.error('[托管] ' + label + ' 异常:', e); }
+    }
+
     // 1. 还款检查（每10 tick）
-    if (am.autoRepay && !cd('repay', 10)) { autoRepayStrategy(bLog); setCd('repay'); }
+    if (am.autoRepay && !cd('repay', 10)) { safeRun('还款', function(){ autoRepayStrategy(bLog); setCd('repay'); }); }
     // 2. 区域解锁检查（每30 tick * 阶段倍率）
-    if (am.autoUnlockRegion && !cd('unlock', Math.round(30 * stageCDMult))) { autoUnlockRegionStrategy(bLog); setCd('unlock'); }
+    if (am.autoUnlockRegion && !cd('unlock', Math.round(30 * stageCDMult))) { safeRun('区域解锁', function(){ autoUnlockRegionStrategy(bLog); setCd('unlock'); }); }
     // 3. 业务开设检查（每20 tick）
-    if (am.autoOpenBusiness && !cd('openBiz', Math.round(20 * stageCDMult))) { autoOpenBusinessStrategy(bLog); setCd('openBiz'); }
+    if (am.autoOpenBusiness && !cd('openBiz', Math.round(20 * stageCDMult))) { safeRun('业务开设', function(){ autoOpenBusinessStrategy(bLog); setCd('openBiz'); }); }
     // 4. 业务升级检查（每20 tick）
-    if (am.autoUpgradeBusiness && !cd('upgrade', Math.round(20 * stageCDMult))) { autoUpgradeStrategy(bLog); setCd('upgrade'); }
+    if (am.autoUpgradeBusiness && !cd('upgrade', Math.round(20 * stageCDMult))) { safeRun('业务升级', function(){ autoUpgradeStrategy(bLog); setCd('upgrade'); }); }
     // 5. 员工招聘检查（每15 tick）
-    if (am.autoHire && !cd('hire', 15)) { autoHireStrategy(bLog); setCd('hire'); }
+    if (am.autoHire && !cd('hire', 15)) { safeRun('招聘', function(){ autoHireStrategy(bLog); setCd('hire'); }); }
     // 6. 自动解雇检查（每30 tick）
-    if (am.autoFire && !cd('fire', 30)) { autoFireStrategy(bLog); setCd('fire'); }
+    if (am.autoFire && !cd('fire', 30)) { safeRun('解雇', function(){ autoFireStrategy(bLog); setCd('fire'); }); }
     // 7. 研发检查（每25 tick）
-    if (am.autoResearch && !cd('research', 25)) { autoResearchStrategy(bLog); setCd('research'); }
+    if (am.autoResearch && !cd('research', 25)) { safeRun('研发', function(){ autoResearchStrategy(bLog); setCd('research'); }); }
     // 8. 股票买卖（每20 tick）
-    if (am.autoInvest && !cd('invest', 20)) { autoInvestStrategy(bLog); setCd('invest'); }
+    if (am.autoInvest && !cd('invest', 20)) { safeRun('股票', function(){ autoInvestStrategy(bLog); setCd('invest'); }); }
     // 9. NPC送礼（每30 tick，阶段自适应）
-    if (am.autoGift && !cd('gift', stage === 'late' ? 20 : 30)) { autoGiftStrategy(bLog); setCd('gift'); }
+    if (am.autoGift && !cd('gift', stage === 'late' ? 20 : 30)) { safeRun('送礼', function(){ autoGiftStrategy(bLog); setCd('gift'); }); }
     // 10. 贷款检查（每60 tick）
-    if (am.autoLoan && !cd('loan', 60)) { autoLoanStrategy(bLog); setCd('loan'); }
-    // 11. 自动拉项目（CD 到了就拉，不记录到批次日志中避免洪泛）
-    autoManualWorkStrategy();
+    if (am.autoLoan && !cd('loan', 60)) { safeRun('贷款', function(){ autoLoanStrategy(bLog); setCd('loan'); }); }
+    // 11. 自动拉项目（CD 到了就拉，受设置开关控制）
+    if (am.autoManualWork) { safeRun('拉项目', function(){ autoManualWorkStrategy(); }); }
+    // 11.5 自动NPC商务约谈（每60 tick，好感>40的NPC）
+    if (!cd('negotiate', 60)) { safeRun('商务约谈', function(){ autoNegotiateStrategy(bLog); setCd('negotiate'); }); }
     // 12. 资产自动投资（每30 tick，资金充裕时购买资产）
-    if (!cd('assetBuy', 30)) { autoAssetBuyStrategy(bLog); setCd('assetBuy'); }
+    if (!cd('assetBuy', 30)) { safeRun('资产投资', function(){ autoAssetBuyStrategy(bLog); setCd('assetBuy'); }); }
     // 13. 资产紧急典当（每10 tick，资金窘迫时检查）
-    if (!cd('assetPawn', 10)) { autoAssetPawnStrategy(bLog); setCd('assetPawn'); }
+    if (!cd('assetPawn', 10)) { safeRun('资产典当', function(){ autoAssetPawnStrategy(bLog); setCd('assetPawn'); }); }
+    // 14. 自动休息（每10 tick，疲劳>60的员工安排休息，受设置开关控制）
+    if (am.autoRest && !cd('rest', 10)) { safeRun('员工休息', function(){ autoRestStrategy(bLog); setCd('rest'); }); }
 
     flushBatch();
   }
@@ -2499,46 +2948,96 @@ window.SGame = (() => {
 
   function autoOpenBusinessStrategy(bLog) {
     if (!G) return;
-    const cityId = G.currentCityId;
-    const cityDef = CITIES[cityId];
-    if (!cityDef) return;
-    const cityRegions = cityDef.regionIds || [];
-    const unlockedRegions = cityRegions.filter(rid => {
-      const r = REGIONS[rid];
-      return r && (r.unlocked || G.unlockedRegions.includes(rid));
-    });
-    if (unlockedRegions.length === 0) return;
 
+    // 遍历所有已解锁城市，寻找可开业的业务
     const candidates = [];
-    BUSINESS_DEFS.forEach(bDef => {
-      const state = G.businesses[bDef.id];
-      if (!state || state.level > 0 || !state.unlocked) return;
-      const lv1 = bDef.levels[0];
-      if (!lv1) return;
-      let bestScore = 0, bestRegion = null;
-      unlockedRegions.forEach(rid => {
+
+    Object.entries(G.cities).forEach(([cityId, cityData]) => {
+      if (!cityData || !cityData.unlocked) return;
+      const cityDef = CITIES[cityId];
+      if (!cityDef) return;
+      const cityRegions = cityDef.regionIds || [];
+      const unlockedRegions = cityRegions.filter(rid => {
         const r = REGIONS[rid];
-        let score = lv1.income;
-        if (r.bonus.retail && bDef.id === 'retail') score *= r.bonus.retail;
-        if (r.bonus.tech && bDef.id === 'tech') score *= r.bonus.tech;
-        if (r.bonus.finance && (bDef.id === 'fund' || bDef.id === 'office')) score *= r.bonus.finance;
-        if (r.bonus.repGain) score *= (1 + (r.bonus.repGain - 1) * 0.3);
-        if (score > bestScore) { bestScore = score; bestRegion = rid; }
+        return r && (r.unlocked || G.unlockedRegions.includes(rid));
       });
-      if (bestRegion) {
-        let cost = (lv1.cost || 0) * 10000;
-        if (G.origin === 'rich2nd') cost = Math.floor(cost * 0.8);
-        candidates.push({ bizId: bDef.id, name: bDef.name, icon: bDef.icon, score: bestScore, region: bestRegion, cost });
-      }
+      if (unlockedRegions.length === 0) return;
+
+      if (!cityData.businesses) return;
+      BUSINESS_DEFS.forEach(bDef => {
+        const state = cityData.businesses[bDef.id];
+        if (!state || state.level > 0 || !state.unlocked) return;
+        const lv1 = bDef.levels[0];
+        if (!lv1) return;
+        let bestScore = 0, bestRegion = null;
+        unlockedRegions.forEach(rid => {
+          const r = REGIONS[rid];
+          let score = lv1.income;
+          if (r.bonus.retail && bDef.id === 'retail') score *= r.bonus.retail;
+          if (r.bonus.tech && bDef.id === 'tech') score *= r.bonus.tech;
+          if (r.bonus.finance && (bDef.id === 'fund' || bDef.id === 'office')) score *= r.bonus.finance;
+          if (r.bonus.repGain) score *= (1 + (r.bonus.repGain - 1) * 0.3);
+          if (score > bestScore) { bestScore = score; bestRegion = rid; }
+        });
+        if (bestRegion) {
+          let cost = (lv1.cost || 0) * 10000;
+          if (G.origin === 'rich2nd') cost = Math.floor(cost * 0.8);
+          candidates.push({ bizId: bDef.id, name: bDef.name, icon: bDef.icon, score: bestScore, region: bestRegion, cost, cityId });
+        }
+      });
     });
+
+    // 同时兼容旧 G.businesses 格式
+    if (G.businesses && Object.keys(G.cities || {}).length === 0) {
+      const cityId = G.currentCityId;
+      const cityDef = CITIES[cityId];
+      const cityRegions = cityDef ? (cityDef.regionIds || []) : [];
+      const unlockedRegions = cityRegions.filter(rid => {
+        const r = REGIONS[rid];
+        return r && (r.unlocked || G.unlockedRegions.includes(rid));
+      });
+      BUSINESS_DEFS.forEach(bDef => {
+        const state = G.businesses[bDef.id];
+        if (!state || state.level > 0 || !state.unlocked) return;
+        const lv1 = bDef.levels[0];
+        if (!lv1) return;
+        let bestScore = 0, bestRegion = null;
+        unlockedRegions.forEach(rid => {
+          const r = REGIONS[rid];
+          let score = lv1.income;
+          if (r.bonus.retail && bDef.id === 'retail') score *= r.bonus.retail;
+          if (r.bonus.tech && bDef.id === 'tech') score *= r.bonus.tech;
+          if (r.bonus.finance && (bDef.id === 'fund' || bDef.id === 'office')) score *= r.bonus.finance;
+          if (r.bonus.repGain) score *= (1 + (r.bonus.repGain - 1) * 0.3);
+          if (score > bestScore) { bestScore = score; bestRegion = rid; }
+        });
+        if (bestRegion) {
+          let cost = (lv1.cost || 0) * 10000;
+          if (G.origin === 'rich2nd') cost = Math.floor(cost * 0.8);
+          candidates.push({ bizId: bDef.id, name: bDef.name, icon: bDef.icon, score: bestScore, region: bestRegion, cost, cityId: cityId || 'xinhai' });
+        }
+      });
+    }
+
     candidates.sort((a, b) => b.score - a.score);
     for (const c of candidates) {
       if (G.money >= c.cost * 2) {
         if (c.cost > 0) G.money -= c.cost;
-        G.businesses[c.bizId] = G.businesses[c.bizId] || { level: 0, region: null, unlocked: true };
-        G.businesses[c.bizId].level = 1;
-        G.businesses[c.bizId].region = c.region;
-        G.businesses[c.bizId].unlocked = true;
+        // 在对应城市中开业
+        var targetCity = G.cities && G.cities[c.cityId];
+        if (targetCity && targetCity.businesses) {
+          targetCity.businesses[c.bizId] = targetCity.businesses[c.bizId] || { level: 0, region: null, unlocked: true };
+          targetCity.businesses[c.bizId].level = 1;
+          targetCity.businesses[c.bizId].region = c.region;
+          targetCity.businesses[c.bizId].unlocked = true;
+        }
+        // 兼容旧格式
+        if (G.businesses) {
+          G.businesses[c.bizId] = G.businesses[c.bizId] || { level: 0, region: null, unlocked: true };
+          G.businesses[c.bizId].level = 1;
+          G.businesses[c.bizId].region = c.region;
+          G.businesses[c.bizId].unlocked = true;
+        }
         bLog(c.icon + ' 开业 ' + c.name);
         if (G.autoStats) G.autoStats.businessesOpened++;
         break;
@@ -2549,30 +3048,62 @@ window.SGame = (() => {
   function autoUpgradeStrategy(bLog) {
     if (!G) return;
     const candidates = [];
-    BUSINESS_DEFS.forEach(bDef => {
-      const state = G.businesses[bDef.id];
-      if (!state || state.level === 0 || state.level >= bDef.levels.length) return;
-      const curLv = bDef.levels[state.level - 1];
-      const nextLv = bDef.levels[state.level];
-      if (!curLv || !nextLv) return;
-      const cost = nextLv.cost * 10000;
-      const incomeGain = (nextLv.income - curLv.income) * 10000;
-      if (cost <= 0) return;
-      const roi = incomeGain / cost;
-      candidates.push({ bizId: bDef.id, name: bDef.name, icon: bDef.icon, cost, roi, nextLv });
-    });
+
+    // 遍历所有已解锁城市的业务
+    if (G.cities) {
+      Object.entries(G.cities).forEach(function([cityId, cityData]) {
+        if (!cityData || !cityData.unlocked || !cityData.businesses) return;
+        BUSINESS_DEFS.forEach(function(bDef) {
+          const state = cityData.businesses[bDef.id];
+          if (!state || state.level === 0 || state.level >= bDef.levels.length) return;
+          const curLv = bDef.levels[state.level - 1];
+          const nextLv = bDef.levels[state.level];
+          if (!curLv || !nextLv) return;
+          const cost = nextLv.cost * 10000;
+          const incomeGain = (nextLv.income - curLv.income) * 10000;
+          if (cost <= 0) return;
+          const roi = incomeGain / cost;
+          candidates.push({ bizId: bDef.id, name: bDef.name, icon: bDef.icon, cost, roi, nextLv, cityId });
+        });
+      });
+    }
+    // 兼容旧格式
+    if (candidates.length === 0 && G.businesses) {
+      BUSINESS_DEFS.forEach(function(bDef) {
+        const state = G.businesses[bDef.id];
+        if (!state || state.level === 0 || state.level >= bDef.levels.length) return;
+        const curLv = bDef.levels[state.level - 1];
+        const nextLv = bDef.levels[state.level];
+        if (!curLv || !nextLv) return;
+        const cost = nextLv.cost * 10000;
+        const incomeGain = (nextLv.income - curLv.income) * 10000;
+        if (cost <= 0) return;
+        const roi = incomeGain / cost;
+        candidates.push({ bizId: bDef.id, name: bDef.name, icon: bDef.icon, cost, roi, nextLv, cityId: G.currentCityId || 'xinhai' });
+      });
+    }
+
     candidates.sort((a, b) => b.roi - a.roi);
     const stage = getGameStage();
     // 阶段自适应阈值：早期更保守（留更多现金），后期更激进
     const baseThreshold = G.autoMode.upgradeThreshold || 0.3;
     const stageMult = stage === 'early' ? 0.7 : stage === 'late' ? 1.3 : 1.0;
     const threshold = baseThreshold * stageMult;
+
     for (const c of candidates) {
       let cost = c.cost;
       if (G.origin === 'rich2nd') cost = Math.floor(cost * 0.8);
       if (G.money >= cost / threshold) {
         G.money -= cost;
-        G.businesses[c.bizId].level++;
+        // 升级对应城市的业务
+        var targetCity = G.cities && G.cities[c.cityId];
+        if (targetCity && targetCity.businesses && targetCity.businesses[c.bizId]) {
+          targetCity.businesses[c.bizId].level++;
+        }
+        // 兼容旧格式
+        if (G.businesses && G.businesses[c.bizId]) {
+          G.businesses[c.bizId].level++;
+        }
         bLog(c.icon + ' 升级 ' + c.name + '→' + c.nextLv.name);
         if (G.autoStats) G.autoStats.businessesUpgraded++;
         break;
@@ -2585,7 +3116,9 @@ window.SGame = (() => {
     const maxEmp = isHRManaged() ? getEmpMax() : Math.min(G.autoMode.maxEmployees || 8, getEmpMax());
     if (G.employees.length >= maxEmp) return;
     const curTotalSalary = G.employees.reduce((s, e) => s + calcActualSalary(e.baseSalary || e.salary, G) * 10000, 0);
-    if (calcTotalIncome() < curTotalSalary * 1.5) return;
+    // 放宽招聘条件：只要收入 >= 工资的1.0倍即可招聘（而非1.5倍），避免招聘只开局触发
+    const totalIncome = calcTotalIncome();
+    if (totalIncome < curTotalSalary * 1.0 && G.money < curTotalSalary * 12) return;
     // HR 统管模式
     if (isHRManaged()) {
       const depts = calcDeptStats();
@@ -2600,42 +3133,55 @@ window.SGame = (() => {
       }
       return;
     }
-    // 逐个招聘
-    const priorityRoles = ['manager', 'developer', 'sales', 'analyst', 'marketer', 'designer', 'intern'];
+    // 逐个招聘：根据游戏阶段智能选择角色
+    const stage = getGameStage();
+    let priorityRoles;
+    if (stage === 'early') {
+      priorityRoles = ['intern', 'sales', 'developer', 'marketer', 'analyst', 'designer', 'manager', 'hr', 'lawyer', 'finance_emp'];
+    } else if (stage === 'mid') {
+      priorityRoles = ['developer', 'sales', 'manager', 'marketer', 'analyst', 'hr', 'finance_emp', 'lawyer', 'designer', 'intern'];
+    } else {
+      priorityRoles = ['manager', 'developer', 'cto', 'lawyer', 'finance_emp', 'analyst', 'hr', 'marketer', 'sales', 'designer'];
+    }
     let chosenRole = null;
     for (const rid of priorityRoles) {
       const def = EMP_ROLES.find(r => r.id === rid);
-      if (def) {
-        const estimatedSalary = calcActualSalary(def.baseSalary, G);
-        if (G.money >= estimatedSalary * 10000 * 3) { chosenRole = def; break; }
+      if (!def) continue;
+      // 检查角色前置条件
+      if (def.req) {
+        if (def.req.empCount && G.employees.length < def.req.empCount) continue;
+        if (def.req.money && G.money < def.req.money) continue;
+        if (def.req.techLv && (G.completedResearch && G.completedResearch.digital || 0) < def.req.techLv) continue;
       }
+      const estimatedSalary = calcActualSalary(def.baseSalary, G);
+      // 实习生实习期工资打折，降低招人门槛
+      var salaryForCheck = (def.id === 'intern') ? estimatedSalary * (CONFIG.INTERN_SALARY_RATIO || 0.5) : estimatedSalary;
+      if (G.money >= salaryForCheck * 10000 * 3) { chosenRole = def; break; }
     }
     if (!chosenRole) {
       const candidates = EMP_ROLES.filter(r => {
+        if (r.req) {
+          if (r.req.empCount && G.employees.length < r.req.empCount) return false;
+          if (r.req.money && G.money < r.req.money) return false;
+        }
         const estSalary = calcActualSalary(r.baseSalary, G);
         return G.money >= estSalary * 10000 * 3;
       });
       if (candidates.length === 0) return;
       chosenRole = candidates[Math.floor(Math.random() * candidates.length)];
     }
-    // 随机姓名
-    const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐'];
-    const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩'];
-    const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
-    const actualSalary = calcActualSalary(chosenRole.baseSalary, G);
-    const loyalty = +(35 + Math.random() * 35).toFixed(0);
-    G.empIdCounter++;
-    const newEmp = { id: G.empIdCounter, name, role: chosenRole.id, baseSalary: chosenRole.baseSalary, loyalty, happiness: 50, icon: chosenRole.icon || '👤', fatigue: 0, skill: 1 };
+    // 生成带属性的员工
+    const newEmp = generateEmployeeWithAttributes(chosenRole, G);
     G.employees.push(newEmp);
 
     // 尝试用 LLM 生成员工背景（异步，不阻塞）
     if (typeof LLM !== 'undefined' && LLM.generateEmployeeBackground) {
-      LLM.generateEmployeeBackground(newEmp).then(function(bg) {
+      LLM.generateEmployeeBackground(chosenRole.name).then(function(bg) {
         if (bg) { newEmp.background = bg; save(); }
       }).catch(function() {});
     }
 
-    bLog('招聘 ' + name + '（' + chosenRole.name + '）');
+    bLog('招聘 ' + newEmp.name + '（' + chosenRole.name + '）');
     if (G.autoStats) G.autoStats.employeesHired++;
   }
 
@@ -2648,7 +3194,8 @@ window.SGame = (() => {
     toFire.sort((a, b) => a.loyalty - b.loyalty);
     const emp = toFire[0];
     const actualSalary = calcActualSalary(emp.baseSalary || emp.salary, G);
-    const comp = actualSalary * 3 * 10000;
+    const effectiveSalary = calcInternSalary(emp, actualSalary);
+    const comp = effectiveSalary * 3 * 10000;
     if (G.money < comp) return;
     G.money -= comp;
     G.employees = G.employees.filter(e => e.id !== emp.id);
@@ -2695,6 +3242,7 @@ window.SGame = (() => {
     if (!G) return;
     const budget = G.money * (G.autoMode.investBudget || 0.1);
     if (budget < 10000) return;
+    const stage = getGameStage();
 
     // === 卖出：考虑近期趋势，不止看涨幅 ===
     Object.entries(G.stocks).forEach(([sid, holding]) => {
@@ -2703,7 +3251,6 @@ window.SGame = (() => {
       if (holding.avgCost <= 0) return;
       const profitPct = (price - holding.avgCost) / holding.avgCost;
       // 阶段自适应卖出阈值：早期见好就收(15%)，后期持有更久(30%)
-      const stage = getGameStage();
       const sellThreshold = stage === 'early' ? 0.15 : stage === 'mid' ? 0.25 : 0.35;
       // 检查近期趋势：如果还在涨就不急着卖
       const recentChange = G.stockChangeLog && G.stockChangeLog[sid] ? G.stockChangeLog[sid] : 0;
@@ -2812,14 +3359,55 @@ window.SGame = (() => {
     if (G.autoStats) G.autoStats.loansTaken++;
   }
 
-  // 自动拉项目策略：CD到了就拉（不写入批次日志，避免每个tick都打日志）
+  // 自动休息策略：疲劳>60的员工自动休息，每10tick检查
+  function autoRestStrategy(bLog) {
+    if (!G) return;
+    var rested = [];
+    G.employees.forEach(function(emp) {
+      if ((emp.fatigue || 0) > 60 && G.money >= 5000) {
+        G.money -= 5000;
+        emp.fatigue = Math.max(0, (emp.fatigue || 0) - 30);
+        emp.happiness = Math.min(100, (emp.happiness || 50) + 10);
+        rested.push(emp.name);
+      }
+    });
+    if (rested.length > 0) {
+      bLog('😴 休息 ' + rested.join('、'));
+    }
+  }
+
+  // 自动拉项目策略：CD到了就拉，同时刷新UI按钮状态
   function autoManualWorkStrategy() {
     if (!G) return;
+    if (!G.autoMode || !G.autoMode.autoManualWork) return;
     const cdRemain = getManualWorkCdRemain();
     if (cdRemain > 0) return;
     const result = manualWork();
     if (result && result.success && result.earn > 0) {
       if (G.autoStats) { G.autoStats.manualWorks++; G.autoStats.totalIncome += result.earn; }
+      addLog('[托管] 🤝 自动拉项目 +' + formatMoney(result.earn));
+      if (typeof UI !== 'undefined' && UI.renderManualButton) {
+        try { UI.renderManualButton(); } catch(e) {}
+      }
+      if (typeof UI !== 'undefined' && UI.startCdTimer) {
+        try { UI.startCdTimer(); } catch(e) {}
+      }
+    }
+  }
+
+  // 托管：自动NPC商务约谈（每60 tick检查一次，与高好感NPC谈判获取收益）
+  function autoNegotiateStrategy(bLog) {
+    if (!G || !G.npcFavor) return;
+    // 筛选好感度>40的NPC，随机选一个进行商务约谈
+    var eligibleNpcIds = Object.entries(G.npcFavor)
+      .filter(function(e) { return e[1] > 40; })
+      .map(function(e) { return e[0]; });
+    if (eligibleNpcIds.length === 0) return;
+    var npcId = eligibleNpcIds[Math.floor(Math.random() * eligibleNpcIds.length)];
+    if (typeof NPCSystem !== 'undefined' && typeof NPCSystem.negotiate === 'function') {
+      NPCSystem.negotiate(npcId, 'business');
+      var npcName = (NPCS[npcId] && NPCS[npcId].name) || npcId;
+      bLog('💼 与' + npcName + '商务约谈');
     }
   }
 
@@ -3040,6 +3628,7 @@ window.SGame = (() => {
   // ===================================================
   function calcMaintenanceCost() {
     if (!G) return 0;
+    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     let total = 0;
     // 遍历所有已解锁城市
     Object.values(G.cities || {}).forEach(city => {
@@ -3055,6 +3644,14 @@ window.SGame = (() => {
         total += baseIncome * rate;
       });
     });
+    // 刘会计被动：维护成本 -10%
+    if (npcBon._maintenanceDiscount) total *= (1 - npcBon._maintenanceDiscount);
+    // 刘会计临时buff：税务优化（持续多个tick的额外折扣）
+    if (G._taxOptBuff && G._taxOptBuff.remaining > 0) {
+      total *= (1 - G._taxOptBuff.discount);
+      G._taxOptBuff.remaining--;
+      if (G._taxOptBuff.remaining <= 0) addLog('税务优化期已结束。');
+    }
     return total;
   }
 
@@ -3183,8 +3780,13 @@ window.SGame = (() => {
     const emp = G.employees.find(e => e.id === empId);
     if (!emp) return { ok: false, msg: '员工不存在' };
     const curSkill = emp.skill || 1;
-    if (curSkill >= CONFIG.EMP_SKILL_MAX) return { ok: false, msg: '技能已满级' };
-    const cost = CONFIG.EMP_TRAINING_COST_BASE * curSkill * curSkill;
+    // 吴教练被动：技能上限 +1
+    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    var maxSkill = (typeof CONFIG !== 'undefined' ? CONFIG.EMP_SKILL_MAX : 5) + (npcBon._skillCapBonus || 0);
+    if (curSkill >= maxSkill) return { ok: false, msg: '技能已满级' };
+    // 吴教练被动：培训成本 -20%
+    var cost = CONFIG.EMP_TRAINING_COST_BASE * curSkill * curSkill * (1 - (npcBon._trainCostDiscount || 0));
+    cost = Math.round(cost);
     if (G.money < cost) return { ok: false, msg: `培训费不足（需要${formatMoney(cost)}）` };
     G.money -= cost;
     emp.skill = curSkill + 1;
@@ -3301,10 +3903,8 @@ window.SGame = (() => {
     const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
     const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','飞','洋','芳','军','平'];
     for (let i = 0; i < canHire; i++) {
-      G.empIdCounter++;
-      const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
-      const loyalty = +(35 + Math.random() * 35).toFixed(0);
-      G.employees.push({ id: G.empIdCounter, name, role: roleDef.id, baseSalary: roleDef.baseSalary, loyalty, happiness: 50, icon: roleDef.icon || '👤', fatigue: 0, skill: 1 });
+      var newEmp = generateEmployeeWithAttributes(roleDef, G);
+      G.employees.push(newEmp);
       hired++;
     }
     G.money -= totalCost;
@@ -3314,6 +3914,210 @@ window.SGame = (() => {
   }
 
   // ========== HR 统管：批量招聘部门 ==========
+  // ===================================================
+  //  员工属性系统
+  // ===================================================
+  // 员工属性定义：每个属性有范围[min, max]和初始随机区间
+  const EMP_ATTRIBUTES = {
+    ability:     { name: '能力',   icon: '💪', min: 1, max: 100, desc: '综合工作能力，直接影响收入加成' },
+    efficiency:  { name: '效率',   icon: '⚡', min: 1, max: 100, desc: '工作效率，降低疲劳增长速度' },
+    creativity:  { name: '创造力', icon: '💡', min: 1, max: 100, desc: '创新能力，影响科技类和媒体类收益' },
+    experience:  { name: '经验',   icon: '📖', min: 1, max: 100, desc: '行业经验，降低负面事件概率' },
+    charisma:    { name: '魅力',   icon: '✨', min: 1, max: 100, desc: '社交魅力，影响销售和NPC交互效果' },
+  };
+
+  // 各角色属性倾向权重（生成时加权随机）
+  const EMP_ROLE_ATTR_WEIGHTS = {
+    intern:      { ability: 0.3, efficiency: 0.4, creativity: 0.5, experience: 0.1, charisma: 0.3 },
+    developer:   { ability: 0.7, efficiency: 0.6, creativity: 0.9, experience: 0.5, charisma: 0.2 },
+    designer:    { ability: 0.5, efficiency: 0.4, creativity: 1.0, experience: 0.4, charisma: 0.5 },
+    sales:       { ability: 0.5, efficiency: 0.6, creativity: 0.3, experience: 0.6, charisma: 1.0 },
+    analyst:     { ability: 0.8, efficiency: 0.8, creativity: 0.4, experience: 0.9, charisma: 0.3 },
+    manager:     { ability: 0.7, efficiency: 0.7, creativity: 0.4, experience: 0.8, charisma: 0.8 },
+    lawyer:      { ability: 0.6, efficiency: 0.5, creativity: 0.3, experience: 1.0, charisma: 0.6 },
+    hr:          { ability: 0.4, efficiency: 0.6, creativity: 0.3, experience: 0.6, charisma: 0.9 },
+    finance_emp: { ability: 0.7, efficiency: 0.7, creativity: 0.2, experience: 0.9, charisma: 0.4 },
+    marketer:    { ability: 0.5, efficiency: 0.5, creativity: 0.8, experience: 0.5, charisma: 0.9 },
+    cto:         { ability: 1.0, efficiency: 0.9, creativity: 1.0, experience: 1.0, charisma: 0.6 },
+  };
+
+  // 生成带完整属性的员工
+  function generateEmployeeWithAttributes(roleDef, gamestate) {
+    var firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭','何','林','罗','高','梁','宋','唐','许','韩','邓','冯','曹','彭','曾','萧','田','董','袁','潘','于','蒋','蔡','余','杜','叶','程','苏','魏','吕','丁','任','沈','姚','卢','姜','崔','钟','谭','陆','汪','范','廖','石','金','贾','夏','龙','万','方','雷','邱','邵','孔','白','段','薛','侯','江','尹','熊','伍'];
+    var lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','洋','雪','云','飞','翔','军','平','芳','英','丽','鑫','鹏','辉','宇','涛','博','达','超','波','清','峰','刚','龙','梅','兰','竹','菊','悦','欣','宁','安','然','阳','光','星','月','晨','辰','思','睿','逸','文','武','志','勇','义','信','礼','智','诚','恒','远','宏','建','国','海','天','山','川','林','森','松','柏','荣','盛','昌','福','寿','禄','禧','嘉','瑞','祥','康','健','宁'];
+    var name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
+    // 有概率生成三字名
+    if (Math.random() < 0.3) {
+      name += lastNames[Math.floor(Math.random() * lastNames.length)];
+    }
+    var actualSalary = calcActualSalary(roleDef.baseSalary, gamestate);
+    var loyalty = +(30 + Math.random() * 40).toFixed(0);
+
+    // 根据角色倾向生成属性
+    var weights = EMP_ROLE_ATTR_WEIGHTS[roleDef.id] || { ability: 0.5, efficiency: 0.5, creativity: 0.5, experience: 0.5, charisma: 0.5 };
+    var attrs = {};
+    Object.keys(EMP_ATTRIBUTES).forEach(function(attrKey) {
+      var w = weights[attrKey] || 0.5;
+      // 基础值 = 加权随机，权重越高越可能出高值
+      var base = Math.floor(10 + w * 50 + Math.random() * 30 + Math.random() * 10);
+      // 资产规模加成：公司越大，能招到的人才平均素质更高
+      if (gamestate && gamestate.money > 10000000) {
+        var scaleBonus = Math.min(15, Math.log10(gamestate.money / 10000000) * 3);
+        base += Math.floor(Math.random() * scaleBonus);
+      }
+      base = Math.max(EMP_ATTRIBUTES[attrKey].min, Math.min(EMP_ATTRIBUTES[attrKey].max, base));
+      attrs[attrKey] = base;
+    });
+
+    // 技能初始化受能力影响
+    var skill = attrs.ability > 70 ? 2 : 1;
+
+    gamestate.empIdCounter++;
+    var emp = {
+      id: gamestate.empIdCounter,
+      name: name,
+      role: roleDef.id,
+      baseSalary: roleDef.baseSalary,
+      loyalty: loyalty,
+      happiness: 50,
+      icon: roleDef.icon || '👤',
+      fatigue: 0,
+      skill: skill,
+      attrs: attrs,
+    };
+    // 实习生专属字段：实习期计数、是否已转正、转正目标角色
+    if (roleDef.id === 'intern') {
+      emp.isIntern = true;
+      emp.internTicks = 0;
+      emp.internConverted = false;
+      // 生成时即根据属性倾向确定转正方向
+      emp.internConvertTarget = null; // 先置空，下面计算
+    }
+    // 延迟计算 internConvertTarget（需要 emp.attrs 已就绪）
+    if (emp.isIntern && !emp.internConvertTarget) {
+      var convertCandidates = roleDef.internConvertTo || ['developer', 'sales', 'analyst'];
+      var bestRole = null;
+      var bestScore = -1;
+      convertCandidates.forEach(function(rid) {
+        var weights = EMP_ROLE_ATTR_WEIGHTS[rid];
+        if (!weights) return;
+        var score = 0;
+        Object.keys(weights).forEach(function(attrKey) {
+          score += (emp.attrs[attrKey] || 0) * weights[attrKey];
+        });
+        if (score > bestScore) { bestScore = score; bestRole = rid; }
+      });
+      emp.internConvertTarget = bestRole || convertCandidates[Math.floor(Math.random() * convertCandidates.length)];
+    }
+    return emp;
+  }
+
+  // ========== 实习生转正系统 ==========
+
+  // 获取实习生转正候选角色列表（根据游戏阶段加权选择）
+  function getInternConvertTarget(emp) {
+    var roleDef = EMP_ROLES.find(function(r) { return r.id === 'intern'; });
+    if (!roleDef || !roleDef.internConvertTo) return null;
+    var candidates = roleDef.internConvertTo;
+    // 根据属性倾向推荐最合适的角色
+    if (emp.attrs) {
+      var bestRole = null;
+      var bestScore = -1;
+      candidates.forEach(function(rid) {
+        var weights = EMP_ROLE_ATTR_WEIGHTS[rid];
+        if (!weights) return;
+        var score = 0;
+        Object.keys(weights).forEach(function(attrKey) {
+          score += (emp.attrs[attrKey] || 0) * weights[attrKey];
+        });
+        if (score > bestScore) { bestScore = score; bestRole = rid; }
+      });
+      if (bestRole) return bestRole;
+    }
+    // 随机选一个
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // 实习生转正
+  function convertIntern(emp) {
+    if (!emp || !emp.isIntern || emp.internConverted) return false;
+    var targetRoleId = emp.internConvertTarget || getInternConvertTarget(emp);
+    if (!targetRoleId) return false;
+    var targetRole = EMP_ROLES.find(function(r) { return r.id === targetRoleId; });
+    if (!targetRole) return false;
+
+    // 转正：更新角色、薪资、属性加成
+    emp.role = targetRoleId;
+    emp.baseSalary = targetRole.baseSalary;
+    emp.icon = targetRole.icon || '👤';
+    emp.internConverted = true;
+    emp.isIntern = false;
+
+    // 转正属性提升
+    if (emp.attrs) {
+      var bonus = CONFIG.INTERN_CONVERT_ATTR_BONUS || 10;
+      Object.keys(emp.attrs).forEach(function(key) {
+        emp.attrs[key] = Math.min(100, (emp.attrs[key] || 0) + Math.floor(Math.random() * bonus));
+      });
+    }
+    // 转正忠诚度加成
+    emp.loyalty = Math.min(100, (emp.loyalty || 50) + (CONFIG.INTERN_CONVERT_LOYALTY_BONUS || 15));
+    // 转正幸福度加成
+    emp.happiness = Math.min(100, (emp.happiness || 50) + 15);
+
+    addLog('🎓✨ ' + emp.name + ' 实习期满，转正为' + targetRole.name + '！属性提升、薪资调整');
+    save();
+    return true;
+  }
+
+  // 每Tick检查实习生转正
+  function checkInternConversion() {
+    if (!G || !G.employees) return;
+    G.employees.forEach(function(emp) {
+      if (!emp.isIntern || emp.internConverted) return;
+      emp.internTicks = (emp.internTicks || 0) + 1;
+      if (emp.internTicks >= (CONFIG.INTERN_TICKS_TO_CONVERT || 20)) {
+        // 转正
+        convertIntern(emp);
+      }
+    });
+  }
+
+  // 计算实习生实际工资（实习期为正式工资的50%）
+  function calcInternSalary(emp, baseSalary) {
+    if (emp.isIntern && !emp.internConverted) {
+      return baseSalary * (CONFIG.INTERN_SALARY_RATIO || 0.5);
+    }
+    return baseSalary;
+  }
+
+  // 计算员工属性对收入的总加成
+  function calcEmpAttrIncomeBonus(emp) {
+    if (!emp || !emp.attrs) return 0;
+    var bonus = 0;
+    // 能力 → 直接收入加成（每10点+0.67%）
+    bonus += (emp.attrs.ability || 50) / 1500;
+    // 效率 → 等效收入（每10点+0.33%，但疲劳时惩罚减少）
+    bonus += (emp.attrs.efficiency || 50) / 3000;
+    // 创造力 → 科技/媒体加成
+    if (emp.role === 'developer' || emp.role === 'cto' || emp.role === 'designer') {
+      bonus += (emp.attrs.creativity || 50) / 2000;
+    }
+    if (emp.role === 'marketer') {
+      bonus += (emp.attrs.creativity || 50) / 3000;
+    }
+    // 经验 → 风险降低等效加成（每10点+0.2%）
+    bonus += (emp.attrs.experience || 50) / 5000;
+    // 魅力 → 销售/HR加成
+    if (emp.role === 'sales') {
+      bonus += (emp.attrs.charisma || 50) / 2000;
+    }
+    if (emp.role === 'hr' || emp.role === 'manager') {
+      bonus += (emp.attrs.charisma || 50) / 3000;
+    }
+    return bonus;
+  }
+
   function batchHireDept(roleId, targetCount) {
     if (!G) return { ok: false, msg: '游戏未开始', hired: 0 };
     const roleDef = EMP_ROLES.find(r => r.id === roleId);
@@ -3328,12 +4132,9 @@ window.SGame = (() => {
     const totalCost = actualSalary * 10000 * canHire * 2 * CONFIG.HR_HIRE_DISCOUNT; // HR折扣
     if (G.money < totalCost) return { ok: false, msg: `资金不足（需要${formatMoney(totalCost)}）`, hired: 0 };
     let hired = 0;
-    const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
-    const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','飞','洋','芳','军','平'];
     for (let i = 0; i < canHire; i++) {
-      G.empIdCounter++;
-      const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
-      G.employees.push({ id: G.empIdCounter, name, role: roleDef.id, baseSalary: roleDef.baseSalary, loyalty: +(35 + Math.random() * 35).toFixed(0), happiness: 50, icon: roleDef.icon || '👤', fatigue: 0, skill: 1 });
+      var newEmp = generateEmployeeWithAttributes(roleDef, G);
+      G.employees.push(newEmp);
       hired++;
     }
     G.money -= totalCost;
@@ -3582,6 +4383,9 @@ window.SGame = (() => {
     var ticksHeld = G.tickCount - asset.purchaseTick;
     var trendDrift = (tpl.trend || 0.003) * ticksHeld * (0.5 + Math.random());
     var newPrice = Math.round(asset.purchasePrice * (1 + randomDrift + trendDrift) * sentimentFactor / ((0.7 + (50/100) * 0.6)));
+    // 钱老板被动：资产增值加速 5%（持有资产有额外升值）
+    var npcBonAsset = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    if (npcBonAsset._assetAppreciation) newPrice = Math.round(newPrice * (1 + npcBonAsset._assetAppreciation * (ticksHeld / 50)));
     // 确保不低于购买的20%
     return Math.max(Math.round(asset.purchasePrice * 0.2), newPrice);
   }
@@ -3595,15 +4399,18 @@ window.SGame = (() => {
     if (G.assets.length >= slotCap) return false;
 
     var listing = listings[listingIndex];
-    if (G.money < listing.price) return false;
+    // 钱老板被动：资产购买折扣 10%
+    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    var actualPrice = Math.round(listing.price * (1 - (npcBon._assetBuyDiscount || 0)));
+    if (G.money < actualPrice) return false;
 
-    G.money -= listing.price;
+    G.money -= actualPrice;
     var asset = {
       id: 'ast_' + G.tickCount + '_' + G.assets.length,
       templateId: listing.templateId,
       name: listing.name,
       type: listing.type,
-      purchasePrice: listing.price,
+      purchasePrice: actualPrice,
       currentPrice: listing.price,
       purchaseTick: G.tickCount,
       rarity: listing.rarity
@@ -3611,7 +4418,7 @@ window.SGame = (() => {
     G.assets.push(asset);
     // 从市场移除
     G.assetMarketListings.splice(listingIndex, 1);
-    addLog('🏠 购入资产：' + listing.name + '（' + formatMoney(listing.price) + '）');
+    addLog('🏠 购入资产：' + listing.name + '（' + formatMoney(actualPrice) + (actualPrice !== listing.price ? '，钱老板友情价' : '') + '）');
     return true;
   }
 
@@ -3776,7 +4583,7 @@ window.SGame = (() => {
     buyStock, sellStock, updateStockPrices, getStockPortfolioValue, getStockCostBasis,
     applyLoan, processLoans, repayLoan,
     getSeason, checkHoliday,
-    calcSynergyEffects, getSynergyStatusDisplay,
+    calcSynergyEffects, getSynergyStatusDisplay, calcSynergyMultiplier,
     // ---- 新增系统 ----
     calcMaintenanceCost,
     upgradeBusinessMax,
@@ -3786,10 +4593,18 @@ window.SGame = (() => {
     // ---- HR 统管 ----
     isHRManaged, calcDeptStats, hrAutoTick,
     batchHireDept, batchTrainDept,
+    // ---- 员工属性系统 ----
+    EMP_ATTRIBUTES, EMP_ROLE_ATTR_WEIGHTS,
+    generateEmployeeWithAttributes, calcEmpAttrIncomeBonus,
+    // ---- 实习生转正系统 ----
+    convertIntern, getInternConvertTarget, checkInternConversion, calcInternSalary,
+    // ---- 业务收入估算（供UI显示） ----
+    calcBizIncome,
     // ---- LLM 增强 (#5-#10) ----
     generateLLMNews, generateLLMRivalReport, analyzeLLMSentiment, triggerLLMDynamicEvent,
     // ---- 资产/拍卖系统 ----
     refreshAssetMarket, buyAsset, listAssetForAuction, pawnAsset, cancelAuction,
     processAssetSystem, getTotalAssetValue, getAssetTypeName, getRarityLabel,
+    getRegionModifiers,
   };
 })();
