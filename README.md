@@ -6,7 +6,7 @@
 
 A browser-based idle business simulation game powered by local LLM (Ollama). Start from nothing — choose your origin, build businesses across cities, manage employees, negotiate with NPCs, trade stocks, and climb your way to a commercial empire. Every decision matters, and the LLM generates dynamic narratives for key events.
 
-**Tech Stack:** Vanilla JS + Ollama API + Web Audio
+**Tech Stack:** Vanilla JS + Ollama API
 **Play:** 运行 `启动游戏.bat` 或 `python server.py`，浏览器访问 `http://localhost:8765`
 
 ---
@@ -37,6 +37,7 @@ A browser-based idle business simulation game powered by local LLM (Ollama). Sta
 22. [存档说明](#存档说明)
 23. [项目结构](#项目结构)
 24. [常见问题](#常见问题)
+25. [最近更新](#最近更新)
 
 ---
 
@@ -44,7 +45,7 @@ A browser-based idle business simulation game powered by local LLM (Ollama). Sta
 
 ### 方式一：通过 .bat 文件启动（推荐）
 
-双击桌面上的 **`启动游戏.bat`**，游戏将自动在浏览器中打开。
+双击 **`启动游戏.bat`**，游戏将自动在浏览器中打开。
 
 ### 方式二：手动启动本地服务器
 
@@ -66,7 +67,7 @@ http://localhost:8765
 
 ## LLM 配置
 
-游戏深度集成本地 LLM，用于生成**事件叙事、NPC 对话、员工背景故事、决策描述、氛围文字**等内容。没有 LLM 时游戏仍可正常进行，但叙事体验会大幅减弱。
+游戏深度集成本地 LLM，用于生成**事件叙事、NPC 对话、员工背景故事、决策描述**等内容。没有 LLM 时游戏仍可正常进行，但叙事体验会大幅减弱。
 
 ### 默认配置
 
@@ -91,7 +92,6 @@ http://localhost:8765
 - **员工背景**：招聘时生成员工故事
 - **NPC 对话**：人脉 NPC 的 AI 台词
 - **决策叙事**：重大决策的背景描述
-- **氛围生成**：场景氛围文字
 
 ---
 
@@ -100,7 +100,7 @@ http://localhost:8765
 游戏分为三栏布局：
 
 ```
-┌─────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────┐
 │                    顶部工具栏                         │
 ├──────────┬───────────────────────────┬───────────────┤
 │          │                           │               │
@@ -149,7 +149,7 @@ http://localhost:8765
 
 ### 放置机制
 
-游戏每 **10 秒**执行一次 Tick（游戏内约 1 小时），自动结算：
+游戏每 **30 秒**执行一次 Tick（游戏内约 1 小时），自动结算：
 - 所有业务的收益与成本
 - 员工薪资扣除与疲劳变化
 - 压力自然衰减
@@ -161,28 +161,7 @@ http://localhost:8765
 
 ### 时间系统
 
-游戏内 24 个 Tick = 1 个游戏日，并有昼夜循环，影响界面风格：
-
-| 时段 | 游戏时间 |
-|------|----------|
-| 黎明 | 05:00 |
-| 白天 | 07:00 |
-| 黄昏 | 17:00 |
-| 夜晚 | 19:00 |
-
-### 天气系统
-
-天气随机变化，影响收益和事件概率：
-
-| 天气 | 收益影响 | 事件倾向 |
-|------|----------|----------|
-| 晴天 | ×1.0 | 中性 |
-| 多云 | ×1.0 | 中性 |
-| 雨天 | ×0.95 | 负面概率↑ |
-| 暴风雨 | ×0.85 | 危机概率↑↑ |
-| 高温 | ×0.92 | 负面概率↑ |
-| 雪天 | ×0.88 | 中性 |
-| 大雾 | ×0.90 | 中性 |
+游戏内 24 个 Tick = 1 个游戏日。
 
 ### 玩家属性
 
@@ -621,11 +600,12 @@ http://localhost:8765
 ## 存档说明
 
 - 游戏每 **8 Tick** 自动保存一次
-- 存档保存在**浏览器 localStorage** 和服务器端（双保存）
-- 支持**多槽位存档**，可在设置中管理
+- 存档**仅保存在服务器端 `saves/` 文件夹**（JSON 文件）
+- 支持**多槽位存档**（slot 1/2/3），可在设置中管理
 - 支持**离线收益**：关闭游戏后重新打开，系统会计算最多 **24小时** 的离线收益
+- 删除 `saves/` 文件夹内的 JSON 文件即可清除对应存档
 
-> ⚠️ 重要提醒：不要在隐私/无痕模式下游玩，否则关闭浏览器后存档会丢失。
+> ⚠️ 存档只存在服务器本地，删除 `saves/` 里的文件即永久删除，请谨慎操作。
 
 ---
 
@@ -635,6 +615,7 @@ http://localhost:8765
 shanghaifc/
 ├── public/              ← 前端游戏文件
 │   ├── index.html       ← 主页面
+│   ├── audio.js         ← Web Audio API 音效系统（程序化生成，无需音频文件）
 │   ├── config.js        ← 常量、配置、业务、成就定义
 │   ├── core.js          ← 游戏核心逻辑、状态、放置循环
 │   ├── data.js          ← NPC定义、154+事件数据
@@ -643,16 +624,14 @@ shanghaifc/
 │   ├── ui.js            ← 界面渲染、交互
 │   ├── llm.js           ← LLM API调用
 │   ├── main.js          ← 入口、初始化
-│   ├── audio.js         ← 音频系统
 │   ├── settings.js      ← 设置面板
-│   └── storage.js       ← 存档管理
-├── server.py            ← Python本地服务器（CWD=public/）
-├── saves/               ← 存档数据
-├── 启动游戏.bat          ← 一键启动
+│   └── storage.js       ← 存档管理（仅读写服务器 saves/）
+├── server.py            ← Python本地服务器（静态文件 + 存档API）
+├── saves/               ← 存档数据（JSON文件）
+├── 启动游戏.bat          ← 一键启动（已修复编码）
 ├── 关闭游戏.bat          ← 一键关闭
-├── proxy_connect.py     ← SSH代理（已gitignore）
-├── .gitignore
-└── README.md
+├── README.md
+└── .gitignore
 ```
 
 ---
@@ -663,7 +642,7 @@ shanghaifc/
 A：可以正常游玩所有核心功能，只是事件叙事、NPC对话等文字内容会使用预设模板代替。
 
 **Q：游戏卡顿了怎么办？**
-A：减少同时运行的业务数量，或关闭天气视觉效果（设置中）。
+A：减少同时运行的业务数量，或关闭不必要的面板。
 
 **Q：为什么资产一直减少？**
 A：检查员工总薪资、业务运营成本和维护成本是否超过了收益。临时解雇部分员工或暂停高成本业务。
@@ -672,20 +651,57 @@ A：检查员工总薪资、业务运营成本和维护成本是否超过了收�
 A：升级需要满足前置条件（reqCond），鼠标悬停在按钮上可查看具体要求（如科技等级、NPC好感、声誉等）。
 
 **Q：如何触发 LLM 生成的特殊事件？**
-A：保持 LLM 在线状态，随机事件触发时（约每5个Tick检查一次，基础概率30%）会调用 LLM 生成叙事。
+A：保持 LLM 在线状态，随机事件触发时（约每 **6 个 Tick** 检查一次，基础概率 **25%**）会调用 LLM 生成叙事。
 
 **Q：存档在哪里，如何备份？**
-A：存档在浏览器 localStorage（key 为 `shanghaifc_settings`）和服务器端 `saves/` 目录。可在浏览器开发者工具中导出。
+A：存档在游戏目录下的 `saves/` 文件夹，直接复制 JSON 文件即可备份。
 
 **Q：游戏时间和现实时间的关系？**
-A：每10秒现实时间 = 游戏内约1小时；每24个Tick = 1个游戏日。
+A：每 **30 秒**现实时间 = 游戏内约 1 小时；每 24 个 Tick = 1 个游戏日。
 
 **Q：托管模式会自动拉项目吗？**
 A：会。开启托管后，每3个Tick检查一次手动拉项目的冷却，冷却结束即自动执行。
 
 **Q：为什么收入比预期少？**
-A：可能原因：竞争对手抢占市场份额、供应链断裂、天气不利、维护成本扣除。检查市场份额和供应链状态。
+A：可能原因：竞争对手抢占市场份额、供应链断裂、维护成本扣除。检查市场份额和供应链状态。
+
+**Q：为什么 `data.js` 里的事件描述报错？**
+A：已修复。`data.js` 中的事件 `getDesc` 函数现已正确使用 `SGame.G` 而非 `G`，不会再出现 `G is not defined` 错误。
 
 ---
 
-*文档版本：2.0 | 最后更新：2026-06*
+## 最近更新
+
+### 2026-06-03
+
+**参数调整：**
+- Tick 间隔从 15 秒调整为 **30 秒**，降低系统负载，使游戏节奏更从容
+- 事件检查间隔调整为 **6 Tick**，基础触发概率调整为 **25%**
+- 破产容忍 Tick 从 5 增至 **8**，给玩家更多调整窗口
+
+**新功能：**
+- 新增 `audio.js` **Web Audio API 音效系统**，程序化生成音效，无需音频文件，可在设置中开关
+
+**Bug 修复：**
+- 修复 `data.js` 中所有事件 `getDesc` 函数引用 `G` 而非 `SGame.G` 导致的 `ReferenceError`
+- 修复托管模式无法自动决策的问题（`event.type === 'decision'` 改为判断 `event.choices` 存在性，兼容 `opportunity` 类型事件）
+- 修复 `storage.js` 异步 preload 成功后未写入缓存导致存档读不到的问题
+- 修复 `ui.js` `switchPanel` 中函数名错误（`renderRegionPanel` → `renderRegions`，`renderBusinessPanel` → `renderBusinessList`）
+- 修复供应链双断供叠加错误（三个独立 `if` 导致乘法叠加，改为 `else if` 分支）
+- 修复自动送礼属性错误（`NPC.likes` 不存在，改为 `NPC.giftPreferences.love`）
+- 修复 `save()` 静默失败问题（catch 块增加 `console.error` + NaN 拦截）
+- 修复 `load()` 中 `G.unlockedRegions.forEach` 无数组守卫导致崩溃
+- 修复 `getEmpMax()` 中 `G.stats` 未初始化导致崩溃
+
+**优化：**
+- 移除氛围栏（`#atmosphere-bar`）及相关感官描述系统，聚焦决策深度体验
+- 移除天气系统（随氛围栏一同移除）
+- 存档系统改为**仅服务器端 `saves/` 文件夹**，不再使用浏览器 localStorage，删除即真删除
+- `server.py` 增加 `Cache-Control: no-cache` 防止浏览器缓存旧 JS
+- `server.py` 抑制 `ConnectionAbortedError` 堆栈输出（浏览器主动断开，属正常行为）
+- `启动游戏.bat` 修复编码问题（改为 GBK 编码，不再乱码）和逻辑错误（`start /B` 语法修正，fallback 逻辑修复）
+- 增加 JS 运行时错误诊断横幅（`window.onerror` + `unhandledrejection`）
+
+---
+
+*文档版本：3.0 | 最后更新：2026-06-03*

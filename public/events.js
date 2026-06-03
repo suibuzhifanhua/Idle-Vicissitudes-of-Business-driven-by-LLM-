@@ -54,7 +54,7 @@ window.EventSystem = (() => {
   function renderEventCard(event, desc) {
     const area = document.getElementById('event-area');
     const isDecision = event.type === 'decision';
-    const isAuto = SGame.G && SGame.G.autoMode;
+    const isAuto = SGame.G && SGame.G.autoMode && SGame.G.autoMode.enabled && SGame.G.autoMode.eventDecide;
 
     let choicesHTML = '';
     if (event.choices && event.choices.length > 0) {

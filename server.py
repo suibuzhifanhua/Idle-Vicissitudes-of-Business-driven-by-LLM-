@@ -11,10 +11,22 @@ SAVES_DIR = os.path.join(BASE_DIR, 'saves')
 PUBLIC_DIR = os.path.join(BASE_DIR, 'public')
 
 class GameServer(http.server.SimpleHTTPRequestHandler):
+    def handle_error(self, request, client_address):
+        # Suppress ConnectionAbortedError tracebacks (browser disconnects normally)
+        exc_type = sys.exc_info()[0]
+        if exc_type in (ConnectionAbortedError, ConnectionResetError):
+            return
+        super().handle_error(request, client_address)
+
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        # 防止浏览器缓存 JS/CSS/HTML，确保代码更新立即生效
+        if self.path and (self.path.endswith('.js') or self.path.endswith('.css') or self.path.endswith('.html') or self.path == '/'):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -23,7 +35,7 @@ class GameServer(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         # 只显示存档相关的日志，减少噪音
-        if '/api/' in (args[0] if args else ''):
+        if hasattr(self, 'requestline') and '/api/' in self.requestline:
             super().log_message(format, *args)
 
     def do_GET(self):

@@ -39,8 +39,8 @@ window.UI = (() => {
     if (!panel) return;
     switch (name) {
       case 'dashboard': renderDashboard(); return;
-      case 'region': renderRegionPanel(panel); return;
-      case 'business': renderBusinessPanel(panel); return;
+      case 'region': renderRegions(); return;
+      case 'business': renderBusinessList(); return;
       case 'npc': renderNPCPanel(panel); return;
       case 'achievement': renderAchievementPanel(panel); return;
       case 'stats': renderStatPanel(panel); return;
@@ -178,7 +178,6 @@ window.UI = (() => {
     if (!SGame.G) return;
     if (SGame.G.autoMode) console.log('[DEBUG-ui] autoMode.enabled at renderAll entry:', SGame.G.autoMode.enabled);
     const safeRender = (name, fn) => { try { fn(); } catch(e) { console.error('[商海浮沉] renderAll/' + name + ' error:', e); } };
-    updateEnvironment();
     safeRender('stats', renderStats);
     safeRender('regions', renderRegions);
     safeRender('businessList', renderBusinessList);
@@ -309,9 +308,11 @@ window.UI = (() => {
     const cityLabel = cityDef ? cityDef.icon + ' ' + cityDef.name : '新海市';
 
     let html = '';
+    let hasAnyBiz = false;
     BUSINESS_DEFS.forEach(b => {
       const state = businesses[b.id];
       if (!state) return;
+      hasAnyBiz = true;
 
       if (!state.unlocked) {
         const unlockMoney = b.unlockMoney;
@@ -398,6 +399,23 @@ window.UI = (() => {
         </div>
       </div>`;
     });
+    if (!hasAnyBiz) {
+      const xinhaiHasBiz = G.cities['xinhai'] && G.cities['xinhai'].businesses && 
+        Object.values(G.cities['xinhai'].businesses).some(b => b.level > 0);
+      if (xinhaiHasBiz) {
+        html = `<div style="padding:16px 0;text-align:center;color:var(--text-muted);line-height:1.8">
+          <div style="font-size:14px;margin-bottom:8px">🏙️ ${cityLabel} 暂无业务</div>
+          <div style="font-size:11px">你的业务都在新海市，切换过去即可继续经营</div>
+          <button class="btn" style="margin-top:10px;font-size:12px;padding:6px 16px" onclick="UI.switchCity('xinhai')">回新海市</button>
+        </div>`;
+      } else {
+        html = `<div style="padding:16px 0;text-align:center;color:var(--text-muted);line-height:1.8">
+          <div style="font-size:14px;margin-bottom:8px">🏙️ ${cityLabel} 暂无业务</div>
+          <div style="font-size:11px">前往世界地图解锁或切换其他城市</div>
+          <button class="btn" style="margin-top:10px;font-size:12px;padding:6px 16px" onclick="UI.switchPanel('worldmap')">🗺 世界地图</button>
+        </div>`;
+      }
+    }
     el.innerHTML = html;
   }
 
@@ -519,7 +537,6 @@ window.UI = (() => {
     const rankIcon = rankDef ? rankDef.icon : '';
     const weatherInfo = getWeatherDisplay(G);
     const timeInfo = getTimeDisplay(G);
-    const atmosphereText = G.atmosphereText || '';
     const tickMs = (typeof CONFIG !== 'undefined' && CONFIG && CONFIG.TICK_MS) ? CONFIG.TICK_MS : 5000;
 
     // 托管状态标签
@@ -547,7 +564,6 @@ window.UI = (() => {
         <div class="dash-label">${rankIcon} ${G.rank || '个体户'}  |  ${citySelectHtml}</div>
         <div class="dash-value" style="color:var(--accent-gold);font-size:28px;">${formatMoneyComma(G.money ?? 0)} ${trendHtml}</div>
         <div class="dash-sub">${timeInfo}  ${weatherInfo}  |  当前总资产</div>
-        ${atmosphereText ? `<div class="atmosphere-text">${atmosphereText}</div>` : ''}
         ${autoStatusHtml}
         ${chartHtml}
       </div>
@@ -919,7 +935,7 @@ window.UI = (() => {
 
     let html = '';
     Object.values(NPCS).forEach(npc => {
-      if (npc.actUnlock >= act && !npcTriggers[npc.id].some(t => t.startsWith('act_'))) {
+      if (npc.actUnlock >= act && !(npcTriggers[npc.id] || []).some(t => t.startsWith('act_'))) {
         // 幕次未解锁
         html += `<div class="stat-row" style="opacity:0.4;font-size:11px"><span class="stat-label">🔒 ${npc.name}</span><span class="stat-value">${npc.title}</span></div>`;
         return;
@@ -1020,7 +1036,7 @@ window.UI = (() => {
         <div style="flex:1">
           <div style="font-size:13px;font-weight:600;color:${done?'var(--text-primary)':'var(--text-muted)'}">${a.name}</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${a.desc}</div>
-          ${done && a.reward ? `<div style="font-size:10px;color:var(--accent-gold);margin-top:2px">奖励: ${a.reward}</div>` : ''}
+          ${done ? `<div style="font-size:10px;color:var(--accent-gold);margin-top:2px">🏅 ${getAchievementRewardDesc(a.id) || '永久加成已生效'}</div>` : ''}
         </div>
         ${done && !read ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--accent-blue);flex-shrink:0" title="新解锁"></div>' : ''}
       </div>`;
@@ -1033,6 +1049,38 @@ window.UI = (() => {
       if (!G.achievementRead.includes(id)) G.achievementRead.push(id);
     });
     modal.classList.add('active');
+  }
+
+  // ========== 成就面板（中心区标签页版） ==========
+  function renderAchievementPanel(panel) {
+    if (!panel) return;
+    const G = SGame.G;
+    if (!G) { panel.innerHTML = '<div style="padding:20px;color:var(--text-muted)">请先开始游戏。</div>'; return; }
+    
+    const total = ACHIEVEMENTS.length;
+    const unlocked = G.unlockedAchievements.length;
+    const pct = total > 0 ? Math.round(unlocked / total * 100) : 0;
+    const achRewards = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
+    
+    let html = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
+    html += '<button onclick="UI.switchPanel(\'dashboard\')" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:6px 14px;font-size:13px;cursor:pointer;font-family:var(--font);">← 返回</button>';
+    html += '<div style="font-size:16px;font-weight:700;color:var(--accent-gold)">🏆 成就殿堂</div>';
+    html += '</div>';
+    
+    html += `<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary)">进度：${unlocked}/${total}（${pct}%）| 累积加成：收入+${((achRewards.incomeMult||0)*100).toFixed(0)}%</div><div class="stat-bar" style="margin-top:6px"><div class="stat-bar-fill" style="width:${pct}%;background:var(--accent-gold)"></div></div></div>`;
+    
+    ACHIEVEMENTS.forEach(a => {
+      const done = G.unlockedAchievements.includes(a.id);
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);opacity:${done?1:0.35}">
+        <div style="font-size:24px;">${done ? a.icon : '🔒'}</div>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600;color:${done?'var(--text-primary)':'var(--text-muted)'}">${a.name}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${a.desc}</div>
+          ${done ? `<div style="font-size:9px;color:var(--accent-gold);margin-top:1px">🏅 ${getAchievementRewardDesc(a.id) || '永久加成'}</div>` : ''}
+        </div>
+      </div>`;
+    });
+    panel.innerHTML = html;
   }
 
   // ========== 成就弹窗 ==========
@@ -1198,9 +1246,13 @@ window.UI = (() => {
   function renderSkillTreeContent(container) {
     const G = SGame.G;
     if (!G) return;
+    const achRewards = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
+    const costReduction = achRewards.skillCostReduce || 0;
+    
     let html = `<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
       <span style="font-size:13px;color:var(--accent-gold);">可用技能点: <b>${G.statPoints || 0}</b></span>
       <span style="font-size:11px;color:var(--text-muted);">已解锁: ${G.unlockedSkills.length}/20</span>
+      ${costReduction > 0 ? `<span style="font-size:10px;color:var(--accent-gold);">🏅 成就减免: -${costReduction}点</span>` : ''}
     </div>`;
 
     const catNames = { management:'管理', tech:'技术', social:'社交', finance:'金融' };
@@ -1209,13 +1261,19 @@ window.UI = (() => {
         <div style="font-size:13px;font-weight:600;color:var(--accent-cyan);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">${catNames[cat] || cat}</div>`;
       skills.forEach(sk => {
         const unlocked = G.unlockedSkills.includes(sk.id);
-        const canUnlock = !unlocked && G.statPoints > 0;
-        html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);opacity:${unlocked ? 0.6 : 1}">
+        const skillCost = (sk.cost || 1);
+        const effectiveCost = Math.max(1, skillCost - costReduction);
+        const exclusive = getSkillExclusive(sk.id);
+        const isBlocked = exclusive && exclusive.lockedBy;
+        const canUnlock = !unlocked && !isBlocked && (G.statPoints || 0) >= effectiveCost;
+        
+        html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);opacity:${unlocked ? 0.6 : (isBlocked ? 0.4 : 1)};position:relative;${sk.exclusive ? 'border-left:3px solid var(--accent-gold);padding-left:7px;' : ''}">
           <div style="flex:1;">
-            <div style="font-size:12px;font-weight:600;${unlocked?'color:var(--accent-gold);':''}">${sk.name} ${unlocked?'✓':''}</div>
+            <div style="font-size:12px;font-weight:600;${unlocked?'color:var(--accent-gold);':(isBlocked?'color:var(--text-muted);':'')}">${sk.name} ${unlocked?'✓':''} ${sk.exclusive ? '<span style="font-size:9px;color:var(--accent-gold);background:rgba(245,158,11,0.12);padding:1px 5px;border-radius:3px;">⚡互斥</span>' : ''}</div>
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${sk.desc}</div>
+            ${isBlocked ? `<div style="font-size:9px;color:var(--red-up);margin-top:2px;">🚫 已被「${SKILL_TREES[sk.exclusive].find(s=>s.id===exclusive.lockedBy)?.name||exclusive.lockedBy}」锁定</div>` : ''}
           </div>
-          ${canUnlock ? `<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="UI.buySkill('${sk.id}')">升级 (1点)</button>` : (unlocked ? '<span style="font-size:10px;color:var(--green-down);">已解锁</span>' : '<span style="font-size:10px;color:var(--text-muted);">点数不足</span>')}
+          ${canUnlock ? `<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="UI.buySkill('${sk.id}')">升级 (${effectiveCost}点)</button>` : (unlocked ? '<span style="font-size:10px;color:var(--green-down);">已解锁</span>' : (isBlocked ? '<span style="font-size:10px;color:var(--text-muted);">不可用</span>' : `<span style="font-size:10px;color:var(--text-muted);">需${effectiveCost}点</span>`))}
         </div>`;
       });
       html += '</div>';
@@ -1523,28 +1581,6 @@ window.UI = (() => {
     return `${icon} ${hourStr}:00 (第${G.gameDay || 1}天)`;
   }
 
-  function updateEnvironment() {
-    const G = SGame.G;
-    if (!G) return;
-    const body = document.body;
-    if (!body) return;
-
-    // 清除所有时间/天气class
-    body.classList.remove('time-dawn', 'time-day', 'time-dusk', 'time-night');
-    body.classList.remove('weather-rainy', 'weather-storm', 'weather-foggy', 'weather-snow', 'weather-heatwave', 'weather-sunny', 'weather-cloudy');
-
-    // 设置时间class
-    const timeOfDay = typeof SGame.getTimeOfDay === 'function' ? SGame.getTimeOfDay(G.gameHour) : 'day';
-    body.classList.add('time-' + timeOfDay);
-
-    // 设置天气class（仅当开启了天气效果）
-    if (Settings && Settings.get('weatherEffects') !== false) {
-      if (G.currentWeather) {
-        body.classList.add('weather-' + G.currentWeather);
-      }
-    }
-  }
-
   // ========== 排行榜面板 ==========
   function renderRankingPanel(container) {
     if (!container) return;
@@ -1725,31 +1761,43 @@ window.UI = (() => {
     container.innerHTML = html;
   }
 
-  function renderAtmosphere(text) {
-    if (!text) return;
-    const dashboard = document.getElementById('dashboard');
-    if (!dashboard) return;
-    const existing = dashboard.querySelector('.atmosphere-text');
-    if (existing) {
-      existing.textContent = text;
-    } else {
-      const firstCard = dashboard.querySelector('.dash-card');
-      if (firstCard) {
-        const div = document.createElement('div');
-        div.className = 'atmosphere-text';
-        div.textContent = text;
-        // 插入在 dash-sub 之后、chart 之前
-        const sub = firstCard.querySelector('.dash-sub');
-        if (sub && sub.nextSibling) {
-          firstCard.insertBefore(div, sub.nextSibling);
-        } else {
-          firstCard.appendChild(div);
-        }
+  // ========== 公开API ==========
+
+  // 获取成就奖励描述
+  function getAchievementRewardDesc(achId) {
+    if (typeof ACHIEVEMENT_REWARDS !== 'undefined' && ACHIEVEMENT_REWARDS[achId]) {
+      return ACHIEVEMENT_REWARDS[achId].desc || '';
+    }
+    return '';
+  }
+  
+  // 获取技能成本
+  function getSkillCost(skillId) {
+    let cost = 1;
+    Object.values(SKILL_TREES).forEach(tree => {
+      const found = tree.find(s => s.id === skillId);
+      if (found) cost = found.cost || 1;
+    });
+    const achRewards = (typeof calcAchievementRewards === 'function') ? calcAchievementRewards() : {};
+    const reduction = achRewards.skillCostReduce || 0;
+    return Math.max(1, cost - reduction);
+  }
+  
+  // 获取技能互斥状态
+  function getSkillExclusive(skillId) {
+    if (typeof SKILL_EXCLUSIVE === 'undefined') return null;
+    for (const [group, ids] of Object.entries(SKILL_EXCLUSIVE)) {
+      if (ids.includes(skillId)) {
+        const G = SGame.G;
+        if (!G) return null;
+        const other = ids.find(id => id !== skillId && G.unlockedSkills.includes(id));
+        if (other) return { group, lockedBy: other };
+        return { group, lockedBy: null };
       }
     }
+    return null;
   }
 
-  // ========== 公开API ==========
   return {
     renderAll,
     renderStats, renderRegions, renderBusinessList,
@@ -1773,7 +1821,6 @@ window.UI = (() => {
     formatMoneyComma, renderMiniAssetChart, renderIncomeBreakdown,
     switchPanel, openSettings,
     renderRankingPanel, showNewsDetail, retireGame,
-    updateEnvironment, renderAtmosphere,
     renderTechPanel, renderStockPanel,
     // 新增功能
     showOfflineIncomePopup, claimOfflineIncome,

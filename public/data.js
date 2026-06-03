@@ -600,7 +600,7 @@ const EVENTS = [
     acts:[0,1,2,3,4], cooldown:30, weight:6,
     title:'员工创新想法',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一位员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一位员工';
       return `${name}提出了一个创新想法，可能提升业务效率。要支持吗？`;
     },
     effects:{ money:[0.9,1.2], reputation:[5,15], stress:[0,10] },
@@ -616,7 +616,7 @@ const EVENTS = [
     acts:[0,1,2,3], cooldown:40, weight:5,
     title:'员工倦怠（Burnout）',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一名核心员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一名核心员工';
       return `${name}出现了倦怠迹象，效率下降，可能离职。`;
     },
     effects:{ money:[0.9,1.0], reputation:[0,10], stress:[10,25] },
@@ -632,7 +632,7 @@ const EVENTS = [
     acts:[0,1,2,3,4], cooldown:60, weight:4,
     title:'明星员工被挖',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的明星员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的明星员工';
       return `猎头联系了${name}，开出了双倍薪资。`;
     },
     effects:{ money:[0.8,1.0], reputation:[0,5], stress:[15,30] },
@@ -647,7 +647,7 @@ const EVENTS = [
     id:'e04', type:'employee', category:'narrative',
     acts:[1,2,3,4], cooldown:50, weight:4,
     title:'团队里程碑',
-    getDesc:()=>`你的团队达到了一个里程碑：团队超过${G.employees.length}人。大家士气高涨。`,
+    getDesc:()=>`你的团队达到了一个里程碑：团队超过${(SGame.G&&SGame.G.employees||[]).length}人。大家士气高涨。`,
     effects:{ money:[0.95,1.1], reputation:[10,20], stress:[-10,0] },
     choices:[
       { text:'举办庆祝活动', effect:{ money:0.95, reputation:15, stress:-10 }, label:'庆祝' },
@@ -674,7 +674,7 @@ const EVENTS = [
     acts:[0,1,2,3,4], cooldown:20, weight:3,
     title:'员工生日',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一名员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一名员工';
       return `${name}今天生日。团队准备小庆祝一下。`;
     },
     effects:{ money:[0.98,1.0], reputation:[5,10], stress:[-5,0] },
@@ -689,7 +689,7 @@ const EVENTS = [
     acts:[1,2,3], cooldown:80, weight:4,
     title:'核心员工提交离职',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一名核心员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'一名核心员工';
       return `${name}提交了离职报告，理由是"个人发展"。你要挽留吗？`;
     },
     effects:{ money:[0.8,1.0], reputation:[-10,10], stress:[20,40] },
@@ -705,7 +705,7 @@ const EVENTS = [
     acts:[0,1,2,3], cooldown:100, weight:3,
     title:'员工家庭危机',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的员工';
       return `${name}家属生重病，需要请假和资金支持。`;
     },
     effects:{ money:[0.9,1.0], reputation:[10,25], stress:[0,15] },
@@ -721,7 +721,7 @@ const EVENTS = [
     acts:[1,2,3,4], cooldown:90, weight:4,
     title:'员工要求股权激励',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的核心员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的核心员工';
       return `${name}要求股权激励，否则可能加入竞争对手。`;
     },
     effects:{ money:[0.85,1.1], reputation:[5,20], stress:[10,30] },
@@ -849,7 +849,7 @@ const EVENTS = [
     id:'p08', type:'policy', category:'narrative',
     acts:[3,4], cooldown:150, weight:3,
     title:'反垄断预警',
-    getDesc:()=>`你的市场份额在扩大，有媒体开始讨论"${G.playerName||'你'}会不会成为下一个被反垄断的对象"。`,
+    getDesc:()=>`你的市场份额在扩大，有媒体开始讨论"${(SGame.G&&SGame.G.playerName)||'你'}会不会成为下一个被反垄断的对象"。`,
     effects:{ money:[0.9,1.1], reputation:[-20,20], stress:[20,50] },
     choices:[
       { text:'主动拆分业务，降低市场份额', effect:{ money:0.9, reputation:20, stress:20 }, label:'主动拆降' },
@@ -1050,7 +1050,7 @@ const EVENTS = [
     id:'pers06', type:'personal', category:'narrative',
     acts:[3,4], cooldown:300, weight:2,
     title:'财富自由的真正意义',
-    getDesc:()=>`资产已经超过${G.money>1000000000?'10亿':'1亿'}，你开始思考：钱够了之后，什么是真正重要的？`,
+    getDesc:()=>`资产已经超过${(SGame.G&&SGame.G.money||0)>1000000000?'10亿':'1亿'}，你开始思考：钱够了之后，什么是真正重要的？`,
     effects:{ money:[0.95,1.05], reputation:[10,30], stress:[-30,0] },
     choices:[
       { text:'转向社会责任和公益', effect:{ money:0.95, reputation:30, stress:-30 }, label:'社会责任' },
@@ -1200,7 +1200,7 @@ const EVENTS = [
     acts:[0,1], cooldown:0, weight:10,
     title:'里程碑：100万！',
     getDesc:()=>{
-      const name=G.playerName||'你'; return `${name}的资产达到了100万！你从零开始，终于在新海市站稳了脚跟。\n\n第一幕《起航》完成，第二幕《崛起》开启！`;
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了100万！你从零开始，终于在新海市站稳了脚跟。\n\n第一幕《起航》完成，第二幕《崛起》开启！`;
     },
     effects:{ reputation:[10,20], stress:[-15,-5] },
     choices:[
@@ -1215,7 +1215,7 @@ const EVENTS = [
     acts:[1,2], cooldown:0, weight:10,
     title:'里程碑：1000万！',
     getDesc:()=>{
-      const name=G.playerName||'你'; return `${name}的资产达到了1000万！你已经是新海市商界的新星了。更多的人开始注意到你。\n\n第二幕《崛起》完成，第三幕《入局》开启！`;
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了1000万！你已经是新海市商界的新星了。更多的人开始注意到你。\n\n第二幕《崛起》完成，第三幕《入局》开启！`;
     },
     effects:{ reputation:[15,25], stress:[-20,-10], connections:[5,15] },
     choices:[
@@ -1230,7 +1230,7 @@ const EVENTS = [
     acts:[2,3], cooldown:0, weight:10,
     title:'里程碑：1亿！',
     getDesc:()=>{
-      const name=G.playerName||'你'; return `${name}的资产达到了1亿！你正式进入了新海市商界的顶层圈子。大佬们开始把你当回事。\n\n第三幕《入局》完成，第四幕《争霸》开启！`;
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了1亿！你正式进入了新海市商界的顶层圈子。大佬们开始把你当回事。\n\n第三幕《入局》完成，第四幕《争霸》开启！`;
     },
     effects:{ reputation:[20,30], stress:[-25,-10], connections:[10,20] },
     choices:[
@@ -1245,7 +1245,7 @@ const EVENTS = [
     acts:[3,4], cooldown:0, weight:10,
     title:'里程碑：10亿！',
     getDesc:()=>{
-      const name=G.playerName||'你'; return `${name}的资产达到了10亿！你站在了新海市商业版图的顶峰。现在的问题是：然后呢？\n\n第四幕《争霸》完成，第五幕《浮沉》开启！`;
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了10亿！你站在了新海市商业版图的顶峰。现在的问题是：然后呢？\n\n第四幕《争霸》完成，第五幕《浮沉》开启！`;
     },
     effects:{ reputation:[25,40], stress:[-30,0], connections:[15,30] },
     choices:[
@@ -1260,7 +1260,7 @@ const EVENTS = [
     acts:[4], cooldown:0, weight:10,
     title:'里程碑：100亿！',
     getDesc:()=>{
-      const name=G.playerName||'你'; return `${name}的资产达到了100亿！你已经是商界传奇，新海市的地标建筑有你的名字。但你是否还记得，当初那个在大厂离职后决定创业的自己？\n\n所有幕次完成！`;
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了100亿！你已经是商界传奇，新海市的地标建筑有你的名字。但你是否还记得，当初那个在大厂离职后决定创业的自己？\n\n所有幕次完成！`;
     },
     effects:{ reputation:[30,50], stress:[-40,-10] },
     choices:[
@@ -1277,7 +1277,7 @@ const EVENTS = [
     acts:[1,2,3,4], cooldown:60, weight:5,
     title:'竞争对手恶意挖人',
     getDesc:()=>{
-      const e=G.employees; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的核心员工';
+      const e=(SGame.G&&SGame.G.employees)||[]; const name=e.length>0?e[Math.floor(Math.random()*e.length)].name:'你的核心员工';
       return `竞争对手${['速途科技','云帆创新','海天集团','星河互娱'][Math.floor(Math.random()*4)]}正在暗中接触${name}，开出了更高的薪资和股权。`;
     },
     effects:{ money:[0.8,0.95], reputation:[-10,5], stress:[15,35] },
@@ -1309,7 +1309,7 @@ const EVENTS = [
     acts:[2,3,4], cooldown:120, weight:4,
     title:'商业间谍疑云',
     getDesc:()=>{
-      const biz=Object.values(G.businesses).find(b=>b.level>0);
+      const biz=Object.values(SGame.G&&SGame.G.businesses||{}).find(b=>b.level>0);
       return `你发现公司的核心数据有被泄露的痕迹。信息部门追踪到了一个可疑的内网访问记录。有人在你眼皮底下偷东西。`;
     },
     effects:{ money:[0.8,1.0], reputation:[-25,5], stress:[25,45] },

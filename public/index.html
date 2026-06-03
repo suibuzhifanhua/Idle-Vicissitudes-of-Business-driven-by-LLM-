@@ -94,6 +94,9 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
 ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 @keyframes slideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.ach-reward-tag { display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;background:rgba(245,158,11,0.15);color:var(--accent-gold);margin-left:4px; }
+.skill-exclusive { border-left:2px solid var(--accent-gold) !important; }
+.skill-exclusive::after { content:'⚡互斥';font-size:8px;color:var(--accent-gold);position:absolute;top:6px;right:8px; }
 .stress-low{color:var(--green-down)} .stress-mid{color:var(--accent-gold)} .stress-high{color:var(--red-up)} .stress-critical{color:var(--red-up);animation:pulse 1s infinite;}
 .rep-low{color:var(--red-up)} .rep-mid{color:var(--accent-gold)} .rep-high{color:var(--green-down)}
 .act-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;}
@@ -284,19 +287,28 @@ body.weather-snow::after {
   100% { transform: translateY(20px); opacity: 0.4; }
 }
 
-/* === 氛围文字 === */
-.atmosphere-text {
-  font-size: 11px;
-  font-style: italic;
-  color: var(--text-muted);
-  opacity: 0.7;
-  margin-top: 6px;
-  line-height: 1.5;
-  transition: opacity 0.5s ease;
-}
 </style>
 </head>
 <body>
+
+<div id="js-error-debug" style="display:none;position:fixed;top:0;left:0;right:0;background:#7c2d12;color:#fed7aa;padding:10px;font-size:12px;z-index:9999;white-space:pre-wrap;max-height:200px;overflow-y:auto;"></div>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  var el = document.getElementById('js-error-debug');
+  if (el) {
+    el.style.display = 'block';
+    el.innerHTML += '<div style="margin-bottom:4px;border-bottom:1px solid #b91c1c;padding-bottom:4px;"><b>' + msg + '</b><br>' + src + ':' + line + '</div>';
+  }
+  return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  var el = document.getElementById('js-error-debug');
+  if (el) {
+    el.style.display = 'block';
+    el.innerHTML += '<div style="margin-bottom:4px;border-bottom:1px solid #b91c1c;padding-bottom:4px;"><b>Promise Error:</b> ' + e.reason + '</div>';
+  }
+});
+</script>
 
 <div id="achievement-banner"><span id="ach-icon" style="font-size:24px;"></span><span id="ach-name" style="font-weight:600;"></span></div>
 
@@ -327,7 +339,7 @@ body.weather-snow::after {
     <div class="panel-section"><div class="panel-title">城市区域</div><div id="regions-panel"></div></div>
     <div class="panel-section" style="flex:1;overflow-y:auto;"><div class="panel-title">我的业务</div><div id="business-list"></div></div>
   </div>
-  <div id="center-area">
+<div id="center-area">
     <div id="center-default">
       <div class="dashboard-grid" id="dashboard"></div>
       <div id="synergy-status" style="display:none;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:10px;"></div>

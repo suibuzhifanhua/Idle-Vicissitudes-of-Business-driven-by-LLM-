@@ -1,4 +1,5 @@
-@echo off
+﻿@echo off
+chcp 65001 >nul
 title Close ShangHaiFC
 
 echo ================================
@@ -7,15 +8,8 @@ echo ================================
 echo.
 
 echo [1/2] Closing game server...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8765 ^| findstr LISTENING') do (
-    taskkill /F /PID %%a >nul 2>&1
-    echo Killed server PID: %%a
-)
-taskkill /F /FI "WINDOWTITLE eq ShangHaiFC*" >nul 2>&1
-
-echo.
-echo [2/2] Closing browser windows...
-taskkill /F /FI "WINDOWTITLE eq *ShangHaiFC*" >nul 2>&1
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 8765 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+echo Server killed.
 
 echo.
 echo ================================

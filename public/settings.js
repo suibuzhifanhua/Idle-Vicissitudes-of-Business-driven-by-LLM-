@@ -15,7 +15,6 @@ window.Settings = (() => {
     employeeBg: true,       // 员工背景LLM
     npcDialog: true,        // NPC对话LLM
     decisionNarrative: true,// 决策叙事LLM
-    atmosphereLLM: true,    // LLM氛围生成
     weatherEffects: true,   // 天气视觉效果
     // 托管管理设置
     autoMode: {
@@ -194,7 +193,6 @@ window.Settings = (() => {
         <div>
           <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:6px;">🌍 环境氛围</label>
           <div style="display:flex;flex-direction:column;gap:6px;">
-            ${toggleRow('set-atmosphereLLM', 'LLM氛围生成（AI描述城市）', s.atmosphereLLM)}
             ${toggleRow('set-weatherEffects', '天气视觉效果（雨雪动画）', s.weatherEffects)}
           </div>
         </div>
@@ -520,7 +518,6 @@ window.Settings = (() => {
       employeeBg: getChecked('set-employeeBg'),
       npcDialog: getChecked('set-npcDialog'),
       decisionNarrative: getChecked('set-decisionNarrative'),
-      atmosphereLLM: getChecked('set-atmosphereLLM'),
       weatherEffects: getChecked('set-weatherEffects'),
       // 托管设置
       auto_eventDecide: getChecked('set-autoEventDecide'),

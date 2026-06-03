@@ -153,93 +153,11 @@ ${event.choices.map((c,i)=>`${i+1}. ${c.text}`).join('\n')}
     return result || `${npc.name}：「最近生意怎么样？」`;
   }
 
-  // ========== 氛围预设描述池（fallback） ==========
-  const ATMOSPHERE_POOL = {
-    dawn: [
-      '晨光熹微，城市渐渐苏醒，第一缕阳光洒在高楼的玻璃幕墙上。',
-      '黎明时分，街道尚显冷清，偶尔有早起的上班族匆匆路过。',
-      '薄雾中的城市轮廓朦胧，空气中弥漫着清晨独有的清新气息。',
-    ],
-    day: [
-      '车水马龙的街道，写字楼里键盘声此起彼伏，商业脉搏强劲跳动。',
-      '午后的阳光炙烤着柏油路面，CBD广场上的喷泉引来路人驻足。',
-      '城市在忙碌的节奏中运转，会议室的投影幕上闪烁着季度报表。',
-    ],
-    dusk: [
-      '夕阳给城市镀上一层金色，下班的人流涌入地铁站。',
-      '华灯初上，天边的晚霞与霓虹灯光交相辉映，城市换上了夜晚的妆容。',
-      '黄昏时分，写字楼的灯光陆续亮起，加班族开始新一轮的战斗。',
-    ],
-    night: [
-      '夜深了，只有零星几盏灯火点缀着沉睡的城市。',
-      '霓虹灯在夜色中格外耀眼，24小时便利店里偶有夜归人光顾。',
-      '凌晨的街道空旷安静，远处高楼的航空障碍灯一明一灭。',
-    ],
-  };
-
-  // ========== 天气修饰 ==========
-  const WEATHER_MODIFIERS = {
-    rainy: ['细雨绵绵，路面泛起水光。', '雨滴敲打着窗玻璃，城市的节奏慢了下来。'],
-    storm: ['狂风呼啸，树枝剧烈摇晃，街道上行人寥寥。', '闪电划破天际，暴雨如注倾泻而下。'],
-    foggy: ['浓雾笼罩城市，能见度不足百米。', '大雾中建筑的轮廓若隐若现，宛如幻境。'],
-    snow: ['雪花纷纷扬扬飘落，屋顶和树枝都披上了银装。', '雪后的城市一片洁白，脚步在雪地上留下串串印记。'],
-    heatwave: ['热浪滚滚，路面蒸腾起扭曲的空气。', '高温炙烤，连知了都停止了鸣叫。'],
-  };
-
-  // ========== 氛围生成 ==========
-  async function generateAtmosphere(timeOfDay, weather, cityName) {
-    if (!available || !Settings.get('atmosphereLLM')) {
-      return getFallbackAtmosphere(timeOfDay, weather);
-    }
-    const weatherName = WEATHERS[weather] ? WEATHERS[weather].name : weather;
-    const prompt = `你是一个城市生活观察者。请用1-2句话描述${cityName}在${weatherName}天气下的${timeOfDay==='dawn'?'黎明':timeOfDay==='day'?'白天':timeOfDay==='dusk'?'黄昏':'夜晚'}氛围。
-要求：有画面感，结合天气特征，营造商业都市的氛围，第三人称。不超过40字。`;
-    const result = await generate(prompt, 0.9);
-    return result || getFallbackAtmosphere(timeOfDay, weather);
-  }
-
-  function getFallbackAtmosphere(timeOfDay, weather) {
-    const timePool = ATMOSPHERE_POOL[timeOfDay] || ATMOSPHERE_POOL.day;
-    let desc = timePool[Math.floor(Math.random() * timePool.length)];
-    // 尝试附加天气修饰
-    const mods = WEATHER_MODIFIERS[weather];
-    if (mods && Math.random() < 0.5) {
-      desc += ' ' + mods[Math.floor(Math.random() * mods.length)];
-    }
-    return desc;
-  }
-
-  // ========== 氛围刷新（由 core.js 每 6 tick 触发） ==========
-  async function maybeRefreshAtmosphere() {
-    // 即使LLM氛围关闭，也使用fallback生成氛围（静默使用预设池）
-    if (!SGame.G) return;
-    const timeOfDay = SGame.getTimeOfDay(SGame.G.gameHour);
-    const cityId = SGame.G.currentCityId || 'xinhai';
-    const city = CITIES[cityId];
-    const cityName = city ? city.name : '新海市';
-    const weather = SGame.G.currentWeather || 'sunny';
-
-    SGame.G.atmosphereText = '...';
-    SGame.G.atmosphereLastUpdate = 0;
-
-    // LLM在线且开关开启时用LLM，否则用fallback
-    const useLLM = available && Settings.get('atmosphereLLM');
-    const text = useLLM
-      ? (await generateAtmosphere(timeOfDay, weather, cityName))
-      : getFallbackAtmosphere(timeOfDay, weather);
-
-    SGame.G.atmosphereText = text;
-    if (typeof UI !== 'undefined' && UI.renderAtmosphere) {
-      UI.renderAtmosphere(SGame.G.atmosphereText);
-    }
-  }
-
   // ========== 公开API ==========
   return {
     get available() { return available; },
     check, forceRecheck, setLoading,
     generate, generateNarrative, generateEmployeeBackground,
     generateDecisionNarrative, generateNPCDialog,
-    generateAtmosphere, maybeRefreshAtmosphere,
   };
 })();
