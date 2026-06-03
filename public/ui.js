@@ -527,7 +527,13 @@ window.UI = (() => {
     const G = SGame.G;
     if (!G) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">等待游戏数据加载...</div>'; return; }
     const income = SGame.calcTotalIncome() ?? 0;
-    const expense = (G.employees || []).reduce((s, e) => s + (e.salary ?? 0) * 10000, 0);
+    const rawExpense = (G.employees || []).reduce((s, e) => s + calcActualSalary(e.baseSalary ?? e.salary, G) * 10000, 0);
+    // HR 统管工资折扣
+    let expense = rawExpense;
+    if (typeof SGame.isHRManaged === 'function' && SGame.isHRManaged()) {
+      const hrEmp = G.employees.find(e => e.role === 'hr');
+      if (hrEmp && (hrEmp.loyalty || 0) >= 30) expense = rawExpense * CONFIG.HR_SALARY_DISCOUNT;
+    }
     const maintenanceCost = typeof SGame.calcMaintenanceCost === 'function' ? SGame.calcMaintenanceCost() : 0;
     const trendHtml = renderAssetTrend(G);
     const chartHtml = renderMiniAssetChart(G);
@@ -548,7 +554,7 @@ window.UI = (() => {
       const gray = '<span style="color:var(--text-muted);">○</span>';
       if (am.eventDecide) badges.push(dot + '事件'); else badges.push(gray + '事件');
       if (am.autoOpenBusiness || am.autoUpgradeBusiness) badges.push(dot + '业务');
-      if (am.autoHire) badges.push(dot + '员工'); else badges.push(gray + '员工');
+      if (am.autoHire) badges.push(dot + (typeof SGame.isHRManaged === 'function' && SGame.isHRManaged() ? '🏢员工' : '员工')); else badges.push(gray + '员工');
       if (am.autoUnlockRegion) badges.push(dot + '区域');
       if (am.autoResearch) badges.push(dot + '研发');
       if (am.autoInvest) badges.push(dot + '投资');
@@ -705,6 +711,12 @@ window.UI = (() => {
       return;
     }
 
+    // HR 统管模式：部门面板
+    if (typeof SGame.isHRManaged === 'function' && SGame.isHRManaged()) {
+      return renderHRManagedPanel(el, G);
+    }
+
+    // 普通模式：逐个员工卡片
     let html = '';
     employees.forEach(emp => {
       const roleDef = EMP_ROLES.find(r => r.id === emp.role);
@@ -717,7 +729,7 @@ window.UI = (() => {
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="font-size:12px;font-weight:600">${emp.icon} ${emp.name} <span style="font-size:10px;color:var(--text-muted)">${roleName}</span></div>
-            <div style="font-size:10px;color:var(--text-muted)">忠诚: <span style="color:${loyaltyColor}">${emp.loyalty.toFixed(0)}</span> | 工资: ${emp.salary}万/年 | 疲劳: <span style="color:${fatigueColor}">${fatigue.toFixed(0)}</span> | 技能: Lv.${skill}</div>
+            <div style="font-size:10px;color:var(--text-muted)">忠诚: <span style="color:${loyaltyColor}">${emp.loyalty.toFixed(0)}</span> | 工资: ${calcActualSalary(emp.baseSalary || emp.salary, G)}万/年 | 疲劳: <span style="color:${fatigueColor}">${fatigue.toFixed(0)}</span> | 技能: Lv.${skill}</div>
           </div>
           <div style="display:flex;gap:4px;">
             <button class="btn" style="font-size:9px;padding:2px 6px;background:linear-gradient(135deg,var(--accent-cyan),#0891b2);" onclick="UI.trainEmployee(${emp.id})" title="培训提升技能">📚 培训</button>
@@ -728,6 +740,57 @@ window.UI = (() => {
       </div>`;
     });
     el.innerHTML = html;
+  }
+
+  // ========== HR 统管：部门面板渲染 ==========
+  function renderHRManagedPanel(el, G) {
+    const depts = SGame.calcDeptStats();
+    let html = '<div style="font-size:10px;color:var(--accent-cyan);margin-bottom:8px;font-weight:600">🏢 HR 部门统管模式</div>';
+    Object.entries(depts).forEach(([roleId, d]) => {
+      const loyalCol = d.avgLoyalty >= 50 ? 'var(--green-down)' : d.avgLoyalty >= 20 ? 'var(--accent-gold)' : 'var(--red-up)';
+      const fatigCol = d.avgFatigue >= 70 ? 'var(--red-up)' : d.avgFatigue >= 40 ? 'var(--accent-gold)' : 'var(--green-down)';
+      html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="UI.toggleDeptDetail('${roleId}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="flex:1">
+            <span style="font-size:12px;font-weight:600">${d.icon} ${d.name}部</span>
+            <span style="font-size:10px;color:var(--text-muted);margin-left:4px">${d.count}人</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn" style="font-size:9px;padding:2px 8px;background:linear-gradient(135deg,var(--accent-cyan),#0891b2);" onclick="event.stopPropagation();UI.batchTrainDept('${roleId}')">📚 团训</button>
+            <button class="btn" style="font-size:9px;padding:2px 8px;background:linear-gradient(135deg,var(--accent-gold),#f59e0b);" onclick="event.stopPropagation();UI.batchHireDept('${roleId}')">+ 扩招</button>
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px">
+          忠诚: <span style="color:${loyalCol}">${d.avgLoyalty}</span> | 技能: Lv.${d.avgSkill} | 疲劳: <span style="color:${fatigCol}">${d.avgFatigue}</span>
+        </div>
+        <div id="dept-detail-${roleId}" style="display:none;margin-top:4px;padding-left:12px;border-left:2px solid var(--accent-cyan)"></div>
+      </div>`;
+    });
+    el.innerHTML = html;
+  }
+
+  // ========== HR 统管：展开/折叠部门详情 ==========
+  function toggleDeptDetail(roleId) {
+    const detailEl = document.getElementById('dept-detail-' + roleId);
+    if (!detailEl) return;
+    if (detailEl.style.display === 'none' || !detailEl.style.display) {
+      // 展开：渲染该部门的员工列表
+      const G = SGame.G;
+      const deptEmps = (G.employees || []).filter(e => e.role === roleId);
+      let detHtml = '';
+      deptEmps.forEach(emp => {
+        const loyalCol = emp.loyalty >= 50 ? 'var(--green-down)' : emp.loyalty >= 20 ? 'var(--accent-gold)' : 'var(--red-up)';
+        const fatCol = (emp.fatigue || 0) >= 70 ? 'var(--red-up)' : (emp.fatigue || 0) >= 40 ? 'var(--accent-gold)' : 'var(--green-down)';
+        detHtml += `<div style="padding:4px 0;font-size:10px;display:flex;justify-content:space-between;align-items:center">
+          <span>${emp.icon} ${emp.name} Lv.${emp.skill||1} <span style="color:${loyalCol}">❤${emp.loyalty.toFixed(0)}</span> <span style="color:${fatCol}">😫${(emp.fatigue||0).toFixed(0)}</span></span>
+          <button class="btn" style="font-size:8px;padding:1px 4px;opacity:0.4" onclick="UI.fireEmployee(${emp.id})">×</button>
+        </div>`;
+      });
+      detailEl.style.display = 'block';
+      detailEl.innerHTML = detHtml;
+    } else {
+      detailEl.style.display = 'none';
+    }
   }
 
   // ========== 员工培训和休息 (功能5) ==========
@@ -764,7 +827,14 @@ window.UI = (() => {
     if (btn) {
       const can = SGame.G.employees.length < SGame.getEmpMax();
       btn.disabled = !can;
-      btn.textContent = can ? '+ 招聘新员工' : `人手已满 (${SGame.G.employees.length}/${SGame.getEmpMax()})`;
+      const isManaged = typeof SGame.isHRManaged === 'function' && SGame.isHRManaged();
+      if (isManaged) {
+        btn.textContent = can ? '+ 扩招部门（HR统管）' : `编制已满 (${SGame.G.employees.length}/${SGame.getEmpMax()})`;
+        btn.style.background = 'linear-gradient(135deg, var(--accent-cyan), #0891b2)';
+      } else {
+        btn.textContent = can ? '+ 招聘新员工' : `人手已满 (${SGame.G.employees.length}/${SGame.getEmpMax()})`;
+        btn.style.background = '';
+      }
     }
   }
 
@@ -775,9 +845,14 @@ window.UI = (() => {
     const modal = document.getElementById('modal-hire');
     const content = document.getElementById('hire-content');
     modal.classList.add('active');
-    hireCandidates = [];
 
-    // 生成3个候选人
+    // HR 统管模式：显示部门扩招面板
+    if (typeof SGame.isHRManaged === 'function' && SGame.isHRManaged()) {
+      return renderHRHirePanel(content);
+    }
+
+    // 普通模式：生成候选人
+    hireCandidates = [];
     for (let i = 0; i < 3; i++) {
       const role = EMP_ROLES[Math.floor(Math.random() * EMP_ROLES.length)];
       const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
@@ -788,7 +863,7 @@ window.UI = (() => {
         role: role.id,
         roleName: role.name,
         roleIcon: role.icon,
-        salary: +(role.salary * (0.8 + Math.random() * 0.4)).toFixed(1),
+        baseSalary: role.baseSalary,
         loyalty: +(30 + Math.random() * 40).toFixed(0),
         bg: '正在生成背景故事...',
       });
@@ -807,6 +882,36 @@ window.UI = (() => {
     });
   }
 
+  // ========== HR 统管：招聘面板 ==========
+  function renderHRHirePanel(container) {
+    const G = SGame.G;
+    const depts = SGame.calcDeptStats();
+    let html = '<div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--accent-cyan)">🏢 HR 部门扩招</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">选择部门扩招，HR统管批量录用，成本降低20%</div>';
+
+    EMP_ROLES.forEach(r => {
+      const current = depts[r.id] ? depts[r.id].count : 0;
+      const target = current + 2;
+      const actualSalary = calcActualSalary(r.baseSalary, G);
+      const estCost = actualSalary * 10000 * 2 * CONFIG.HR_HIRE_DISCOUNT; // 扩招2人
+      html += `<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;"
+        onclick="UI.batchHireDept('${r.id}');UI.closeModal();">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span style="font-weight:600">${r.icon} ${r.name}部</span>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:6px">现有 ${current} 人 → ${target} 人</span>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">
+          预估月薪: ${actualSalary}万/人 | 招聘成本: ${SGame.formatMoney(estCost)}（HR折扣）
+        </div>
+      </div>`;
+    });
+
+    html += '<button class="btn" style="margin-top:8px;width:100%;font-size:11px;background:var(--border)" onclick="UI.closeModal()">关闭</button>';
+    container.innerHTML = html;
+  }
+
   function renderHireCards(container) {
     const G = SGame.G;
     // 批量招聘UI (功能4)
@@ -815,7 +920,7 @@ window.UI = (() => {
     batchHtml += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
     batchHtml += '<select id="batch-role-select" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:4px 8px;font-family:var(--font);">';
     EMP_ROLES.forEach(r => {
-      batchHtml += `<option value="${r.id}">${r.icon} ${r.name} (${r.salary}万/年)</option>`;
+      batchHtml += `<option value="${r.id}">${r.icon} ${r.name} (${calcActualSalary(r.baseSalary, SGame.G)}万/月)</option>`;
     });
     batchHtml += '</select>';
     batchHtml += '<select id="batch-count-select" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:11px;padding:4px 8px;font-family:var(--font);">';
@@ -834,7 +939,7 @@ window.UI = (() => {
         </div>
         <div id="hire-bg-${i}" style="font-size:11px;color:var(--text-secondary);margin:4px 0">${c.bg}</div>
         <div style="display:flex;gap:12px;font-size:11px">
-          <span>工资: ${c.salary}万/年</span>
+          <span>工资: ${calcActualSalary(c.baseSalary, G)}万/月</span>
           <span>初始忠诚: ${c.loyalty}</span>
         </div>
         <button class="btn" style="margin-top:8px;font-size:11px" onclick="UI.hireCandidate(${i})">录用</button>
@@ -899,7 +1004,7 @@ window.UI = (() => {
       id: G.empIdCounter,
       name: c.name,
       role: c.role,
-      salary: parseFloat(c.salary),
+      baseSalary: parseFloat(c.baseSalary),
       loyalty: parseFloat(c.loyalty),
       happiness: 50,
       icon: roleDef ? roleDef.icon : '👤',
@@ -916,11 +1021,39 @@ window.UI = (() => {
     const idx = G.employees.findIndex(e => e.id === id);
     if (idx < 0) return;
     const emp = G.employees[idx];
-    // 赔偿
-    const comp = emp.salary * 3;
+    // 赔偿（按实际工资计算）
+    const actualSalary = calcActualSalary(emp.baseSalary || emp.salary, G);
+    const comp = actualSalary * 3;
     G.money -= comp * 10000;
     G.employees.splice(idx, 1);
     EventSystem.addLog(`解雇了${emp.name}，支付赔偿${comp.toFixed(1)}万。`);
+    renderAll();
+  }
+
+  // ========== HR 统管：部门批量培训 ==========
+  function batchTrainDept(roleId) {
+    if (typeof SGame.batchTrainDept !== 'function') return;
+    const result = SGame.batchTrainDept(roleId);
+    if (result.ok) {
+      showToast('📚', '部门培训', result.msg);
+    } else {
+      EventSystem.addLog(result.msg);
+    }
+    renderAll();
+  }
+
+  // ========== HR 统管：部门批量招聘 ==========
+  function batchHireDept(roleId) {
+    if (typeof SGame.batchHireDept !== 'function') return;
+    const depts = SGame.calcDeptStats();
+    const cur = depts[roleId] ? depts[roleId].count : 0;
+    const target = cur + 2;
+    const result = SGame.batchHireDept(roleId, target);
+    if (result.ok) {
+      showToast('🏢', '部门扩招', result.msg);
+    } else {
+      EventSystem.addLog(result.msg);
+    }
     renderAll();
   }
 
@@ -1826,6 +1959,8 @@ window.UI = (() => {
     showOfflineIncomePopup, claimOfflineIncome,
     batchHire,
     trainEmployee, restEmployee,
+    // HR 统管
+    batchTrainDept, batchHireDept, toggleDeptDetail,
     renderMilestonePanel,
   };
 })();

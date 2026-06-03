@@ -302,10 +302,11 @@ window.SGame = (() => {
     if (G.tickCount % 3 === 0) checkSupplyChain();
     // 3.10 市场份额变化
     if (G.tickCount % 6 === 0) updateMarketShare();
-    // 4. 发工资
+    // 4. 发工资（实际工资 = baseSalary × 规模系数，单位转为元）
     let totalSalary = 0;
     G.employees.forEach(emp => {
-      totalSalary += emp.salary;
+      const actualSalary = calcActualSalary(emp.baseSalary || emp.salary, G);
+      totalSalary += actualSalary * 10000;
       // 忠诚度衰减
       emp.loyalty = Math.max(0, emp.loyalty - CONFIG.LOYALTY_DECAY + (emp.happiness || 0));
       // 压力影响
@@ -320,6 +321,16 @@ window.SGame = (() => {
     });
     G.money -= totalSalary;
     G.totalExpense = (G.totalExpense || 0) + totalSalary;
+    // 4.1 HR 统管：工资折扣（HR 谈判优势）
+    if (isHRManaged()) {
+      const hrEmp = G.employees.find(e => e.role === 'hr');
+      const hrLoyal = hrEmp ? (hrEmp.loyalty || 0) : 50;
+      if (hrLoyal >= 30) {
+        const rebate = totalSalary * (1 - CONFIG.HR_SALARY_DISCOUNT);
+        G.money += rebate;
+        G.totalExpense -= rebate;
+      }
+    }
     // 4.5 自动存档（每20 tick到slot_1）
     if (G.autoSaveEnabled !== false && G.tickCount % 20 === 0) {
       autoSave();
@@ -366,6 +377,8 @@ window.SGame = (() => {
     checkMilestonesAdvanced();
     // 15. 破产检查
     checkBankruptcy();
+    // 16. HR 统管自动维护
+    hrAutoTick();
     // 11. 音效：收益为正时播放
     if (income > 0 && typeof AudioFX !== 'undefined') AudioFX.playEarn();
     } catch(e) {
@@ -1214,6 +1227,13 @@ window.SGame = (() => {
       : 50;
     // 联动：低忠诚度离职概率翻倍
     const leaveMultiplier = avgLoyalty < 30 ? 2.0 : (avgLoyalty < 50 ? 1.5 : 1.0);
+    // 公司吸引力：资产越大离职率越低
+    let companyAppeal = 1.0;
+    const totalAssets = G.money || 0;
+    if (totalAssets > 10000000) {
+      companyAppeal = 1.0 - Math.min(0.5, Math.log10(totalAssets / 10000000) * 0.06);
+    }
+    const finalMultiplier = leaveMultiplier * companyAppeal;
 
     G.employees = G.employees.filter(emp => {
       if (emp.loyalty <= 0) {
@@ -1221,13 +1241,13 @@ window.SGame = (() => {
         return false;
       }
       // 随机事件离开（应用联动翻倍）
-      if (Math.random() < 0.002 * leaveMultiplier && emp.loyalty < 30) {
+      if (Math.random() < 0.002 * finalMultiplier && emp.loyalty < 30) {
         addLog(`🚪 ${emp.name}找到了更好的机会，离职了。`);
         return false;
       }
       // 联动：CTO/总监级忠诚度<20，可能带走客户
       if (['cto','director','manager'].includes(emp.role) && emp.loyalty < 20) {
-        if (Math.random() < 0.005 * leaveMultiplier) {
+        if (Math.random() < 0.005 * finalMultiplier) {
           addLog(`⚠️ ${emp.name}（${EMP_ROLES.find(r=>r.id===emp.role).name}）带走了一批客户资源！`);
           // 随机一条业务线下滑
           if (G.businesses) {
@@ -1242,6 +1262,57 @@ window.SGame = (() => {
       }
       return true;
     });
+  }
+
+  // ========== HR 统管模式 ==========
+  function isHRManaged() {
+    if (!G || !G.employees) return false;
+    const empCount = G.employees.length;
+    const hasHR = G.employees.some(e => e.role === 'hr');
+    const threshold = hasHR ? CONFIG.HR_THRESHOLD_WITH_HR : CONFIG.HR_THRESHOLD_DEFAULT;
+    return empCount >= threshold;
+  }
+
+  function calcDeptStats() {
+    if (!G || !G.employees) return {};
+    const depts = {};
+    G.employees.forEach(emp => {
+      const roleId = emp.role;
+      if (!depts[roleId]) {
+        const def = EMP_ROLES.find(r => r.id === roleId);
+        depts[roleId] = { name: def ? def.name : roleId, icon: def ? def.icon : '👤', count: 0, sumLoyalty: 0, sumSkill: 0, sumFatigue: 0, employees: [] };
+      }
+      depts[roleId].count++;
+      depts[roleId].sumLoyalty += emp.loyalty || 0;
+      depts[roleId].sumSkill += emp.skill || 1;
+      depts[roleId].sumFatigue += emp.fatigue || 0;
+      depts[roleId].employees.push(emp);
+    });
+    // 计算平均值
+    Object.values(depts).forEach(d => {
+      d.avgLoyalty = +(d.sumLoyalty / d.count).toFixed(1);
+      d.avgSkill = +(d.sumSkill / d.count).toFixed(1);
+      d.avgFatigue = +(d.sumFatigue / d.count).toFixed(1);
+    });
+    return depts;
+  }
+
+  function hrAutoTick() {
+    if (!isHRManaged()) return;
+    const hrEmp = G.employees.find(e => e.role === 'hr');
+    // HR 忠诚度影响管理效率（<30 则折扣失效）
+    const hrLoyalty = hrEmp ? (hrEmp.loyalty || 0) : 50;
+    const effective = hrLoyalty >= 30;
+    // 自动降疲劳
+    G.employees.forEach(emp => {
+      emp.fatigue = Math.max(0, (emp.fatigue || 0) - CONFIG.HR_AUTO_FATIGUE_REDUCTION);
+    });
+    // 稳定忠诚（HR在场时全员忠诚衰减减半）
+    if (effective) {
+      G.employees.forEach(emp => {
+        if (emp.loyalty < 40 && Math.random() < 0.15) emp.loyalty = Math.min(100, (emp.loyalty || 0) + 2);
+      });
+    }
   }
 
   // ========== 技能效果 ==========
@@ -1442,6 +1513,11 @@ window.SGame = (() => {
       G.employees.forEach(emp => {
         if (emp.fatigue === undefined) emp.fatigue = 0;
         if (emp.skill === undefined) emp.skill = 1;
+        // 迁移：salary → baseSalary（旧版字段名）
+        if (emp.salary !== undefined && emp.baseSalary === undefined) {
+          emp.baseSalary = emp.salary;
+          delete emp.salary;
+        }
       });
     }
     // 迁移：添加任务线字段
@@ -1675,7 +1751,15 @@ window.SGame = (() => {
 
   function getEmpMax() {
     if (!G || !G.stats) return 5;
-    let base = 5 + Math.floor((G.stats.management || 0) / 3);
+    let base = 3 + Math.floor((G.stats.management || 0) / 2);
+    // 每个产业+1上限
+    if (G.businesses) {
+      base += Object.values(G.businesses).filter(b => b.level > 0).length;
+    }
+    // 每个已解锁区域+1上限
+    if (G.unlockedRegions) {
+      base += G.unlockedRegions.length;
+    }
     if (G.skillEffects && G.skillEffects.empMaxBonus) base += G.skillEffects.empMaxBonus;
     return base;
   }
@@ -2286,35 +2370,58 @@ window.SGame = (() => {
 
   function autoHireStrategy() {
     if (!G) return;
-    const maxEmp = Math.min(G.autoMode.maxEmployees || 8, getEmpMax());
+    // HR 统管模式：不设硬性 maxEmployees 限制，让 getEmpMax() 随公司规模自然增长
+    const maxEmp = isHRManaged() ? getEmpMax() : Math.min(G.autoMode.maxEmployees || 8, getEmpMax());
     if (G.employees.length >= maxEmp) return;
-    // 优先招经理/总监
+    // 盈利判断：收入需覆盖当前工资 1.5 倍以上才招人
+    const curTotalSalary = G.employees.reduce((s, e) => s + calcActualSalary(e.baseSalary || e.salary, G) * 10000, 0);
+    if (calcTotalIncome() < curTotalSalary * 1.5) return;
+    // HR 统管模式：批量招聘补缺部门
+    if (isHRManaged()) {
+      const depts = calcDeptStats();
+      // 优先补充人数最少的部门
+      const entries = Object.entries(depts).sort((a, b) => a[1].count - b[1].count);
+      for (const [roleId, stats] of entries) {
+        const result = batchHireDept(roleId, stats.count + 2);
+        if (result.ok && result.hired > 0) return;
+      }
+      return;
+    }
+    // 旧逻辑：逐个招聘
     const priorityRoles = ['manager', 'director', 'developer', 'sales', 'analyst', 'marketer', 'designer', 'intern'];
     let chosenRole = null;
     for (const rid of priorityRoles) {
       const def = EMP_ROLES.find(r => r.id === rid);
-      if (def && G.money >= def.salary * 10000 * 3) { chosenRole = def; break; }
+      if (def) {
+        const estimatedSalary = calcActualSalary(def.baseSalary, G);
+        if (G.money >= estimatedSalary * 10000 * 3) { chosenRole = def; break; }
+      }
     }
     if (!chosenRole) chosenRole = EMP_ROLES[Math.floor(Math.random() * EMP_ROLES.length)];
     const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐'];
     const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩'];
     const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
-    const salary = +(chosenRole.salary * (0.85 + Math.random() * 0.3)).toFixed(1);
+    const actualSalary = calcActualSalary(chosenRole.baseSalary, G);
     const loyalty = +(35 + Math.random() * 35).toFixed(0);
     G.empIdCounter++;
-    G.employees.push({ id: G.empIdCounter, name, role: chosenRole.id, salary, loyalty, happiness: 50, icon: chosenRole.icon || '👤' });
-    addLog('[托管] 自动招聘：' + name + '（' + chosenRole.name + '）');
+    G.employees.push({ id: G.empIdCounter, name, role: chosenRole.id, baseSalary: chosenRole.baseSalary, loyalty, happiness: 50, icon: chosenRole.icon || '👤', fatigue: 0, skill: 1 });
+    addLog(`[托管] 自动招聘：${name}（${chosenRole.name}） 工资 ${actualSalary}万/月`);
   }
 
   function autoFireStrategy() {
     if (!G || G.employees.length <= 2) return;
+    // HR 统管模式下跳过（HR 已在维稳忠诚度）
+    if (isHRManaged()) return;
     const threshold = G.autoMode.fireThreshold || 20;
     const toFire = G.employees.filter(e => e.loyalty < threshold);
     if (toFire.length === 0) return;
     toFire.sort((a, b) => a.loyalty - b.loyalty);
     const emp = toFire[0];
+    const actualSalary = calcActualSalary(emp.baseSalary || emp.salary, G);
+    const comp = actualSalary * 3 * 10000;
+    G.money -= comp;
     G.employees = G.employees.filter(e => e.id !== emp.id);
-    addLog('[托管] 自动解雇：' + emp.name + '（忠诚度' + emp.loyalty + ' < ' + threshold + '）');
+    addLog(`[托管] 自动解雇：${emp.name}（忠诚度${emp.loyalty.toFixed(0)} < ${threshold}），支付赔偿 ${formatMoney(comp)}`);
   }
 
   function autoResearchStrategy() {
@@ -2391,7 +2498,7 @@ window.SGame = (() => {
 
   function autoLoanStrategy() {
     if (!G || G.loans.length >= 3) return;
-    const totalSalary = G.employees.reduce((s, e) => s + e.salary * 10000, 0);
+    const totalSalary = G.employees.reduce((s, e) => s + calcActualSalary(e.baseSalary || e.salary, G) * 10000, 0);
     if (G.money > totalSalary * 3) return;
     const totalAssets = G.money + getStockPortfolioValue();
     const loanAmt = Math.floor(totalAssets * 0.15);
@@ -2911,7 +3018,8 @@ window.SGame = (() => {
     const maxEmp = getEmpMax();
     const canHire = Math.min(count, maxEmp - G.employees.length);
     if (canHire <= 0) return { ok: false, msg: '员工已满', hired: 0 };
-    const totalCost = roleDef.salary * 10000 * canHire * 2;
+    const actualSalary = calcActualSalary(roleDef.baseSalary, G);
+    const totalCost = actualSalary * 10000 * canHire * 2;
     if (G.money < totalCost) return { ok: false, msg: `资金不足（需要${formatMoney(totalCost)}）`, hired: 0 };
     let hired = 0;
     const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
@@ -2919,15 +3027,74 @@ window.SGame = (() => {
     for (let i = 0; i < canHire; i++) {
       G.empIdCounter++;
       const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
-      const salary = +(roleDef.salary * (0.85 + Math.random() * 0.3)).toFixed(1);
       const loyalty = +(35 + Math.random() * 35).toFixed(0);
-      G.employees.push({ id: G.empIdCounter, name, role: roleDef.id, salary, loyalty, happiness: 50, icon: roleDef.icon || '👤', fatigue: 0, skill: 1 });
+      G.employees.push({ id: G.empIdCounter, name, role: roleDef.id, baseSalary: roleDef.baseSalary, loyalty, happiness: 50, icon: roleDef.icon || '👤', fatigue: 0, skill: 1 });
       hired++;
     }
     G.money -= totalCost;
     addLog(`👥 批量招聘 ${hired} 名${roleDef.name}，花费 ${formatMoney(totalCost)}`);
     save();
     return { ok: true, msg: `招聘${hired}人`, hired };
+  }
+
+  // ========== HR 统管：批量招聘部门 ==========
+  function batchHireDept(roleId, targetCount) {
+    if (!G) return { ok: false, msg: '游戏未开始', hired: 0 };
+    const roleDef = EMP_ROLES.find(r => r.id === roleId);
+    if (!roleDef) return { ok: false, msg: '未知角色', hired: 0 };
+    const currentCount = G.employees.filter(e => e.role === roleId).length;
+    const need = Math.max(0, targetCount - currentCount);
+    if (need <= 0) return { ok: false, msg: `该部门已有${currentCount}人，达到目标`, hired: 0 };
+    const maxEmp = getEmpMax();
+    const canHire = Math.min(need, maxEmp - G.employees.length);
+    if (canHire <= 0) return { ok: false, msg: '员工已满', hired: 0 };
+    const actualSalary = calcActualSalary(roleDef.baseSalary, G);
+    const totalCost = actualSalary * 10000 * canHire * 2 * CONFIG.HR_HIRE_DISCOUNT; // HR折扣
+    if (G.money < totalCost) return { ok: false, msg: `资金不足（需要${formatMoney(totalCost)}）`, hired: 0 };
+    let hired = 0;
+    const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
+    const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','飞','洋','芳','军','平'];
+    for (let i = 0; i < canHire; i++) {
+      G.empIdCounter++;
+      const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
+      G.employees.push({ id: G.empIdCounter, name, role: roleDef.id, baseSalary: roleDef.baseSalary, loyalty: +(35 + Math.random() * 35).toFixed(0), happiness: 50, icon: roleDef.icon || '👤', fatigue: 0, skill: 1 });
+      hired++;
+    }
+    G.money -= totalCost;
+    addLog(`🏢 [HR统管] 批量招聘 ${hired} 名${roleDef.name}，花费 ${formatMoney(totalCost)}（HR折扣）`);
+    save();
+    return { ok: true, msg: `招聘${hired}人`, hired };
+  }
+
+  // ========== HR 统管：批量培训部门 ==========
+  function batchTrainDept(roleId) {
+    if (!G) return { ok: false, msg: '游戏未开始', trained: 0 };
+    const roleDef = EMP_ROLES.find(r => r.id === roleId);
+    if (!roleDef) return { ok: false, msg: '未知角色', trained: 0 };
+    const deptEmps = G.employees.filter(e => e.role === roleId);
+    if (deptEmps.length === 0) return { ok: false, msg: '该部门无员工', trained: 0 };
+    // 计算总成本（按单人培训成本 × 人数 × HR折扣）
+    let totalCost = 0;
+    let trained = 0;
+    deptEmps.forEach(emp => {
+      const curSkill = emp.skill || 1;
+      if (curSkill >= CONFIG.EMP_SKILL_MAX) return;
+      totalCost += CONFIG.EMP_TRAINING_COST_BASE * curSkill * curSkill;
+    });
+    totalCost *= CONFIG.HR_TRAIN_DISCOUNT;
+    if (totalCost <= 0) return { ok: false, msg: '该部门员工均已满级', trained: 0 };
+    if (G.money < totalCost) return { ok: false, msg: `培训资金不足（需要${formatMoney(totalCost)}）`, trained: 0 };
+    G.money -= totalCost;
+    deptEmps.forEach(emp => {
+      if ((emp.skill || 1) < CONFIG.EMP_SKILL_MAX) {
+        emp.skill = (emp.skill || 1) + 1;
+        emp.loyalty = Math.min(100, (emp.loyalty || 0) + 3);
+        trained++;
+      }
+    });
+    addLog(`📚 [HR统管] ${roleDef.name}部门培训完成，${trained}人技能提升，花费 ${formatMoney(totalCost)}（团训折扣）`);
+    save();
+    return { ok: true, msg: `${trained}人技能提升`, trained };
   }
 
   // ===================================================
@@ -2996,5 +3163,8 @@ window.SGame = (() => {
     batchHire,
     trainEmployee, restEmployee,
     checkAndShowOfflineIncome,
+    // ---- HR 统管 ----
+    isHRManaged, calcDeptStats, hrAutoTick,
+    batchHireDept, batchTrainDept,
   };
 })();

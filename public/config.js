@@ -34,6 +34,13 @@ const CONFIG = {
   EMP_FATIGUE_DECAY: 0.5,         // 疲劳自然恢复/tick
   EMP_TRAINING_COST_BASE: 20000,  // 培训基础费用
   EMP_SKILL_MAX: 5,               // 技能最高5级
+  // ---- HR 统管 ----
+  HR_THRESHOLD_DEFAULT: 8,        // 无HR时进入统管的最低员工数
+  HR_THRESHOLD_WITH_HR: 5,        // 有HR时进入统管的最低员工数
+  HR_HIRE_DISCOUNT: 0.8,          // HR批量招聘成本折扣
+  HR_TRAIN_DISCOUNT: 0.7,         // HR部门培训成本折扣
+  HR_SALARY_DISCOUNT: 0.95,       // HR总工资折扣
+  HR_AUTO_FATIGUE_REDUCTION: 2,   // HR每Tick自动降疲劳值
   // ---- 离线收益 ----
   OFFLINE_EFFICIENCY: 0.7,        // 离线收益效率70%
 };
@@ -563,18 +570,36 @@ const BUSINESS_DEFS = [
 
 // ---- 员工角色 ----
 const EMP_ROLES = [
-  { id:'intern',       name:'实习生',   salary:0.8, icon:'🎓', effect:'低成本劳动力',                                   req:null, incomeBonus:0.003 },
-  { id:'developer',    name:'开发者',   salary:6.0, icon:'💻', effect:'科技+15%',                                   req:{ business:'tech' }, incomeBonus:0.005 },
-  { id:'designer',     name:'设计师',   salary:2.5, icon:'🎨', effect:'媒体/零售+10%',                                req:null, incomeBonus:0.005 },
-  { id:'sales',        name:'销售',     salary:4.5, icon:'🤝', effect:'零售/合作+20%，人脉+2/月',                     req:null, incomeBonus:0.005 },
-  { id:'analyst',      name:'分析师',   salary:2.8, icon:'📊', effect:'负面事件-3%/人',                                 req:null, incomeBonus:0.005 },
-  { id:'manager',      name:'管理者',   salary:4.5, icon:'📋', effect:'分配业务+30%，忠诚衰减-50%',                   req:{ empCount:5 }, incomeBonus:0.008 },
-  { id:'lawyer',       name:'律师',     salary:4.0, icon:'⚖️', effect:'监管伤害-50%',                                 req:{ money:5000000 }, incomeBonus:0.005 },
-  { id:'hr',           name:'HR',       salary:2.5, icon:'👥', effect:'忠诚衰减-50%，招聘成本-20%',                    req:null, incomeBonus:0.005 },
-  { id:'finance_emp',  name:'财务',     salary:3.2, icon:'💰', effect:'税务优化+5%，资金周转+10%',                      req:null, incomeBonus:0.005 },
-  { id:'marketer',     name:'市场',     salary:2.2, icon:'📣', effect:'声誉+15%，产品发布+20%',                        req:null, incomeBonus:0.005 },
-  { id:'cto',          name:'CTO',      salary:6.0, icon:'♟', effect:'全局科技+20%',                                req:{ techLv:5, empCount:8 }, incomeBonus:0.02 },
+  { id:'intern',       name:'实习生',   baseSalary:0.8, icon:'🎓', effect:'低成本劳动力',                                   req:null, incomeBonus:0.003 },
+  { id:'developer',    name:'开发者',   baseSalary:6.0, icon:'💻', effect:'科技+15%',                                   req:{ business:'tech' }, incomeBonus:0.005 },
+  { id:'designer',     name:'设计师',   baseSalary:2.5, icon:'🎨', effect:'媒体/零售+10%',                                req:null, incomeBonus:0.005 },
+  { id:'sales',        name:'销售',     baseSalary:4.5, icon:'🤝', effect:'零售/合作+20%，人脉+2/月',                     req:null, incomeBonus:0.005 },
+  { id:'analyst',      name:'分析师',   baseSalary:2.8, icon:'📊', effect:'负面事件-3%/人',                                 req:null, incomeBonus:0.005 },
+  { id:'manager',      name:'管理者',   baseSalary:4.5, icon:'📋', effect:'分配业务+30%，忠诚衰减-50%',                   req:{ empCount:5 }, incomeBonus:0.008 },
+  { id:'lawyer',       name:'律师',     baseSalary:4.0, icon:'⚖️', effect:'监管伤害-50%',                                 req:{ money:5000000 }, incomeBonus:0.005 },
+  { id:'hr',           name:'HR',       baseSalary:2.5, icon:'👥', effect:'忠诚衰减-50%，招聘成本-20%',                    req:null, incomeBonus:0.005 },
+  { id:'finance_emp',  name:'财务',     baseSalary:3.2, icon:'💰', effect:'税务优化+5%，资金周转+10%',                      req:null, incomeBonus:0.005 },
+  { id:'marketer',     name:'市场',     baseSalary:2.2, icon:'📣', effect:'声誉+15%，产品发布+20%',                        req:null, incomeBonus:0.005 },
+  { id:'cto',          name:'CTO',      baseSalary:6.0, icon:'♟', effect:'全局科技+20%',                                req:{ techLv:5, empCount:8 }, incomeBonus:0.02 },
 ];
+
+// ---- 实际工资计算（与资产、产业挂钩） ----
+function calcActualSalary(baseSalary, G) {
+  if (!baseSalary) return 0;
+  if (!G || !G.businesses) return baseSalary;
+  const totalAssets = G.money || 0;
+  const businessCount = G.businesses ? Object.values(G.businesses).filter(b => b.level > 0).length : 0;
+  // 资产系数：资产超1000万开始生效，对数增长，上限0.5
+  let assetFactor = 0;
+  if (totalAssets > 10000000) {
+    assetFactor = Math.log10(totalAssets / 10000000) * 0.1;
+    assetFactor = Math.min(assetFactor, 0.5);
+  }
+  // 产业系数：每个产业+5%，上限0.5
+  let bizFactor = Math.min(businessCount * 0.05, 0.5);
+  const scale = 1.0 + assetFactor + bizFactor;
+  return +(baseSalary * scale).toFixed(1);
+}
 
 // ---- 技能树 ----
 const SKILL_TREES = {
