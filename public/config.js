@@ -4,10 +4,10 @@
 
 // ---- 游戏参数 ----
 const CONFIG = {
-  TICK_MS: 30000,          // 10秒/Tick（原15秒）
+  TICK_MS: 30000,          // 30秒/Tick
   LLM_BASE: 'http://localhost:11434',
   LLM_MODEL: 'qwen3.5:4b',
-  EVENT_CHECK_INTERVAL: 6, // 事件检查间隔缩短
+  EVENT_CHECK_INTERVAL: 6, // 事件检查间隔（秒），约每 Tick 触发 0~5 次（概率判定）
   EVENT_BASE_PROB: 0.25,
   MAX_PENDING_DECISIONS: 5, // 事件队列增大
   MAX_OFFLINE_HOURS: 24,    // 离线收益上限24小时

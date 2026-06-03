@@ -11,6 +11,7 @@ window.EventSystem = (() => {
     currentEvent = event;
     SGame.G.eventCooldowns[event.id] = SGame.G.tickCount;
     SGame.G.eventHistory.push(event.id);
+    if (SGame.G.eventHistory.length > 500) SGame.G.eventHistory = SGame.G.eventHistory.slice(-200);
 
     const desc = typeof event.getDesc === 'function' ? event.getDesc() : event.desc;
 
@@ -113,6 +114,7 @@ window.EventSystem = (() => {
 
     // 记录决策
     SGame.G.decisionHistory.push({ eventId, choice: choice.text, tick: SGame.G.tickCount });
+    if (SGame.G.decisionHistory.length > 500) SGame.G.decisionHistory = SGame.G.decisionHistory.slice(-200);
 
     // 移除事件卡片
     const card = document.getElementById(`event-${eventId}`);

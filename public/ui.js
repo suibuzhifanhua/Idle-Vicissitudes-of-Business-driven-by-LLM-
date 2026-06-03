@@ -895,7 +895,7 @@ window.UI = (() => {
       const actualSalary = calcActualSalary(r.baseSalary, G);
       const estCost = actualSalary * 10000 * 2 * CONFIG.HR_HIRE_DISCOUNT; // 扩招2人
       html += `<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;"
-        onclick="UI.batchHireDept('${r.id}');UI.closeModal();">
+        onclick="UI.batchHireDept('${r.id}');UI.closeModal('hire');">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <span style="font-weight:600">${r.icon} ${r.name}部</span>
@@ -908,7 +908,7 @@ window.UI = (() => {
       </div>`;
     });
 
-    html += '<button class="btn" style="margin-top:8px;width:100%;font-size:11px;background:var(--border)" onclick="UI.closeModal()">关闭</button>';
+    html += '<button class="btn" style="margin-top:8px;width:100%;font-size:11px;background:var(--border)" onclick="UI.closeModal(\'hire\')">关闭</button>';
     container.innerHTML = html;
   }
 
@@ -970,7 +970,8 @@ window.UI = (() => {
   }
 
   function closeModal(type) {
-    document.getElementById(`modal-${type}`).classList.remove('active');
+    const el = document.getElementById(`modal-${type}`);
+    if (el) el.classList.remove('active');
   }
 
   function hireEmployee(name, roleId, salary, loyalty) {

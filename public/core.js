@@ -183,10 +183,6 @@ window.SGame = (() => {
     });
     G.currentWeather = G.cityWeathers[G.currentCityId] || 'sunny';
     G.weatherChangeTimer = 6 + Math.floor(Math.random() * 7); // 6-12 tick后首次切换
-    // 初始化业务
-    BUSINESS_DEFS.forEach(b => {
-      G.businesses[b.id] = { level: 0, region: null, unlocked: b.unlockMoney === 0 };
-    });
     // 出身加成存储
     G.originBonus = o.bonus;
     G.skillEffects = {};
@@ -266,8 +262,15 @@ window.SGame = (() => {
     if (G.economicCycleTicks >= 30) {
       G.economicCycleTicks = 0;
       const prevState = G.economicState;
-      const states = ['boom','stable','stable','recession','recession','crisis'];
-      G.economicState = states[Math.floor(Math.random() * states.length)];
+      // 加权随机：倾向从当前状态平滑过渡
+      const stateWeights = {
+        stable: ['boom', 'stable', 'stable', 'stable', 'stable', 'recession'],
+        boom: ['stable', 'stable', 'stable', 'recession', 'boom'],
+        recession: ['recession', 'recession', 'stable', 'stable', 'crisis'],
+        crisis: ['recession', 'recession', 'stable', 'crisis'],
+      };
+      const pool = stateWeights[prevState] || stateWeights.stable;
+      G.economicState = pool[Math.floor(Math.random() * pool.length)];
       if ((prevState === 'recession' || prevState === 'crisis') && 
           G.lastMoneyBeforeRecession !== undefined && G.money > G.lastMoneyBeforeRecession) {
         G.grewInRecession = true;
@@ -863,6 +866,11 @@ window.SGame = (() => {
         const skillMul = getSkillMultiplier();
         income *= skillMul;
 
+        // 新闻效应（单次生效，生效后清除）
+        if (G._newsEffectsPending && G.newsEffects && G.newsEffects[bDef.id]) {
+          income *= G.newsEffects[bDef.id];
+        }
+
         cityIncome += income * 10000;
       });
 
@@ -877,6 +885,11 @@ window.SGame = (() => {
 
       grandTotal += cityIncome;
     });
+    // 新闻效应单次生效后清除
+    if (G._newsEffectsPending) {
+      G._newsEffectsPending = false;
+      G.newsEffects = {};
+    }
 
     // 跨城协同加成
     const cityCount = Object.values(G.cities).filter(c => c && c.unlocked).length;
@@ -909,10 +922,8 @@ window.SGame = (() => {
       grandTotal *= (1 + sy.leaderBonus);
     }
 
-    // 增强压力修正
-    if (sy.stressMod && sy.stressMod !== 0) {
-      grandTotal *= (1 + sy.stressMod);
-    }
+    // stress 已通过 getStressMultiplier (0.3~1.05) 在逐业务行 835 应用，此处不再重复
+    // sy.stressMod 由 calcStressMod 提供细分阶梯，但不适用于全局二次乘法
 
     // 增强声誉修正
     if (sy.repMod && sy.repMod !== 0) {
@@ -972,15 +983,21 @@ window.SGame = (() => {
 
   function calcEmployeeMultiplier(bizId) {
     let mul = 1.0;
+    let lowLoyaltyCount = 0;
     G.employees.forEach(emp => {
       if (emp.role === 'manager') mul += 0.12;
       if (emp.role === 'developer' && bizId === 'tech') mul += 0.06;
       if (emp.role === 'sales' && (bizId === 'retail' || bizId === 'media')) mul += 0.08;
       if (emp.role === 'marketer') mul += 0.15;
-      if (emp.loyalty < 20) mul *= 0.5; // 低忠诚减产
+      if (emp.loyalty < 20) lowLoyaltyCount++;
       // 员工技能加成
       if (emp.skill && emp.skill > 1) mul += (emp.skill - 1) * 0.03;
     });
+    // 低忠诚度员工比例惩罚（而非每人独立乘 0.5）
+    if (G.employees.length > 0) {
+      const lowRatio = lowLoyaltyCount / G.employees.length;
+      if (lowRatio > 0) mul *= Math.max(0.5, 1.0 - lowRatio * 0.5);
+    }
     // 全局疲劳影响
     if (G.employees.length > 0) {
       const avgFatigue = G.employees.reduce((s, e) => s + (e.fatigue || 0), 0) / G.employees.length;
@@ -1235,33 +1252,39 @@ window.SGame = (() => {
     }
     const finalMultiplier = leaveMultiplier * companyAppeal;
 
-    G.employees = G.employees.filter(emp => {
+    const leaving = [];
+    const survivors = [];
+    G.employees.forEach(emp => {
       if (emp.loyalty <= 0) {
-        addLog(`😢 ${emp.name}（${EMP_ROLES.find(r=>r.id===emp.role).name}）因忠诚度过低离职了。`);
-        return false;
+        leaving.push(emp);
+        addLog(`😢 ${emp.name}（${(EMP_ROLES.find(r=>r.id===emp.role)||{}).name||emp.role}）因忠诚度过低离职了。`);
+        return;
       }
-      // 随机事件离开（应用联动翻倍）
       if (Math.random() < 0.002 * finalMultiplier && emp.loyalty < 30) {
+        leaving.push(emp);
         addLog(`🚪 ${emp.name}找到了更好的机会，离职了。`);
-        return false;
+        return;
       }
-      // 联动：CTO/总监级忠诚度<20，可能带走客户
-      if (['cto','director','manager'].includes(emp.role) && emp.loyalty < 20) {
-        if (Math.random() < 0.005 * finalMultiplier) {
-          addLog(`⚠️ ${emp.name}（${EMP_ROLES.find(r=>r.id===emp.role).name}）带走了一批客户资源！`);
-          // 随机一条业务线下滑
-          if (G.businesses) {
-            const bizKeys = Object.keys(G.businesses).filter(k => G.businesses[k].level > 0);
-            if (bizKeys.length > 0) {
-              const hit = bizKeys[Math.floor(Math.random() * bizKeys.length)];
-              G.businesses[hit].level = Math.max(1, G.businesses[hit].level - 1);
-              addLog(`  业务「${BUSINESS_DEFS.find(b=>b.id===hit).name}」受到冲击，降级。`);
-            }
+      survivors.push(emp);
+    });
+    // 高管带走客户：独立处理副作用
+    leaving.filter(emp => ['cto','director','manager'].includes(emp.role) && emp.loyalty < 20).forEach(emp => {
+      if (Math.random() < 0.005 * finalMultiplier) {
+        addLog(`⚠️ ${emp.name}（${(EMP_ROLES.find(r=>r.id===emp.role)||{}).name||emp.role}）带走了一批客户资源！`);
+        if (G.businesses) {
+          const bizKeys = Object.keys(G.businesses).filter(k => G.businesses[k].level > 0);
+          if (bizKeys.length > 0) {
+            const hit = bizKeys[Math.floor(Math.random() * bizKeys.length)];
+            const bDef = BUSINESS_DEFS.find(b => b.id === hit);
+            G.businesses[hit].level = Math.max(1, G.businesses[hit].level - 1);
+            if (bDef) addLog(`  业务「${bDef.name}」受到冲击，降级。`);
           }
         }
       }
-      return true;
     });
+    // 单 Tick 内最多影响一条业务线（防止多名高管同时离职导致多个产业降级）
+    // 已由 `leaving.filter(...).forEach` 自然实现——副作用独立于主过滤
+    G.employees = survivors;
   }
 
   // ========== HR 统管模式 ==========
@@ -1373,7 +1396,7 @@ window.SGame = (() => {
         const data = JSON.parse(raw);
         G = data.G;
         tickCount = data.tickCount || 0;
-        pendingDecisions = data.pendingDecisions || [];
+        pendingDecisions = (data.pendingDecisions || []).filter(d => d && d.id && d.choices && d.choices.length > 0);
         migrateSave();
         if (G.unlockedRegions && Array.isArray(G.unlockedRegions)) G.unlockedRegions.forEach(id => { if (REGIONS[id]) REGIONS[id].unlocked = true; });
         // 检查离线收益
@@ -1387,7 +1410,7 @@ window.SGame = (() => {
         const data = JSON.parse(raw);
         G = data.G;
         tickCount = data.tickCount || 0;
-        pendingDecisions = data.pendingDecisions || [];
+        pendingDecisions = (data.pendingDecisions || []).filter(d => d && d.id && d.choices && d.choices.length > 0);
         migrateSave();
         if (G.unlockedRegions && Array.isArray(G.unlockedRegions)) G.unlockedRegions.forEach(id => { if (REGIONS[id]) REGIONS[id].unlocked = true; });
         // 检查离线收益
@@ -1548,7 +1571,8 @@ window.SGame = (() => {
     if (!G.negativeEventsSurvived) G.negativeEventsSurvived = 0;
     if (!G.grewInRecession) G.grewInRecession = false;
     if (!G.lastMoneyBeforeRecession) G.lastMoneyBeforeRecession = G.money;
-    if (!G.rpt) G.rpt = { active: false, days: 0, cost: 0 };
+    // 旧版 rpt 字段为对象 {active,days,cost}，新版为数字累计值
+    if (!G.rpt || typeof G.rpt === 'object') G.rpt = 0;
     if (!G.activeResearch) G.activeResearch = {};
     if (!G.completedResearch) G.completedResearch = {};
     if (!G.eventLog) G.eventLog = [];
@@ -1624,19 +1648,6 @@ window.SGame = (() => {
   }
 
   // ========== 离线收益 ==========
-  function calcOfflineIncome() {
-    if (!G || !G.saveTime) return 0;
-    const now = Date.now();
-    const elapsed = (now - G.saveTime) / 1000; // 秒
-    const maxSec = CONFIG.MAX_OFFLINE_HOURS * 3600;
-    const validSec = Math.min(elapsed, maxSec);
-    if (validSec < CONFIG.TICK_MS / 1000) return 0;
-    const ticks = Math.floor(validSec / (CONFIG.TICK_MS / 1000));
-    // 简化：按当前速率估算
-    const perTick = calcTotalIncome();
-    return perTick * Math.min(ticks, maxSec / (CONFIG.TICK_MS / 1000));
-  }
-
   // ========== 事件检查 ==========
   function startEventCheck() {
     if (eventTimer) clearInterval(eventTimer);
@@ -1699,6 +1710,7 @@ window.SGame = (() => {
       // fallback: 最少记录
       G.eventCooldowns[event.id] = G.tickCount;
       G.eventHistory.push(event.id);
+      if (G.eventHistory.length > 500) G.eventHistory = G.eventHistory.slice(-200);
       addLog(`[事件] ${event.title}`);
     }
     // 决策型事件加入 pending（有 choices 即决策事件）
@@ -1709,11 +1721,9 @@ window.SGame = (() => {
     if (event.effects && Array.isArray(event.effects.money) && event.effects.money[1] < 1.0) {
       G.negativeEventsSurvived = (G.negativeEventsSurvived || 0) + 1;
     }
-    // 托管模式：自动决策（每个事件独立计时，互不干扰）
+    // 托管模式：自动决策（立即执行，不作延迟）
     if (G.autoMode && G.autoMode.enabled && G.autoMode.eventDecide && event.choices && event.choices.length > 0) {
-      setTimeout(() => {
-        autoDecide(event);
-      }, 1500);
+      autoDecide(event);
     }
   }
 
@@ -2028,7 +2038,7 @@ window.SGame = (() => {
   function updateStockPrices() {
     if (!G) return;
     Object.entries(STOCKS).forEach(([sid, stock]) => {
-      const change = (Math.random() - 0.48) * 2 * stock.volatility;
+      const change = (Math.random() - 0.50) * 2 * stock.volatility;
       const oldPrice = G.stockPrices[sid] || stock.basePrice;
       const newPrice = Math.max(1, oldPrice * (1 + change));
       G.stockPrices[sid] = parseFloat(newPrice.toFixed(2));
@@ -2109,7 +2119,7 @@ window.SGame = (() => {
     G.loans.push(loan);
     G.money += amount;
     G.neverLoaned = false;
-    addLog(`🏦 获批贷款：${formatMoney(amount)}，利率${loan.interestRate}%，期限${duration}Tick`);
+    addLog(`🏦 获批贷款：${formatMoney(amount)}，总息${loan.interestRate}%（期限${duration}Tick）`);
     save();
     return { ok: true, msg: `贷款${formatMoney(amount)}到账`, loan };
   }
@@ -2257,8 +2267,8 @@ window.SGame = (() => {
     if (am.autoGift && !cd('gift', 24)) { autoGiftStrategy(); setCd('gift'); }
     // 10. 贷款检查（每60 tick）
     if (am.autoLoan && !cd('loan', 60)) { autoLoanStrategy(); setCd('loan'); }
-    // 11. 自动拉项目（每3 tick检查一次，CD到了就拉）
-    if (!cd('manualWork', 3)) { autoManualWorkStrategy(); setCd('manualWork'); }
+    // 11. 自动拉项目（每个tick检查，real-time CD由manualWork内部控制）
+    autoManualWorkStrategy();
   }
 
   function autoRepayStrategy() {
@@ -2704,7 +2714,7 @@ window.SGame = (() => {
     if (!G || !G.subsidiaries) return;
     let totalSubIncome = 0;
     // 联动：子公司收益比例随母公司规模提升
-    const playerTotalAssets = G.money + (G._stockValueCache || 0);
+    const playerTotalAssets = G.money + getStockPortfolioValue();
     const scaleBonus = Math.min(0.20, Math.floor(playerTotalAssets / 10000000) * 0.02); // 每1000万+2%
     const incomeRate = 0.60 + scaleBonus; // 基础60%，最高80%
 
