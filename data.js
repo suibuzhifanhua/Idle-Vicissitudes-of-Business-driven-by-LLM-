@@ -1803,7 +1803,7 @@ const EVENTS = [
     acts:[2,3,4], cooldown:130, weight:3,
     title:'信任破裂',
     getDesc:()=>{
-      const npcs=Object.values(NPCS); const n=nps.length>0?nps[Math.floor(Math.random()*nps.length)]:{name:'一位重要伙伴'};
+      const npcs=Object.values(NPCS); const n=npcs.length>0?npcs[Math.floor(Math.random()*npcs.length)]:{name:'一位重要伙伴'};
       return `${n.name||'一位重要伙伴'}突然对你冷脸。后来你才知道，有人在中间传话挑拨。信任一旦破裂，修复需要时间和诚意。`;
     },
     effects:{ money:[0.9,1.05], reputation:[-15,5], stress:[20,40] },

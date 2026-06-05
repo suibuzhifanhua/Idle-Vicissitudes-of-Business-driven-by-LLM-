@@ -541,6 +541,19 @@ window.UI = (() => {
       }
     }
     el.innerHTML = html;
+    // 已并购业务列表
+    var maList = (SGame && typeof SGame.getMAList === 'function') ? SGame.getMAList() : [];
+    if (maList && maList.length > 0) {
+      var maHtml = '<div style="margin-top:16px;padding-top:12px;border-top:2px solid var(--accent-gold);"><div style="font-size:13px;font-weight:600;color:var(--accent-gold);margin-bottom:8px;">🤝 已并购业务</div>';
+      maList.forEach(function(b) {
+        maHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">' +
+          '<span>' + (b.name || b.npcId) + '</span>' +
+          '<span style="color:var(--green-down);font-weight:600;">+' + SGame.formatMoney(b.revenuePerTick || 0) + '/Tick</span>' +
+          '</div>';
+      });
+      maHtml += '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">合计额外收入：+' + SGame.formatMoney(SGame.getMARevenue()) + '/Tick</div></div>';
+      el.innerHTML += maHtml;
+    }
   }
 
   function setBusinessRegion(bizId, regionId) {
@@ -1349,6 +1362,10 @@ window.UI = (() => {
 
   function hireEmployee(name, roleId, salary, loyalty) {
     const G = SGame.G;
+    if (G.employees.length >= SGame.getEmpMax()) {
+      showToast('⚠️', '招聘失败', `员工已达上限 (${G.employees.length}/${SGame.getEmpMax()})`);
+      return;
+    }
     const roleDef = EMP_ROLES.find(r => r.id === roleId);
     // 使用 generateEmployeeWithAttributes 统一生成
     var emp = SGame.generateEmployeeWithAttributes(roleDef || { id: roleId, baseSalary: salary, icon: '👤' }, G);
@@ -1366,6 +1383,11 @@ window.UI = (() => {
     const c = hireCandidates[idx];
     if (!c) return;
     const G = SGame.G;
+    if (G.employees.length >= SGame.getEmpMax()) {
+      showToast('⚠️', '招聘失败', `员工已达上限 (${G.employees.length}/${SGame.getEmpMax()})`);
+      closeModal('hire');
+      return;
+    }
     const roleDef = EMP_ROLES.find(r => r.id === c.role);
     // 使用 generateEmployeeWithAttributes 统一生成，保证实习生字段完整
     // 但复用已有的名字、属性、忠诚度

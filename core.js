@@ -46,6 +46,9 @@ window.SGame = (() => {
       // NPC好感
       npcFavor: {},
       npcTriggers: {},
+      // 商业并购（M&A）系统
+      acquiredBusinesses: [],  // { npcId, name, revenuePerTick, acquiredTick }
+      maCooldown: {},         // NPC ID → 冷却到期 tick
       // 技能
       unlockedSkills: [],
       skillEffects: {},
@@ -245,7 +248,7 @@ window.SGame = (() => {
     if (typeof RIVALS !== 'undefined') {
       G.rivals = RIVALS.map(r => ({
         id: r.id, name: r.name, boss: r.boss, 
-        money: r.startMoney * 100000000,
+        money: r.startMoney * 10000,
         growthRate: r.growthRate, style: r.style, color: r.color,
         desc: r.desc, tickCount: 0
       }));
@@ -1224,7 +1227,14 @@ window.SGame = (() => {
     if (achOpCost < 1.0) grandTotal *= (1.0 + (1.0 - achOpCost) * 0.5);
     // 刘会计被动：运营成本 -5%（等效收入加成）
     if (npcBonusForCalc._opsCostReduction) grandTotal *= (1 + npcBonusForCalc._opsCostReduction * 0.5);
-    
+    // 商业并购收入
+    var maRev = getMARevenue();
+    if (maRev > 0) {
+      grandTotal += maRev;
+      if (G.tickCount % 10 === 0) {
+        addLog('🤝 并购业务收入：' + formatMoney(maRev) + '/Tick（共' + (G.acquiredBusinesses || []).length + '项并购）');
+      }
+    }
     // 清除缓存
     G._synergyCache = null;
 
@@ -4648,6 +4658,74 @@ window.SGame = (() => {
     return map[rarity] || rarity;
   }
 
+  // ========== 商业并购（M&A）系统 ==========
+  function calculateMACost(npcId) {
+    const bv = typeof NPC_BUSINESS_VALUE !== 'undefined' ? NPC_BUSINESS_VALUE : null;
+    if (!bv) return null;
+    const value = bv[npcId];
+    if (!value) return null;
+    const favor = (G.npcFavor[npcId] || 0);
+    if (favor < 60) return null;
+    // 成本 = 价值 × MA_BASE_COST_MULT × (100 + MA_FAVOR_DISCOUNT_MAX × (1 - favor/100))
+    // 好感60 → 约1.33×  好感80 → 1.0×  好感100 → 0.67×
+    const discount = CONFIG.MA_FAVOR_DISCOUNT_MAX * (favor / 100);
+    const cost = Math.round(value * CONFIG.MA_BASE_COST_MULT * (1 + CONFIG.MA_FAVOR_DISCOUNT_MAX - discount));
+    return Math.max(10000, cost);
+  }
+
+  function acquireBusiness(npcId) {
+    if (!G.acquiredBusinesses) G.acquiredBusinesses = [];
+    if (G.acquiredBusinesses.find(b => b.npcId === npcId)) {
+      return { ok: false, msg: '已并购过该NPC的业务。' };
+    }
+    if (G.maCooldown && G.maCooldown[npcId] && G.tickCount < G.maCooldown[npcId]) {
+      var remain = G.maCooldown[npcId] - G.tickCount;
+      return { ok: false, msg: '该业务尚在整合期，约' + remain + '个周期后可再次操作。' };
+    }
+    const cost = calculateMACost(npcId);
+    if (!cost) return { ok: false, msg: '该NPC好感不足（需要≥60），无法并购。' };
+    if (G.money < cost) {
+      return { ok: false, msg: '资金不足（需要' + formatMoney(cost) + '）。' };
+    }
+    const bv = typeof NPC_BUSINESS_VALUE !== 'undefined' ? NPC_BUSINESS_VALUE : {};
+    const value = bv[npcId] || 0;
+    const favor = (G.npcFavor[npcId] || 0);
+    const npcName = (typeof NPCS !== 'undefined' && NPCS[npcId]) ? NPCS[npcId].name : npcId;
+
+    const liquidBonus = Math.round(value * CONFIG.MA_LIQUID_BONUS_RATIO);
+    const revenuePerTick = Math.max(1, Math.round(value * CONFIG.MA_REVENUE_RATIO * (favor / 80)));
+
+    G.money -= cost;
+    G.money += liquidBonus;
+    G.acquiredBusinesses.push({
+      npcId: npcId,
+      name: npcName + '的业务',
+      revenuePerTick: revenuePerTick,
+      acquiredTick: G.tickCount
+    });
+    G.maCooldown = G.maCooldown || {};
+    G.maCooldown[npcId] = G.tickCount + CONFIG.MA_COOLDOWN_TICKS;
+
+    addLog('🤝 并购完成：收购了' + npcName + '的业务，获得现金' + formatMoney(liquidBonus) + '，每Tick新增收入' + formatMoney(revenuePerTick) + '。');
+    return {
+      ok: true,
+      msg: '并购成功！获得现金' + formatMoney(liquidBonus) + '，每Tick新增收入' + formatMoney(revenuePerTick) + '。',
+      liquidBonus: liquidBonus,
+      revenuePerTick: revenuePerTick
+    };
+  }
+
+  function getMARevenue() {
+    if (!G.acquiredBusinesses || G.acquiredBusinesses.length === 0) return 0;
+    var total = 0;
+    G.acquiredBusinesses.forEach(function(b) { total += (b.revenuePerTick || 0); });
+    return total;
+  }
+
+  function getMAList() {
+    return G.acquiredBusinesses || [];
+  }
+
   // ========== 公开API ==========
   return {
     initState, selectOrigin, startGame,
@@ -4707,5 +4785,7 @@ window.SGame = (() => {
     refreshAssetMarket, buyAsset, listAssetForAuction, pawnAsset, cancelAuction,
     processAssetSystem, getTotalAssetValue, getAssetTypeName, getRarityLabel,
     getRegionModifiers,
+    // ---- 商业并购系统 ----
+    calculateMACost, acquireBusiness, getMARevenue, getMAList,
   };
 })();

@@ -149,6 +149,12 @@ window.NPCSystem = (() => {
     });
 
     // NPC特定动作
+    // 商业并购（好感≥60 且未并购过）
+    var maCost = (SGame && typeof SGame.calculateMACost === 'function') ? SGame.calculateMACost(npcId) : null;
+    if (maCost && maCost > 0) {
+      var maNpcName = (NPCS && NPCS[npcId]) ? NPCS[npcId].name : npcId;
+      actions.push({ text: '🤝 商讨并购事宜', fn: () => { showMAOffer(npcId, maCost); } });
+    }
     if (npcId === 'zhaolei') {
       actions.push({ text: '询问行业趋势（人脉+1，好感+2）', fn: () => { changeFavor('zhaolei', 2); addConnections(1); EventSystem.addLog('赵磊分享了一些行业见解。'); } });
       actions.push({ text: '谈合作（需求：资金100万）', fn: () => {
@@ -184,6 +190,7 @@ window.NPCSystem = (() => {
       }});
       actions.push({ text: '快速招聘通道（费用5万，立即获得一名员工）', fn: () => {
         if (SGame.G.money < 5e4) { EventSystem.addLog('资金不足，无法使用快速招聘通道。'); closeDialog(); return; }
+        if ((SGame.G.employees || []).length >= SGame.getEmpMax()) { EventSystem.addLog('员工已达上限，无法继续招聘。'); closeDialog(); return; }
         SGame.G.money -= 5e4; changeFavor('sujie', 5);
         var roles = ['manager','developer','sales','marketer'];
         var role = roles[Math.floor(Math.random() * roles.length)];
@@ -669,6 +676,47 @@ window.NPCSystem = (() => {
     return result;
   }
 
+  // ========== 商业并购确认 ==========
+  function showMAOffer(npcId, cost) {
+    const npc = NPCS[npcId];
+    if (!npc) return;
+    const G = SGame.G;
+    const favor = getFavor(npcId);
+    const bv = typeof NPC_BUSINESS_VALUE !== 'undefined' ? NPC_BUSINESS_VALUE : {};
+    const value = bv[npcId] || 0;
+    const liquidBonus = Math.round(value * CONFIG.MA_LIQUID_BONUS_RATIO);
+    const revenuePerTick = Math.max(1, Math.round(value * CONFIG.MA_REVENUE_RATIO * (favor / 80)));
+
+    const msg =
+      `${npc.name}：「我们合作得很愉快，如果你有意整合我的业务，我愿意以${SGame.formatMoney(cost)}的价格将业务并入你的集团。\n\n` +
+      `并购后你将一次性获得${SGame.formatMoney(liquidBonus)}现金，且每Tick增加${SGame.formatMoney(revenuePerTick)}的收入。\n\n` +
+      `确认并购？」`;
+
+    // 使用游戏内置确认框
+    const modal = document.getElementById('modal-npc');
+    const contentEl = document.getElementById('npc-dialog-content');
+    if (!contentEl) { if (confirm(msg.replace(/\n/g, ''))) doMAConfirm(npcId, cost); return; }
+
+    contentEl.innerHTML = `
+      <div style="line-height:2;">
+        <p>${npc.name}：「我们合作得很愉快，如果你有意整合我的业务，我愿意以<b>${SGame.formatMoney(cost)}</b>的价格将业务并入你的集团。」</p>
+        <p>并购后你将一次性获得<b>${SGame.formatMoney(liquidBonus)}</b>现金，且每Tick增加<b>${SGame.formatMoney(revenuePerTick)}</b>的收入。</p>
+        <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;">
+          <button class="event-choice" onclick="NPCSystem._doMAConfirm('${npcId}',${cost});">确认并购</button>
+          <button class="event-choice" style="background:var(--bg-hover);" onclick="NPCSystem.closeDialog();">再考虑看看</button>
+        </div>
+      </div>`;
+  }
+
+  function _doMAConfirm(npcId, cost) {
+    const result = SGame.acquireBusiness(npcId);
+    alert(result.msg);
+    if (result.ok) {
+      closeDialog();
+      if (typeof UI !== 'undefined') UI.renderAll();
+    }
+  }
+
   // ========== 关闭对话 ==========
   function closeDialog() {
     document.getElementById('modal-npc').classList.remove('active');
@@ -685,5 +733,7 @@ window.NPCSystem = (() => {
     // 任务线系统
     getAvailableQuests, getQuestProgress, startQuest, advanceQuest,
     completeQuest, applyQuestReward, getAllQuestStatus,
+    // 商业并购
+    showMAOffer,
   };
 })();

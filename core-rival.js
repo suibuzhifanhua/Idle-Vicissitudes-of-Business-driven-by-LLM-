@@ -55,8 +55,13 @@
       name: '你（' + (G.companyName || '公司') + '）', boss: G.name || '你',
       money: G.money, style: '玩家', color: '#00d2ff', isPlayer: true
     });
-    allEntities.sort(function(a, b) { return b.money - a.money; });
+    allEntities.sort(function(a, b) {
+      var ma = (a.money == null || isNaN(a.money)) ? 0 : a.money;
+      var mb = (b.money == null || isNaN(b.money)) ? 0 : b.money;
+      return mb - ma;
+    });
     var playerIndex = allEntities.findIndex(function(e) { return e.isPlayer; });
+    if (playerIndex < 0) playerIndex = allEntities.length - 1; // 兜底：找不到玩家放最后
     return { rank: playerIndex + 1, total: allEntities.length, list: allEntities };
   };
 })();

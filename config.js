@@ -63,7 +63,30 @@ const CONFIG = {
   ASSET_PAWN_RATIO_MIN: 0.38,     // 典当最低回款比例
   ASSET_PAWN_RATIO_MAX: 0.55,     // 典当最高回款比例
   ASSET_MAX_SLOTS: 20,            // 资产槽位上限
+  // ---- 商业并购（M&A）系统 ----
+  MA_BASE_COST_MULT: 1.0,       // 并购基础成本倍数
+  MA_FAVOR_DISCOUNT_MAX: 0.5,  // 好感满分时折扣（50% off）
+  MA_LIQUID_BONUS_RATIO: 0.15,  // 并购后一次性现金奖励 = 成本 × 此比例
+  MA_REVENUE_RATIO: 0.008,      // 并购后每Tick收入 = NPC价值 × 此比例
+  MA_COOLDOWN_TICKS: 50,         // 同一NPC 并购冷却（tick）
 };
+
+// NPC 商业价值（用于并购系统）
+const NPC_BUSINESS_VALUE = {
+  zhaolei:     5000000,   // 赵磊：科技公司
+  lichu:        2000000,   // 李处：政策资源
+  zhangye:      4000000,   // 张野：媒体网络
+  chenzong:    10000000,   // 陈总：海天集团
+  xiaoc:        8000000,   // 小C：资本平台
+  sujie:        1500000,   // 苏姐：人力资源
+  jinhangzhang: 6000000,   // 金行长：信贷网络
+  qianlaoban:   3000000,   // 钱老板：拍卖行
+  sunmishu:     1800000,   // 孙秘书：区域政策
+  wujiaolian:   1200000,   // 吴教练：管理培训
+  linjiaoshou:  4500000,   // 林教授：研究中心
+  majizhe:       2000000,   // 马记者：媒体资源
+};
+
 
 // ---- 时间系统 ----
 const TIME = {

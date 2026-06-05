@@ -358,16 +358,19 @@ window.LLM = (() => {
 
   // ---------- 市场情绪分析 (#9) ----------
   async function analyzeMarketSentiment() {
-    if (!available) return 50; // 默认中性
+    if (!available) return null; // 离线时不更新，保留现有值
     var context = buildGameContext();
     if (!context) return 50;
 
     var prompt = '你是一个金融市场分析师。请分析以下游戏状态并输出一个0到100的市场情绪指数：\n' + context + '\n标准：0=极度悲观，25=偏空，50=中性，75=偏乐观，100=极度乐观。\n\n请只输出一个数字（0-100的整数），不要输出任何其他内容。';
 
     var result = await generate(prompt, 0.3);
-    if (!result) return 50;
-    var num = parseInt(result.trim());
-    if (isNaN(num) || num < 0 || num > 100) return 50;
+    if (!result) return null;
+    // 提取第一个出现的 0-100 整数（容忍模型在数字前后加了废话）
+    var match = result.trim().match(/\b([0-9]{1,3})\b/);
+    if (!match) return null;
+    var num = parseInt(match[1]);
+    if (isNaN(num) || num < 0 || num > 100) return null;
     return num;
   }
 
