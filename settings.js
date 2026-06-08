@@ -49,10 +49,20 @@ window.Settings = (() => {
       const raw = Storage.get(STORAGE_KEY);
       if (raw) {
         current = { ...defaults, ...JSON.parse(raw) };
-        // 迁移旧版直连模式 → 代理 Ollama
-        if (current.llmBase === 'http://localhost:11434') {
+        // 迁移旧版直连模式 → 代理 Ollama（处理 localhost/127.0.0.1 + 有/无尾部斜杠）
+        const baseVal = (current.llmBase || '').trim().toLowerCase();
+        if (baseVal === 'http://localhost:11434' || baseVal === 'http://localhost:11434/' ||
+            baseVal === 'http://127.0.0.1:11434' || baseVal === 'http://127.0.0.1:11434/') {
           current.llmBase = '';
           save({ llmBase: '' });
+        }
+        // 同步：应用时同样过滤
+        if (typeof CONFIG !== 'undefined') {
+          const cfgBase = (CONFIG.LLM_BASE || '').trim().toLowerCase();
+          if (cfgBase === 'http://localhost:11434' || cfgBase === 'http://localhost:11434/' ||
+              cfgBase === 'http://127.0.0.1:11434' || cfgBase === 'http://127.0.0.1:11434/') {
+            CONFIG.LLM_BASE = '';
+          }
         }
       } else {
         current = { ...defaults };
@@ -115,7 +125,16 @@ window.Settings = (() => {
     }
   }
 
-  function get(key) { return current[key] ?? defaults[key]; }
+  function get(key) {
+    const val = current[key] ?? defaults[key];
+    // 自动将 localhost/127.0.0.1:11434 直连 → 代理，解决 CORS 跨域问题
+    if (key === 'llmBase' && val) {
+      const v = String(val).trim().toLowerCase();
+      if (v === 'http://localhost:11434' || v === 'http://localhost:11434/' ||
+          v === 'http://127.0.0.1:11434' || v === 'http://127.0.0.1:11434/') return '';
+    }
+    return val;
+  }
 
   // ========== 渲染设置面板 ==========
   function renderSettings() {
@@ -187,7 +206,7 @@ window.Settings = (() => {
         <div class="st-grid2">
           <div class="st-full">
             <label class="st-label">🔗 Ollama API 地址</label>
-            <input id="set-llmBase" type="text" class="st-input" value="${escHtml(s.llmBase)}" placeholder="http://localhost:11434">
+            <input id="set-llmBase" type="text" class="st-input" value="${escHtml(get('llmBase'))}" placeholder="留空走代理 (推荐)">
           </div>
           <div class="st-full">
             <label class="st-label">🧠 模型名称</label>
@@ -413,7 +432,15 @@ window.Settings = (() => {
 
   // ========== 获取Ollama模型列表 ==========
   async function fetchModels() {
-    const base = document.getElementById('set-llmBase').value.trim() || 'http://localhost:11434';
+    let base = document.getElementById('set-llmBase').value.trim();
+    // localhost/127.0.0.1:11434 直连会被浏览器 CORS 拦截，统一走 /api/ollama 代理
+    const baseLc = base.toLowerCase();
+    if (!base || baseLc === 'http://localhost:11434' || baseLc === 'http://localhost:11434/' ||
+        baseLc === 'http://127.0.0.1:11434' || baseLc === 'http://127.0.0.1:11434/') {
+      base = '/api/ollama';
+    }
+    // 去掉尾部斜杠避免双斜杠
+    base = base.replace(/\/+$/, '');
     const listEl = document.getElementById('set-model-list');
     listEl.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">获取中...</span>';
     try {
@@ -448,8 +475,15 @@ window.Settings = (() => {
 
   // ========== 测试连接 ==========
   async function testConnection() {
-    const base = document.getElementById('set-llmBase').value.trim();
+    let base = document.getElementById('set-llmBase').value.trim();
     const model = document.getElementById('set-llmModel').value.trim();
+    // localhost/127.0.0.1:11434 直连会被浏览器 CORS 拦截，统一走 /api/ollama 代理
+    const baseLc = base.toLowerCase();
+    if (!base || baseLc === 'http://localhost:11434' || baseLc === 'http://localhost:11434/' ||
+        baseLc === 'http://127.0.0.1:11434' || baseLc === 'http://127.0.0.1:11434/') {
+      base = '/api/ollama';
+    }
+    base = base.replace(/\/+$/, '');
     const statusEl = document.getElementById('set-status');
     statusEl.textContent = '测试中...';
     statusEl.style.color = 'var(--accent-gold)';
@@ -576,8 +610,12 @@ window.Settings = (() => {
       return el ? el.value : null;
     };
 
+    let rawBase = document.getElementById('set-llmBase').value.trim();
+    // localhost:11434 直连会被浏览器 CORS 拦截，保存时自动清空以走代理
+    if (rawBase === 'http://localhost:11434' || rawBase === 'http://localhost:11434/') rawBase = '';
+
     const newSettings = {
-      llmBase: document.getElementById('set-llmBase').value.trim(),
+      llmBase: rawBase,
       llmModel: document.getElementById('set-llmModel').value.trim(),
       temperature: parseFloat(document.getElementById('set-temperature').value),
       maxTokens: parseInt(document.getElementById('set-maxTokens').value),

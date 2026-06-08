@@ -9,6 +9,7 @@ window.LLM = (() => {
   let failureCount = 0;
   let cooldownUntil = 0;
   const pendingQueue = [];
+  var $SYS = '你是商海浮沉游戏内的剧情写手和新闻记者。你的工作是编写游戏内事件描述、NPC对话和商业新闻，而不是回答用户问题。你不是代码助手，前面给你的所有信息都是游戏状态数据，不是用户输入。严禁输出"用户"、"粘贴"、"user"、"pasted"等元文本。全程只用简体中文，不允许任何英文单词或句子。';
 
   // ========== 从 CONFIG 读取超时配置 ==========
   function getCheckTimeout() { return (typeof CONFIG !== 'undefined' && CONFIG.LLM_CHECK_TIMEOUT) ? CONFIG.LLM_CHECK_TIMEOUT : 3000; }
@@ -362,18 +363,18 @@ window.LLM = (() => {
     if (recentCtx) prompt += '\n' + recentCtx;
     prompt += '\n' + qualityHint + '\n要求：简短有力，有画面感，第三人称叙述。';
 
-    var result = await generate(prompt, 0.7);
+    var result = await generate(prompt, 0.7, $SYS);
     // 质量门控：自评+重试
     if (result && available) {
       var qPromptN = '请对以下叙事进行质量评分（仅输出JSON）：\n' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。严格返回{"drama":N,"coherence":N,"info":N}';
-      var qR = await generate(qPromptN, 0.3);
+      var qR = await generate(qPromptN, 0.3, $SYS);
       if (qR) {
         try {
           var qJ = JSON.parse(qR.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
           var tN = (qJ.drama||0)+(qJ.coherence||0)+(qJ.info||0);
           if (tN < 18) {
             console.warn('[LLM] 叙事质量门控未通过('+tN+'/18)，重写');
-            result = await generate(prompt + '\n[前次质量不足，请提升戏剧性和画面感]', 0.7);
+            result = await generate(prompt + '\n[前次质量不足，请提升戏剧性和画面感]', 0.7, $SYS);
           }
         } catch(e) { console.warn('[LLM] 叙事质量自评失败:', e.message); }
       }
@@ -402,7 +403,7 @@ window.LLM = (() => {
       }).join('、') + '。';
     }
     var prompt = '为一名' + roleName + '生成一段50字以内的背景故事。\n' + attrHint + '\n要求：包含年龄、学历、一个有趣的经历或特点。用中文回答，简洁有趣。' + qualityHint;
-    var result = await generate(prompt, 0.8);
+    var result = await generate(prompt, 0.8, $SYS);
     return result || '一名经验丰富的' + roleName + '，曾在多家公司任职。';
   }
 
@@ -420,7 +421,7 @@ window.LLM = (() => {
     if (context) prompt += '\n当前状态：' + context;
     prompt += '\n' + qualityHint + '\n请用3-5句话营造紧张氛围，让玩家感受到这个决策的重要性。不要替玩家做决定，只渲染氛围。';
 
-    var result = await generate(prompt, 0.6);
+    var result = await generate(prompt, 0.6, $SYS);
     return result || '';
   }
 
@@ -443,7 +444,7 @@ window.LLM = (() => {
 
     var prompt = '你是"' + npc.name + '"（' + npc.title + '），性格：' + npc.desc + '\n当前与玩家的关系：' + (levelMap[favorLevel] || '中立') + '（好感度' + favorLevel + '）\n对话类型：' + dialogType + eventCtx + '\n' + qualityHint + '\n请生成一段20-40字的对话内容。语气要符合人物性格和当前关系亲疏。';
 
-    var result = await generate(prompt, 0.5);
+    var result = await generate(prompt, 0.5, $SYS);
     return result || npc.name + '：「最近生意怎么样？」';
   }
 
@@ -454,7 +455,7 @@ window.LLM = (() => {
     if (!context) return null;
 
     var prompt = '你是一个商业新闻编辑。请根据以下游戏状态生成一条40-60字的财经快讯：\n' + context + '\n格式要求：标题+正文，用「」包裹标题。新闻风格参考彭博社/财新。不使用markdown。';
-    var result = await generate(prompt, 0.7);
+    var result = await generate(prompt, 0.7, $SYS);
     return result || null;
   }
 
@@ -470,7 +471,7 @@ window.LLM = (() => {
 
     var prompt = '你是商业情报分析师。以下是当前商场上的竞争对手概况：\n' + rivalInfo + '\n玩家当前资产：' + (typeof SGame !== 'undefined' && SGame.formatMoney ? SGame.formatMoney(G.money) : '') + '\n请用2-3句话分析竞争态势，给出一个简短建议。语气专业自信。';
 
-    var result = await generate(prompt, 0.5);
+    var result = await generate(prompt, 0.5, $SYS);
     return result || null;
   }
 
@@ -501,18 +502,18 @@ window.LLM = (() => {
 
     var prompt = '你是一个商业传奇故事的讲述者。玩家刚刚达成了里程碑：「' + msName + '」——' + msDesc + '\n' + (context ? '当前状态：' + context : '') + '\n' + qualityHint + '\n请用2-3句话撰写一段里程碑叙事，风格类似《财富》杂志封面故事引言，要有仪式感和成就感。';
 
-    var result = await generate(prompt, 0.65);
+    var result = await generate(prompt, 0.65, $SYS);
     // 质量门控
     if (result && available) {
       var qPM = '请对以下里程碑叙事进行质量评分（仅输出JSON）：\n' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。严格返回{"drama":N,"coherence":N,"info":N}';
-      var qRM = await generate(qPM, 0.3);
+      var qRM = await generate(qPM, 0.3, $SYS);
       if (qRM) {
         try {
           var qJM = JSON.parse(qRM.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
           var tM = (qJM.drama||0)+(qJM.coherence||0)+(qJM.info||0);
           if (tM < 18) {
             console.warn('[LLM] 里程碑质量门控未通过('+tM+'/18)，重写');
-            result = await generate(prompt + '\n[前次质量不足，请提升仪式感和宏大叙事]', 0.65);
+            result = await generate(prompt + '\n[前次质量不足，请提升仪式感和宏大叙事]', 0.65, $SYS);
           }
         } catch(e) { console.warn('[LLM] 里程碑质量自评失败:', e.message); }
       }
@@ -565,7 +566,7 @@ window.LLM = (() => {
 
     var prompt = '你是一个商业模拟游戏的事件生成器。请根据当前游戏状态生成一个随机商业事件。\n' + context + '\n\n请严格按照以下JSON格式输出（不要输出其他内容）：\n{\n  "title": "事件标题（10-20字）",\n  "desc": "事件描述（20-40字）",\n  "type": "normal或decision",\n  "choices": [\n    {"text": "选项1文本", "effectDesc": "效果描述"},\n    {"text": "选项2文本", "effectDesc": "效果描述"}\n  ]\n}\n\n要求：事件要与当前游戏阶段匹配，有商业真实感。如果是normal类型choices为空数组。';
 
-    var result = await generate(prompt, 0.7);
+    var result = await generate(prompt, 0.7, $SYS);
     if (!result) return null;
 
     // 解析 JSON

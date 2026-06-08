@@ -1310,6 +1310,36 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 - `index.html` `npc.js` 版本号 `?v=6` → `?v=7`
 - 待用户按 F12 查看控制台输出后进一步定位
 
+**LLM 显示离线但 Ollama 正常运行修复：**
+
+- 用户反馈：游戏顶部显示"LLM离线"，但浏览器直接访问 `127.0.0.1:11434` 显示 "Ollama is running"
+- 根因：设置面板中 Ollama API 地址填了 `http://localhost:11434/`，浏览器 JavaScript `fetch()` 发起跨域请求被 CORS 拦截，导致检测失败
+- 修复（settings.js）：
+  1. `load()` 迁移逻辑：补充检测 `http://localhost:11434/`（带尾部斜杠）→ 清空使用代理
+  2. `get()` 新增归一化：返回 `llmBase` 时自动将 localhost:11434 转换为空字符串（走 `/api/ollama` 代理）
+  3. `testConnection()` 和 `fetchModels()` 输入归一化：localhost:11434 统一替换为 `/api/ollama`
+  4. `applyAndClose()` 保存时同样归一化，避免错误配置持久化
+- `index.html` `settings.js` 版本号 `?v=8` → `?v=9` → `?v=10`
+
+**LLM CORS 修复（第二轮）— 覆盖 127.0.0.1 + 输入框归一化：**
+
+- 控制台显示 CORS 错误 URL 为 `http://127.0.0.1:11434//api/tags`（双斜杠），第一轮只匹配了 `localhost` 字符串，未覆盖 `127.0.0.1`
+- `renderSettings()` 用原始 `s.llmBase` 而非 `get()` 归一化后的值，导致输入框仍显示旧地址
+- 修复（settings.js v9→v10）：
+  1. `get()` / `load()` 归一化扩展：同时检测 `localhost` + `127.0.0.1`，大小写不敏感，有/无尾部斜杠共 4 种变体
+  2. `renderSettings()` 输入框改用 `get('llmBase')`，placeholder 提示"留空走代理 (推荐)"
+  3. `fetchModels()` / `testConnection()` 追加 `replace(/\/+$/, '')` 去尾部斜杠防双斜杠
+  4. `applyAndClose()` 保存时归一化
+
+**事件/叙事/对话英文输出全面修复：**
+
+- 用户反馈：游戏中事件描述出现英文（如 "Content: Post-disaster, Subsidies/Insurance available..."）
+- 根因：`llm.js` 中 12+ 处 `generate()` 调用未传 `system` 参数强制中文，涵盖 `generateNarrative()` / `generateEmployeeBackground()` / `generateDecisionNarrative()` / `generateNPCDialog()` / `generateBusinessNews()` / `generateRivalReport()` / `generateMilestoneNarrative()` / `generateDynamicEvent()` 等所有用户可见文本生成入口
+- 修复（llm.js v8→v9）：
+  1. 新增 `$SYS` 常量：强制全程简体中文、禁止英文词汇/句子
+  2. 所有用户可见文本的 `generate()` 统一传 `$SYS`；JSON/数字输出函数不传（避免干扰格式）
+  3. `generateNarrative()` 的质量门控回退也传 `$SYS`
+
 ---
 
-*文档版本：10.0 | 最后更新：2026-06-07*
+*文档版本：10.2 | 最后更新：2026-06-08*
