@@ -977,47 +977,60 @@ NPC 对话 prompt 自动注入最近游戏事件摘要，NPC 会评论玩家最�
 
 ```
 shanghaifc/
-├── index.html              ← 主页面 + 键盘提示栏
+├── index.html              ← 主页面（script 版本号 ?v=8）
 ├── main.js                 ← 入口、初始化、快捷键绑定
-├── config.js               ← 常量、配置、业务、技能、成就、出身、资产参数定义
-├── core.js                 ← 游戏核心逻辑、状态、Tick循环、价值计算、资产系统、LLM增强调度
+├── config.js               ← 常量、配置、业务、技能、成就、出身参数定义
+├── core.js                 ← 游戏核心逻辑、状态、Tick循环、资产系统、LLM增强调度
 ├── core-stock.js           ← 股票投资逻辑（buyStock/sellStock/持仓估值）
 ├── core-research.js        ← 科技研发逻辑（RPT生成/研发进度/科技加成）
-├── core-rival.js           ← 竞争对手逻辑（排名更新/事件生成）
-├── data.js                 ← NPC定义、事件数据、资产模板(ASSET_TEMPLATES)
+├── core-rival.js           ← 竞争对手AI逻辑（排名更新/策略分化/恶意竞争）
+├── data-origins.js         ← 出身定义（ORIGINS）
+├── data-businesses.js      ← 业务定义（BUSINESS_DEFS）
+├── data-stocks.js          ← 股票定义（STOCKS）
+├── data-tech.js            ← 科技树定义（TECH_TREE / TECH_RPT_RATES）
+├── data-npcs.js           ← NPC定义（NPCS / NPC_DEFAULTS）
+├── data-events.js          ← 事件定义（EVENTS）
 ├── events.js               ← 事件系统、队列、渲染、决策处理、LLM决策叙事
 ├── npc.js                  ← NPC好感、对话、任务线、联动
-├── ui.js                   ← 界面渲染、面板切换、资产中心面板、市场情绪/新闻/情报渲染
-├── llm.js                  ← LLM API调用、请求队列、8大生成器、叙事连续性引擎
+├── ui.js                   ← 界面渲染、面板切换、资产中心、市场情绪/新闻/情报
+├── llm.js                  ← LLM API调用、请求队列、生成器、叙事连续性引擎
 ├── settings.js             ← 设置面板（LLM/托管参数）
 ├── storage.js              ← 存档管理（异步预加载 + 服务器saves/读写）
 ├── audio.js                ← Web Audio API 音效系统（程序化生成）
+├── advisor.js              ← AI顾问系统（经营建议、LLM驱动的智能分析）
+├── styles.css              ← 全局样式（464行，含响应式+暗色主题）
 ├── server.py               ← Python本地服务器（静态文件 + 存档API）
 ├── saves/                  ← 存档数据（JSON文件）
-├── 启动游戏.bat             ← 一键启动
+├── 启动游戏.bat             ← 一键启动（含chcp 65001 UTF-8编码）
 ├── 关闭游戏.bat             ← 一键关闭
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
-**代码规模：**
-| 文件 | 行数 | 函数数 |
-|------|------|--------|
-| core.js | 4,610 | 165 |
-| ui.js | 2,897 | 97 |
-| data.js | 3,271 | — |
-| config.js | 944 | 3 |
-| llm.js | 429 | 33 |
-| settings.js | 752 | 23 |
-| npc.js | 689 | 20 |
-| events.js | 253 | 10 |
-| core-stock.js | 90 | 1 |
-| core-research.js | 110 | 1 |
-| core-rival.js | 62 | 1 |
-| storage.js | 60 | 5 |
-| audio.js | 119 | 10 |
-| main.js | — | 8 |
-| **总计** | **14,286** | — |
+**代码规模（2026-06-06 实测）：**
+| 文件 | 行数 | 说明 |
+|------|--------|------|
+| core.js | 5,162 | 游戏核心逻辑（最大文件） |
+| ui.js | 3,601 | 界面渲染与交互 |
+| data-events.js | 2,724 | 事件库（50+ 事件） |
+| config.js | 867 | 全局配置与参数 |
+| data-npcs.js | 806 | NPC数据 |
+| npc.js | 795 | NPC系统 |
+| settings.js | 748 | 设置面板 |
+| llm.js | 606 | LLM接口与队列 |
+| advisor.js | 481 | AI顾问 |
+| styles.css | 464 | 全局样式 |
+| events.js | 351 | 事件引擎 |
+| main.js | 232 | 入口与初始化 |
+| core-rival.js | 225 | 竞争对手AI（含挖角/份额抢占/恶意竞争） |
+| audio.js | 132 | 音效系统 |
+| data-businesses.js | 126 | 业务数据 |
+| core-stock.js | 100 | 股票系统 |
+| core-research.js | 100 | 科技研发 |
+| storage.js | 57 | 存档管理 |
+| data-origins.js | 43 | 出身数据 |
+| data-tech.js | 41 | 科技树数据 |
+| data-stocks.js | 15 | 股票数据 |
+| **总计** | **~14,400** | **21 个源文件** |
 
 ---
 
@@ -1072,7 +1085,23 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 
 ## 最近更新
 
-### 2026-06-05（第八轮）
+### 2026-06-06（第九轮）
+
+**Bug 修复：游戏打不开问题**
+
+- 修复端口 8765 上两个 Python 进程（PID 2560 + 26632）冲突，导致请求被错误路由到空响应进程 → 已终止冲突进程
+- 修复 `TECH_TREE is not defined` + `NPCS is not defined` 运行时崩溃：6 个 data 文件（`data-tech.js` / `data-npcs.js` / `data-origins.js` / `data-businesses.js` / `data-stocks.js` / `data-events.js`）顶层变量使用 `const` 声明，跨 `<script>` 标签不可见 → 全部改为 `var`
+- `index.html` 所有 script 标签版本号 `?v=2` → `?v=3` 强制刷新浏览器缓存
+- Puppeteer 自动化诊断验证修复效果：`TECH_TREE: object` ✅ | `NPCS: object` ✅ | **0 errors** ✅
+
+**项目清理：**
+
+- 确认 `core-rival_20260606_182710_132.js` 为旧版本备份（不在 index.html 加载链中），可安全删除
+- 确认 `1/` 嵌套目录为旧存档目录（已被 `saves/` 取代），可安全删除
+- `README.md` 项目结构、代码规模表全面更新至实际文件状态
+
+---
+
 
 **全新功能——商业并购（M&A）系统：**
 
@@ -1232,4 +1261,55 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 
 ---
 
-*文档版本：8.0 | 最后更新：2026-06-05*
+### 2026-06-07（第十轮）
+
+**顾问英文回答持续修复：**
+
+- 用户反馈顾问仍然输出英文，尽管 system 参数已传入 Ollama API
+- 根因：qwen3.5:4b 对 Ollama API 的 `system` 字段支持不稳定，即使设置了 system 参数也经常忽略
+- 修复（llm.js）：`_doGenerate()` 新增模型检测，当 model 包含 `"qwen"` 时，将 system 指令直接嵌入 prompt 开头（双保险策略）
+- 修复（advisor.js）：system 指令全面强化，从 1 行扩展为 6 条硬性规则（全程中文、禁止英文词汇/句子/标点、阿拉伯数字例外、英文概念翻译后回复）
+- 修复（advisor.js）：单引号字符串内包含引号字符导致 SyntaxError，改用 template literal
+- `index.html` 版本号 `?v=3` → `?v=4` 强制刷新缓存
+
+**自动拉项目 CD 冲突修复（第二轮）：**
+
+- 用户明确要求"改为UI按钮可点击时才触发"
+- 根因分析：`autoManualWorkStrategy()` 使用 wall-clock CD（`getManualWorkCdRemain()`），与手动拉项目共享 `manualWorkCdUntil` 变量。用户手动点击拉项目会把 CD 推到下一个 tick 之内，导致自动拉被跳过
+- 修复（core.js 两处）：
+  1. `autoManager()` 中拉项目条件从 `if (am.autoManualWork)` 改为 `getManualWorkCdRemain() === 0`，与 UI 按钮完全同步
+  2. `autoManualWorkStrategy()` 移除临时清零 CD 的 hack，改为直接调用 `manualWork()`（它内部有 wall-clock CD 检查）
+- `index.html` 版本号 `?v=4` → `?v=5` → `?v=6`
+
+**自动招聘不工作修复：**
+
+- 用户反馈：自动托管招员工不工作
+- 根因：`autoHireStrategy()` 有三层金钱检查（gate 门控 + per-role money >= salary×3月 + fallback 随机选），但手动 UI 招聘（`hireCandidate`）完全不检查金钱，也不扣钱。玩家存档 money=-57541 导致三层检查全部拦截
+- 修复（core.js）：
+  1. 移除顶部 gate：`curTotalSalary/totalIncome` 计算 + `totalIncome < curTotalSalary && G.money < curTotalSalary*12` 条件 → 改为注释
+  2. per-role 循环：移除 `G.money >= salaryForCheck * 10000 * 3` 金钱检查，改为选第一个满足前置条件的角色
+  3. fallback 随机选：移除 money 过滤器（`G.money >= estSalary * 10000 * 3`），只保留角色前置条件过滤（empCount/money/techLv）
+  4. `autoManager()` 防御初始化新增 `am.autoHire === undefined` 兜底
+- `index.html` 版本号 `?v=6` → `?v=7`
+
+**doTick 作用域 Bug 导致托管只触发一次：**
+
+- 用户反馈：新建游戏开托管后，拉项目+招员工只触发一次，后续不再执行
+- 控制台显示两个 ReferenceError：`_tickIncome is not defined` / `_tickAchRewards is not defined`
+- 根因：`_tickIncome` 在 `tickIncome()` 内声明（局部变量），但在 `tickPostCalc()` 中引用；`_tickAchRewards` 在 `tickDecay()` 内声明，但在 `tickEmployees()` 中引用 — 均为跨函数作用域访问
+- 关键连锁：`tickEmployees()` 抛错 → `tickEvents()`（包含 `autoManager()`）被跳过 → 托管永不执行。首次 tick 无员工所以不报错，自动招人后第二次 tick 即有员工→报错→托管死
+- 修复（core.js）：
+  1. `tickIncome()` 将 `_tickIncome` 存入 `G._lastTickIncome`；`tickPostCalc()` 改为读 `G._lastTickIncome`
+  2. `tickEmployees()` 改为读 `G._achRewardsCache.loyaltyDecay`（已在 `tickDecay()` 中缓存）
+- `index.html` 版本号 `?v=7` → `?v=8`
+
+**NPC 对话框按钮无响应（调试中）：**
+
+- 用户反馈：遇到新 NPC 弹出的对话框，除"送礼"外其他按钮点了没反应
+- 已添加调试日志（`npc.js`）：`NPCSystem.renderNPCActions` 和 `NPCSystem.doAction` 中新增 `console.log`，用于追踪按钮索引与回调绑定
+- `index.html` `npc.js` 版本号 `?v=6` → `?v=7`
+- 待用户按 F12 查看控制台输出后进一步定位
+
+---
+
+*文档版本：10.0 | 最后更新：2026-06-07*

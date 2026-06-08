@@ -12,11 +12,23 @@ window.SGame = (() => {
   let isPaused = false;
   let pendingDecisions = [];
   let autoDecideTimer = null;
+  // 动态难度调节：玩家状态快照追踪
+  let _snapshotIncome = [];
+  let _snapshotMoney = [];
+  let _snapshotStress = [];
+  let _snapshotDecisionOk = 0;
+  let _snapshotDecisionTotal = 0;
+  // 城市遍历缓存（避免同一 tick 内重复计算）
+  let _cityLoopTick = 0;
+  let _cityLoopIncome = 0;
+  let _cityLoopMaintenance = 0;
+  let _cityLoopRegionMods = null;
 
   // ========== 初始化 ==========
   function initState(origin, playerName) {
     const o = ORIGINS.find(x => x.id === origin);
     G = {
+      SAVE_VERSION: 2,  // 存档格式版本，用于数据迁移兼容
       origin: origin,
       name: playerName || o.defaultName,
       // 基础属性
@@ -119,6 +131,9 @@ window.SGame = (() => {
         giftBudget: 50000,
         autoManualWork: true,
         autoRest: true,
+        autoNegotiate: true,
+        autoAssetBuy: true,
+        autoAssetPawn: true,
         cooldowns: {},
       },
       // LLM 系统
@@ -210,6 +225,12 @@ window.SGame = (() => {
       // 任务线
       questProgress: {},
       questCompleted: {},
+      // ---- 品牌口碑系统 ----
+      brand: { awareness: 50, rating: 50, crisisHistory: [] },
+      // ---- 数据可视化 ----
+      incomeHistory: [],
+      // ---- 难度 ----
+      difficulty: 'standard',
     };
     // 初始化NPC好感
     Object.values(NPCS).forEach(npc => {
@@ -242,15 +263,24 @@ window.SGame = (() => {
     document.getElementById('start-btn').disabled = false;
   }
 
-  function startGame(originId, playerName) {
+  function startGame(originId, playerName, diffOpts) {
+    const diffKey = (diffOpts && diffOpts.difficulty) ? diffOpts.difficulty : 'standard';
     initState(originId, playerName);
+    // 必须在 initState 之后设置，因为 initState 会重新创建 G 对象
+    G.difficulty = diffKey;
+    // 难度影响初始资金
+    if (typeof DIFFICULTY_PRESETS !== 'undefined' && DIFFICULTY_PRESETS) {
+      const preset = DIFFICULTY_PRESETS[diffKey] || DIFFICULTY_PRESETS.standard;
+      G.money = Math.round(G.money * (preset.startFundsMult || 1.0));
+    }
     // 初始化竞争对手
     if (typeof RIVALS !== 'undefined') {
       G.rivals = RIVALS.map(r => ({
         id: r.id, name: r.name, boss: r.boss, 
         money: r.startMoney * 10000,
         growthRate: r.growthRate, style: r.style, color: r.color,
-        desc: r.desc, tickCount: 0
+        desc: r.desc, tickCount: 0,
+        strategy: r.strategy || 'conservative', specIndustry: r.specIndustry || null
       }));
     } else { G.rivals = []; }
     G.news = JSON.parse(JSON.stringify(INITIAL_HOT_SEARCH || []));
@@ -288,6 +318,28 @@ window.SGame = (() => {
 
   function doTick() {
     try {
+      tickCityLoop();
+      tickPreCalc();
+      tickDecay();
+      tickBrand();
+      sandboxRefill();
+      tickIncome();
+      tickEmployees();
+      tickEvents();
+      tickPostCalc();
+      // 动态难度调节：快照收集
+      _collectPlayerSnapshot();
+    } catch(e) {
+      console.error('[商海浮沉] doTick error:', e);
+    }
+  }
+
+  // ========== Tick 管线：预计算 ==========
+  function tickPreCalc() {
+    // 清除收入缓存（本 Tick 状态即将变化）
+    _cachedTotalIncome = null;
+    _cachedTotalIncomeTick = -1;
+
     // 0. 追踪成就数据
     if (G.stress > 60) G.stressHighTickCount = (G.stressHighTickCount || 0) + 1;
     if (G.stress < 20) G.stressLowTickCount = (G.stressLowTickCount || 0) + 1;
@@ -322,16 +374,21 @@ window.SGame = (() => {
     // 1. 计算压力模式
     updateStressMode();
     // 1.5 预计算 NPC 被动加成（用于声誉衰减/政府补贴等），缓存供其他函数复用
-    var npcBonusForTick = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
-    G._npcBonusCache = npcBonusForTick;
+    let _tickNpcBonus = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    G._npcBonusCache = _tickNpcBonus;
+  }
+
+  // ========== Tick 管线：衰减 ==========
+  function tickDecay() {
     // 2. 自然衰减
-    const achRewards2 = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
-    G._achRewardsCache = achRewards2;
-    const stressDecayBonus = 1.0 + (achRewards2.stressDecay || 0);
-    G.stress = Math.max(0, G.stress - CONFIG.STRESS_NATURAL_DECAY * stressDecayBonus);
+    const _tickAchRewards = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
+    G._achRewardsCache = _tickAchRewards;
+    const stressDecayBonus = 1.0 + (_tickAchRewards.stressDecay || 0);
+    G.stress = Math.round(Math.max(0, G.stress - CONFIG.STRESS_NATURAL_DECAY * stressDecayBonus) * 10) / 10;
     // 林教授被动：声誉衰减降低
-    const repDecayReduction = (npcBonusForTick._repGainPassive) ? npcBonusForTick._repGainPassive : 0;
-    const regionModsForTick = getRegionModifiers();
+    const _npcB = G._npcBonusCache || {};
+    const repDecayReduction = _npcB._repGainPassive || 0;
+    let regionModsForTick = _cityLoopRegionMods;
     const rumorSpreadMod = regionModsForTick.rumorSpread || 1.0;
     // 声誉分层衰减：名气越大越难维持
     {
@@ -382,7 +439,7 @@ window.SGame = (() => {
     }
     // NPC 好感自然衰减：不可能跟所有14位NPC都保持极深关系
     {
-      if (G.npcFavor && G.tickCount % 3 === 0) { // 每3 Tick检查一次（节省性能）
+      if (G.npcFavor && G.tickCount % CONFIG.NPC_FAVOR_DECAY_INTERVAL === 0) { // 每3 Tick检查一次（节省性能）
         const allNpcIds = Object.keys(G.npcFavor);
         let decayLog = '';
         allNpcIds.forEach(function(nid) {
@@ -409,23 +466,102 @@ window.SGame = (() => {
     }
     // 更新资金峰值
     G.moneyPeak = Math.max(G.moneyPeak || 0, G.money);
-    // 3. 计算收益
-    const income = calcTotalIncome();
-    G.money += income;
-    if (income > 0) G.totalIncomeEarned = (G.totalIncomeEarned || 0) + income;
+  }
+
+  // ========== Tick 管线：品牌 ==========
+  function tickBrand() {
+    if (!G || !G.brand) return;
+    const brand = G.brand;
+    // 沙盒模式品牌不衰减
+    if (G.difficulty === 'sandbox') return;
+    // 知名度自然衰减（名气越大越难维持）
+    const awarenessDecay = brand.awareness > 70 ? 0.3 : brand.awareness > 40 ? 0.15 : 0.05;
+    brand.awareness = Math.max(0, brand.awareness - awarenessDecay);
+    // 口碑评分：受声誉和员工幸福感影响缓慢趋近
+    const repFactor = (G.reputation || 50) / 100;
+    const happinessFactor = G.employees && G.employees.length > 0
+      ? G.employees.reduce((s, e) => s + (e.happiness || 50), 0) / G.employees.length / 100
+      : 0.5;
+    const targetRating = (repFactor * 0.6 + happinessFactor * 0.4) * 100;
+    brand.rating += (targetRating - brand.rating) * 0.02;
+    brand.rating = Math.max(0, Math.min(100, brand.rating));
+  }
+
+  // ========== 品牌收入倍率 ==========
+  function calcBrandIncomeMult() {
+    if (!G || !G.brand) return 1.0;
+    const brand = G.brand;
+    // 知名度影响新客户获取：awareness>=80 → +8%, ≥60 → +4%
+    let mult = 1.0;
+    if (brand.awareness >= 80) mult += 0.08;
+    else if (brand.awareness >= 60) mult += 0.04;
+    else if (brand.awareness < 20) mult -= 0.05;
+    // 口碑评分影响复购率：rating>=80 → +6%, ≥60 → +3%
+    if (brand.rating >= 80) mult += 0.06;
+    else if (brand.rating >= 60) mult += 0.03;
+    else if (brand.rating < 30) mult -= 0.05;
+    // 品牌危机惩罚：检查近期品牌危机
+    if (brand.crisisHistory && brand.crisisHistory.length > 0) {
+      const recentCrisis = brand.crisisHistory.filter(c => (G.tickCount - c.tick) < 10);
+      if (recentCrisis.length > 0) mult -= 0.03 * recentCrisis.length;
+    }
+    return Math.max(0.6, mult);
+  }
+
+  // ========== 品牌危机触发 ==========
+  function triggerBrandCrisis(type, severity) {
+    if (!G || !G.brand) return;
+    const brand = G.brand;
+    brand.crisisHistory = brand.crisisHistory || [];
+    brand.crisisHistory.push({ type: type, severity: severity, tick: G.tickCount });
+    // 清理过旧记录（>60 tick）
+    brand.crisisHistory = brand.crisisHistory.filter(c => G.tickCount - c.tick < 60);
+    brand.rating = Math.max(0, brand.rating - severity * 15);
+    brand.awareness = Math.max(0, brand.awareness - severity * 5);
+    if (severity >= 2) addLog('🚨 品牌危机：' + type + '，口碑-'+ (severity*15) +'，知名度-'+ (severity*5));
+  }
+
+  // ========== 品牌事件恢复 ==========
+  function recoverBrand(awarenessGain, ratingGain) {
+    if (!G || !G.brand) return;
+    G.brand.awareness = Math.min(100, G.brand.awareness + (awarenessGain || 0));
+    G.brand.rating = Math.min(100, G.brand.rating + (ratingGain || 0));
+  }
+
+  // ========== 沙盒模式资金补充 ==========
+  function sandboxRefill() {
+    if (!G || G.difficulty !== 'sandbox') return;
+    if (G.money < 10000000) {
+      G.money += 100000000;
+      addLog('🏖️ 沙盒模式：资金自动补充 1亿');
+    }
+  }
+
+  // ========== Tick 管线：收益 ==========
+  function tickIncome() {
+    // 3. 计算收益（含品牌倍率影响）
+    let brandIncomeMult = calcBrandIncomeMult();
+    let _tickIncome = _cityLoopIncome * brandIncomeMult;
+    G._lastTickIncome = _tickIncome;
+    G.money += _tickIncome;
+    if (_tickIncome > 0) G.totalIncomeEarned = (G.totalIncomeEarned || 0) + _tickIncome;
+    // 3.1 收入历史追踪（用于数据可视化图表）
+    G.incomeHistory.push({ tick: G.tickCount, income: _tickIncome, money: G.money });
+    if (G.incomeHistory.length > 30) G.incomeHistory.shift();
     // 数值溢出保护：硬上限 1e15
     if (G.money > 1e15) G.money = 1e15;
     // 李处被动：政府补贴
-    if (npcBonusForTick._govSubsidy) { G.money += npcBonusForTick._govSubsidy; }
+    const _npcB2 = G._npcBonusCache || {};
+    if (_npcB2._govSubsidy) { G.money += _npcB2._govSubsidy; }
     // 3.4 资产被动收入（每Tick产出微量收益）
     if (G.assets && G.assets.length > 0) {
-      var assetIncome = 0;
-      for (var ai = 0; ai < G.assets.length; ai++) {
-        var a = G.assets[ai];
-        var inAuction = G.assetAuctionList && G.assetAuctionList.some(function(auc) { return auc.assetId === a.id; });
+      let assetIncome = 0;
+      for (let ai = 0; ai < G.assets.length; ai++) {
+        let a = G.assets[ai];
+        let inAuction = G.assetAuctionList && G.assetAuctionList.some(function(auc) { return auc.assetId === a.id; });
         if (inAuction) continue;
         // 稀有度越高收益越多：common→20, uncommon→50, rare→120, epic→300
-        var rarityYield = { common: 20, uncommon: 50, rare: 120, epic: 300 }[a.rarity] || 20;
+        let rarityYield = { common: 20, uncommon: 50, rare: 120, epic: 300 }[a.rarity] || 20;
         assetIncome += rarityYield;
       }
       G.money += assetIncome;
@@ -438,7 +574,12 @@ window.SGame = (() => {
     G.assetHistory.push(G.money);
     if (G.assetHistory.length > 60) G.assetHistory.shift();
     // 3.6 统计追踪
-    G.totalIncome = (G.totalIncome || 0) + (income > 0 ? income : 0);
+    G.totalIncome = (G.totalIncome || 0) + (_tickIncome > 0 ? _tickIncome : 0);
+    // 3.7 沙盒模式资金自动补充
+    if (G.difficulty === 'sandbox' && G.money < 10000000) {
+      G.money += 100000000;
+      if (G.tickCount % 10 === 0) addLog('🏖️ 沙盒模式：资金自动补充 1亿');
+    }
     // 3.7 维护成本（每Tick）
     const maintenanceCost = calcMaintenanceCost();
     G.money -= maintenanceCost;
@@ -446,9 +587,13 @@ window.SGame = (() => {
     // 3.8 运营风险事件
     if (Math.random() < CONFIG.OPERATIONAL_RISK_BASE) triggerOperationalRisk();
     // 3.9 供应链检查
-    if (G.tickCount % 3 === 0) checkSupplyChain();
+    if (G.tickCount % CONFIG.NPC_FAVOR_DECAY_INTERVAL === 0) checkSupplyChain();
     // 3.10 市场份额变化
     if (G.tickCount % 6 === 0) updateMarketShare();
+  }
+
+  // ========== Tick 管线：员工 ==========
+  function tickEmployees() {
     // 4. 发工资（实际工资 = baseSalary × 规模系数，单位转为元；实习生工资打折）
     let totalSalary = 0;
     G.employees.forEach(emp => {
@@ -457,20 +602,20 @@ window.SGame = (() => {
       actualSalary = calcInternSalary(emp, actualSalary);
       totalSalary += actualSalary * 10000;
       // 忠诚度：基础衰减 + 幸福感正向牵引（happiness缩放0.005）
-      var achLoyDecay = (achRewards2.loyaltyDecay) || 1.0;
+      let achLoyDecay = (G._achRewardsCache && G._achRewardsCache.loyaltyDecay) || 1.0;
       emp.loyalty = Math.max(0, Math.min(100, emp.loyalty - CONFIG.LOYALTY_DECAY * achLoyDecay + (emp.happiness || 50) * 0.005));
       // 压力影响
       if (G.stress > 70) emp.happiness = Math.max(0, (emp.happiness || 50) - 2);
       // 疲劳度：净增长 = 增速 - 衰减（受区域 burnonProb 影响）
-      var fatigueRate = CONFIG.EMP_FATIGUE_RATE;
+      let fatigueRate = CONFIG.EMP_FATIGUE_RATE;
       // 员工效率属性降低疲劳增长（每10点效率减少3%疲劳增长）
       if (emp.attrs && emp.attrs.efficiency) {
         fatigueRate *= (1 - (emp.attrs.efficiency / 333));
       }
-      var regionMods = getRegionModifiers();
+      let regionMods = _cityLoopRegionMods;
       if (regionMods.burnoutProb > 1.0) fatigueRate *= regionMods.burnoutProb;
       // 苏姐被动：自动疲劳降低 10%
-      var npcBonFatigue = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+      let npcBonFatigue = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
       if (npcBonFatigue._autoFatigueReduction) fatigueRate *= (1 - npcBonFatigue._autoFatigueReduction);
       emp.fatigue = Math.min(100, Math.max(0, (emp.fatigue || 0) + fatigueRate - CONFIG.EMP_FATIGUE_DECAY));
       // 高疲劳影响忠诚
@@ -496,6 +641,10 @@ window.SGame = (() => {
     if (G.autoSaveEnabled !== false && G.tickCount % 20 === 0) {
       autoSave();
     }
+  }
+
+  // ========== Tick 管线：事件 ==========
+  function tickEvents() {
     // 5. 检查里程碑
     const prevAct = G.act;
     checkMilestones();
@@ -514,13 +663,17 @@ window.SGame = (() => {
     updateRank();
     // 7.8 NPC 随机来访事件（每 tick 约 8% 概率 + 人气修正）
     triggerNpcRandomVisit();
+    // 7.9 NPC 任务线自动推进检查
+    if (typeof NPCSystem !== 'undefined' && NPCSystem.checkNPCQuests) NPCSystem.checkNPCQuests();
+    // 7.10 连锁事件处理
+    if (typeof EventSystem !== 'undefined' && EventSystem.processChainEvents) EventSystem.processChainEvents();
     // 8. 员工离开检查
     checkEmployeeLeave();
     // 9. 技能效果应用
     applySkillEffects();
     // 9.5 现金流管理技能：每50tick获得当前收入x3奖励
     if (G.unlockedSkills && G.unlockedSkills.includes('cash_flow') && G.tickCount % 50 === 0) {
-      var bonus = calcTotalIncome() * 3;
+      let bonus = calcTotalIncome() * 3;
       if (bonus > 0) {
         G.money += bonus;
         addLog('💰 现金流管理奖励: +' + formatMoney(bonus));
@@ -531,7 +684,7 @@ window.SGame = (() => {
     // 11. 研发进度检查
     window.SGame.checkResearchProgress();
     // 12. 股市波动（每5tick）
-    if (G.tickCount % 5 === 0) window.SGame.updateStockPrices();
+    if (G.tickCount % CONFIG.STOCK_UPDATE_INTERVAL === 0) window.SGame.updateStockPrices();
     // 13. 贷款利息处理
     processLoans();
     // 14. 节日检查
@@ -539,7 +692,7 @@ window.SGame = (() => {
     // 14.5 托管主循环
     if (G.autoMode && G.autoMode.enabled) autoManager();
     // 17.5 竞争对手AI（每12 tick）
-    if (G.tickCount % 12 === 0) window.SGame.updateRivals();
+    if (G.tickCount % CONFIG.RIVAL_UPDATE_INTERVAL === 0) window.SGame.updateRivals();
     // 17.6 新闻生成（每10 tick）
     if (G.tickCount % 10 === 0) generateNews();
     // 17.6.1 LLM商业新闻生成（每20 tick，#5）
@@ -556,6 +709,10 @@ window.SGame = (() => {
     manageSubsidiaries();
     // 17.8 结局检查 — 已禁用（长期放置游戏无结局），改为里程碑记录
     checkMilestonesAdvanced();
+  }
+
+  // ========== Tick 管线：后处理 ==========
+  function tickPostCalc() {
     // 15. 破产检查
     checkBankruptcy();
     // 16. HR 统管自动维护
@@ -563,10 +720,18 @@ window.SGame = (() => {
     // 16.5 同步当前城市业务到多城存储
     syncCityBiz();
     // 11. 音效：收益为正时播放
-    if (income > 0 && typeof AudioFX !== 'undefined') AudioFX.playEarn();
-    } catch(e) {
-      console.error('[商海浮沉] doTick error:', e);
+    if ((G._lastTickIncome || 0) > 0 && typeof AudioFX !== 'undefined') AudioFX.playEarn();
+  }
+
+  // ========== 城市遍历合并 ==========
+  function tickCityLoop() {
+    if (_cityLoopTick !== G.tickCount) {
+      _cityLoopIncome = calcTotalIncome();
+      _cityLoopMaintenance = calcMaintenanceCost();
+      _cityLoopRegionMods = getRegionModifiers();
+      _cityLoopTick = G.tickCount;
     }
+    manageSubsidiaries();
   }
 
   // ========== 时间与天气系统 ==========
@@ -650,7 +815,8 @@ window.SGame = (() => {
   }
 
   function getStressMultiplier() {
-    const m = { easy: 1.05, normal: 1.0, hard: 0.85, crisis: 0.6, collapse: 0.3 };
+    // 经济危机下限：收入最低保留 25%（原 0.3 → 0.25）
+    const m = { easy: 1.05, normal: 1.0, hard: 0.85, crisis: 0.25, collapse: 0.12 };
     return m[G.stressMode] || 1.0;
   }
 
@@ -828,7 +994,7 @@ window.SGame = (() => {
 
   // 排名第一龙头溢价
   function calcLeaderBonus() {
-    const rankInfo = getRivalRank();
+    const rankInfo = window.SGame.getRivalRank();
     if (rankInfo && rankInfo.rank === 1 && rankInfo.total >= 2) return 0.05;
     return 0;
   }
@@ -967,30 +1133,91 @@ window.SGame = (() => {
   }
 
   // ========== 收益计算 ==========
+  let _cachedTotalIncome = null;
+  let _cachedTotalIncomeTick = -1;
+
+  // 预计算复合乘数（将15+个分散乘法层压缩为6个复合因子）
+  function preCalcCompositeMultipliers() {
+    if (!G) return {};
+
+    // 宏观环境因子：stress × rep × origin × economic — 合并为1次乘法
+    let macroMul = getStressMultiplier() * getRepMultiplier() * getOriginMultiplier() * getEconomicMultiplier();
+
+    // 联动系统因子：weather + holiday + npc + loyalty + rival + leader + tech — 预计算
+    let synergy = G._synergyCache || calcSynergyEffects();
+    G._synergyCache = synergy;
+
+    let synergyMul = 1.0;
+
+    // 天气/假日/NPC/科技分业务 — 后续在循环内按业务应用，这里只做全局
+    // 忠诚度全局
+    if (synergy.loyaltyBonus && synergy.loyaltyBonus.global !== 0) synergyMul *= (1 + synergy.loyaltyBonus.global);
+    // 竞争对手压制
+    if (synergy.rivalPenalty && synergy.rivalPenalty.global !== 0) synergyMul *= (1 + synergy.rivalPenalty.global);
+    // 龙头溢价
+    if (synergy.leaderBonus > 0) synergyMul *= (1 + synergy.leaderBonus);
+    // 竞争对手即时效果
+    if (G._rivalExpansionPenalty) synergyMul *= (1 - G._rivalExpansionPenalty);
+    if (G._rivalCrisisBonus) synergyMul *= (1 + G._rivalCrisisBonus);
+    // LLM新闻全局影响
+    if (G._llmNewsBonus) synergyMul *= (1 + G._llmNewsBonus);
+    if (G._llmNewsPenalty) synergyMul *= (1 - G._llmNewsPenalty);
+
+    // 跨城协同
+    let cityCount = Object.values(G.cities).filter(function(c) { return c && c.unlocked; }).length;
+    let crossCityMul = 1.0;
+    if (cityCount >= 5) crossCityMul = 1.06;
+    else if (cityCount >= 4) crossCityMul = 1.04;
+    else if (cityCount >= 3) crossCityMul = 1.03;
+    else if (cityCount >= 2) crossCityMul = 1.02;
+
+    // 国际城市加成
+    let intlCount = Object.entries(G.cities).filter(function(entry) {
+      return entry[1] && entry[1].unlocked && CITIES[entry[0]] && CITIES[entry[0]].isInternational;
+    }).length;
+    let intlMul = intlCount > 0 ? (1 + intlCount * 0.03) : 1.0;
+
+    // 成就全局收入加成
+    let achRewards = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
+    let achIncomeMult = 1.0 + (achRewards.incomeMult || 0);
+    let achOpCost = achRewards.opCost || 1.0;
+
+    // NPC被动
+    let npcBonusForCalc = G._npcBonusCache || (typeof calcNpcBonus === 'function' ? calcNpcBonus() : {});
+
+    return {
+      macroMul: macroMul,
+      synergy: synergy,
+      synergyMul: synergyMul,
+      crossCityMul: crossCityMul,
+      intlMul: intlMul,
+      achIncomeMult: achIncomeMult,
+      achOpCost: achOpCost,
+      npcBonusForCalc: npcBonusForCalc,
+      achRewards: achRewards,
+    };
+  }
+
   function calcTotalIncome() {
+    // 同一 Tick 内复用缓存（被 doTick、手动收入、成就检查等多处调用）
+    if (_cachedTotalIncomeTick === G.tickCount && _cachedTotalIncome !== null) return _cachedTotalIncome;
+
     updateRepLevel();
-    const stressMul = getStressMultiplier();
-    const repMul = getRepMultiplier();
-    const originMul = getOriginMultiplier();
-    
-    // 计算成就奖励加成
-    const achRewards = typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {};
-    const achIncomeMult = 1.0 + (achRewards.incomeMult || 0);
-    const achOpCost = achRewards.opCost || 1.0;
-    // 预计算 NPC 被动用于 calcTotalIncome（优先使用 doTick 缓存）
-    var npcBonusForCalc = G._npcBonusCache || (typeof calcNpcBonus === 'function' ? calcNpcBonus() : {});
-    var _achRewardsCache = G._achRewardsCache || (typeof calcAchievementRewards === 'function' ? calcAchievementRewards() : {});
+
+    // === 预计算所有复合乘数（替代15+个分散乘法层） ===
+    let comp = preCalcCompositeMultipliers();
+    let _achRewardsCache = G._achRewardsCache || comp.achRewards;
 
     let grandTotal = 0;
 
     // #4 员工数据预计算：单次遍历，供所有业务复用
-    var empSummary = null;
+    let empSummary = null;
     if (G.employees && G.employees.length > 0) {
-      var m = { manager:0, developer:0, sales:0, marketer:0, others:0,
+      let m = { manager:0, developer:0, sales:0, marketer:0, others:0,
         skillBonus:0, lowLoyalty:0, sumFatigue:0, count: G.employees.length,
         incomeBonusFromRoles: 0, attrBonus: 0 };
       G.employees.forEach(function(emp) {
-        var roleDef = EMP_ROLES.find(function(r) { return r.id === emp.role; });
+        let roleDef = EMP_ROLES.find(function(r) { return r.id === emp.role; });
         if (roleDef && roleDef.incomeBonus) m.incomeBonusFromRoles += roleDef.incomeBonus;
         if (emp.role === 'manager') m.manager++;
         else if (emp.role === 'developer') m.developer++;
@@ -1006,13 +1233,13 @@ window.SGame = (() => {
         }
       });
       // 全局低忠诚度惩罚因子
-      var lowRatio = m.lowLoyalty / m.count;
+      let lowRatio = m.lowLoyalty / m.count;
       m.loyaltyPenalty = Math.max(0.5, 1.0 - lowRatio * 0.5);
       // 全局疲劳惩罚因子
-      var avgFatigue = m.sumFatigue / m.count;
+      let avgFatigue = m.sumFatigue / m.count;
       m.fatiguePenalty = avgFatigue > 60 ? Math.max(0.7, 1 - (avgFatigue - 60) * 0.005) : 1.0;
       // 成就加成
-      var achRewardsEE = _achRewardsCache;
+      let achRewardsEE = _achRewardsCache;
       m.incomeBonus = m.incomeBonusFromRoles + (achRewardsEE.empEfficiency || 0);
       empSummary = m;
     }
@@ -1048,7 +1275,7 @@ window.SGame = (() => {
         }
 
         // 区域加成（含 regionBonusDouble 成就翻倍）
-        var regionMul = 1.0;
+        let regionMul = 1.0;
         if (bState.region && REGIONS[bState.region]) {
           const r = REGIONS[bState.region];
           // 已实现：核心业务增益
@@ -1062,10 +1289,10 @@ window.SGame = (() => {
           if (r.bonus.manufacturing && (bDef.id === 'new_energy' || bDef.id === 'manufacturing')) regionMul *= r.bonus.manufacturing;
           // 新增：物流效率 → 减弱供应链断裂影响（每级物流+0.02 恢复系数）
           if (r.bonus.logistics) {
-            var scState = (G.supplyChain && G.supplyChain[bDef.id]) || { upstream:'normal', downstream:'normal' };
+            let scState = (G.supplyChain && G.supplyChain[bDef.id]) || { upstream:'normal', downstream:'normal' };
             if (scState.upstream === 'disrupted') {
               // logistics 加成恢复部分中断损失（1.08 恢复约 16%，1.20 恢复约 40%）
-              var recovery = Math.min(1.0, 0.6 + (r.bonus.logistics - 1.0) * 2.5);
+              let recovery = Math.min(1.0, 0.6 + (r.bonus.logistics - 1.0) * 2.5);
               income *= recovery;
             }
           }
@@ -1075,15 +1302,15 @@ window.SGame = (() => {
           if (r.bonus.cost && r.bonus.cost < 1) regionMul *= (1 + (1 - r.bonus.cost) * 0.4);
         }
         // 成就：区域霸主 → 区域加成翻倍
-        var achRewardsR = _achRewardsCache;
+        let achRewardsR = _achRewardsCache;
         if (achRewardsR.regionBonusDouble && regionMul > 1.0) {
           regionMul = 1.0 + (regionMul - 1.0) * 2.0;
         }
         income *= regionMul;
 
         // 员工加成（#4 使用预计算摘要，避免重复遍历）
-        var empMul = 1.0;
-        var empBonus = 0;
+        let empMul = 1.0;
+        let empBonus = 0;
         if (empSummary) {
           // 管理层全局加成（每个manager +12%）
           empMul += empSummary.manager * 0.12;
@@ -1121,8 +1348,8 @@ window.SGame = (() => {
           if (cb.opsCostReduction) income *= (1 + (1 - cb.opsCostReduction) * 0.3);
         }
 
-        // 压力/声誉/出身/经济（基础修正）
-        income *= stressMul * repMul * originMul * getEconomicMultiplier();
+        // 压力/声誉/出身/经济（复合乘数，替代4次独立乘法）
+        income *= comp.macroMul;
 
         // === 联动修正：分业务类型 ===
         const synergy = G._synergyCache || calcSynergyEffects();
@@ -1178,57 +1405,27 @@ window.SGame = (() => {
       G.newsEffects = {};
     }
 
-    // 跨城协同加成
-    const cityCount = Object.values(G.cities).filter(c => c && c.unlocked).length;
-    if (cityCount >= 5) grandTotal *= 1.06;
-    else if (cityCount >= 4) grandTotal *= 1.04;
-    else if (cityCount >= 3) grandTotal *= 1.03;
-    else if (cityCount >= 2) grandTotal *= 1.02;
+    // 跨城协同加成 — 使用复合乘数
+    grandTotal *= comp.crossCityMul;
 
-    // 国际城市额外加成
-    const intlCount = Object.entries(G.cities).filter(([id, c]) =>
-      c && c.unlocked && CITIES[id] && CITIES[id].isInternational
-    ).length;
-    if (intlCount > 0) grandTotal *= (1 + intlCount * 0.03);
+    // 国际城市额外加成 — 使用复合乘数
+    grandTotal *= comp.intlMul;
 
-    // === 全局联动修正 ===
-    const sy = G._synergyCache || calcSynergyEffects();
-
-    // 员工忠诚度全局加成
-    if (sy.loyaltyBonus && sy.loyaltyBonus.global !== 0) {
-      grandTotal *= (1 + sy.loyaltyBonus.global);
-    }
-
-    // 竞争对手压制
-    if (sy.rivalPenalty && sy.rivalPenalty.global !== 0) {
-      grandTotal *= (1 + sy.rivalPenalty.global);
-    }
-
-    // 排名第一龙头溢价
-    if (sy.leaderBonus > 0) {
-      grandTotal *= (1 + sy.leaderBonus);
-    }
-
-    // stress 已通过 getStressMultiplier (0.3~1.05) 在逐业务行 835 应用，此处不再重复
-    // sy.stressMod 由 calcStressMod 提供细分阶梯，但不适用于全局二次乘法
-    // repMod 已通过 getRepMultiplier() 在各业务中应用，不再全局重复计算
-
-    // 竞争对手扩张/危机即时效果
-    if (G._rivalExpansionPenalty) grandTotal *= (1 - G._rivalExpansionPenalty);
-    if (G._rivalCrisisBonus) grandTotal *= (1 + G._rivalCrisisBonus);
+    // === 全局联动修正（复合乘数） ===
+    grandTotal *= comp.synergyMul;
 
     // LLM 新闻影响（短暂收入调节）
     if (G._llmNewsBonus) grandTotal *= (1 + G._llmNewsBonus);
     if (G._llmNewsPenalty) grandTotal *= (1 - G._llmNewsPenalty);
 
     // 成就奖励全局收入加成
-    grandTotal *= achIncomeMult;
+    grandTotal *= comp.achIncomeMult;
     // 成就奖励运营成本减免（等效收入加成）
-    if (achOpCost < 1.0) grandTotal *= (1.0 + (1.0 - achOpCost) * 0.5);
+    if (comp.achOpCost < 1.0) grandTotal *= (1.0 + (1.0 - comp.achOpCost) * 0.5);
     // 刘会计被动：运营成本 -5%（等效收入加成）
-    if (npcBonusForCalc._opsCostReduction) grandTotal *= (1 + npcBonusForCalc._opsCostReduction * 0.5);
+    if (comp.npcBonusForCalc._opsCostReduction) grandTotal *= (1 + comp.npcBonusForCalc._opsCostReduction * 0.5);
     // 商业并购收入
-    var maRev = getMARevenue();
+    let maRev = getMARevenue();
     if (maRev > 0) {
       grandTotal += maRev;
       if (G.tickCount % 10 === 0) {
@@ -1240,58 +1437,169 @@ window.SGame = (() => {
 
     // 递减边际效应：总收入超过阈值时应用衰减系数，防止数值爆炸
     if (grandTotal > 5000000) {
-      var overflow = grandTotal / 5000000;
-      var damping = 1.0 / (1.0 + Math.log2(overflow) * 0.08);
+      let overflow = grandTotal / 5000000;
+      let damping = 1.0 / (1.0 + Math.log2(overflow) * 0.08);
       grandTotal *= damping;
     }
 
+    // 动态难度调节因子（安全上下限±20%）
+    if (G._autoBalanceFactors && G._autoBalanceFactors.boostIncome) {
+      grandTotal *= G._autoBalanceFactors.boostIncome;
+    }
+
+    // 缓存结果
+    _cachedTotalIncome = grandTotal;
+    _cachedTotalIncomeTick = G.tickCount;
+
     return grandTotal;
+  }
+
+  // ========== 动态难度调节：收集玩家状态快照 ==========
+  function _collectPlayerSnapshot() {
+    if (!G) return;
+    // 记录本周期的收入/资金/压力
+    var income = _cachedTotalIncome !== null ? _cachedTotalIncome : 0;
+    _snapshotIncome.push(income);
+    _snapshotMoney.push(G.money || 0);
+    _snapshotStress.push(G.stress || 0);
+    // 保留最近10条
+    if (_snapshotIncome.length > 10) { _snapshotIncome.shift(); _snapshotMoney.shift(); _snapshotStress.shift(); }
+
+    // 每20 tick评估一次
+    if (G.tickCount > 0 && G.tickCount % 20 === 0 && _snapshotIncome.length >= 5 && typeof LLM !== 'undefined' && LLM.analyzePlayerState) {
+      var recentIncome = _snapshotIncome.slice(-5);
+      var recentMoney = _snapshotMoney.slice(-5);
+      var recentStress = _snapshotStress.slice(-5);
+      // 收入趋势：正=增长，负=下降
+      var incTrend = recentIncome.length >= 2 ? recentIncome[recentIncome.length-1] - recentIncome[0] : 0;
+      var avgStress = recentStress.reduce(function(a,b){return a+b;},0) / recentStress.length;
+      var avgMoney = recentMoney.reduce(function(a,b){return a+b;},0) / recentMoney.length;
+      var decRatio = _snapshotDecisionTotal > 0 ? (_snapshotDecisionOk / _snapshotDecisionTotal).toFixed(2) : 'N/A';
+      var eventCount = G.eventCount || 0;
+
+      var summary = '收入趋势(近5tick):' + (incTrend>0?'+':'') + incTrend.toFixed(0) +
+        ' 平均资金:' + (typeof formatMoney === 'function' ? formatMoney(avgMoney) : avgMoney.toFixed(0)) +
+        ' 平均压力:' + avgStress.toFixed(1) + '/100' +
+        ' 决策成功率:' + decRatio +
+        ' 事件触发次数:' + eventCount +
+        ' 难度:' + (G.difficulty || 'standard');
+
+      // 异步调用（不阻塞游戏循环）
+      LLM.analyzePlayerState(summary).then(function(data) {
+        if (data) {
+          if (!G._autoBalanceFactors) G._autoBalanceFactors = {};
+          G._autoBalanceFactors.easeEventFreq = data.easeEventFreq;
+          G._autoBalanceFactors.boostIncome = data.boostIncome;
+          if (typeof addLog === 'function') {
+            addLog('⚖️ 动态难度调节：' + data.reason + ' (收入倍率x' + data.boostIncome.toFixed(2) + ')');
+          }
+        }
+      }).catch(function() {});
+    }
+  }
+
+  // 记录决策结果 (供难度分析使用)
+  function _recordDecisionOutcome(success) {
+    _snapshotDecisionTotal++;
+    if (success) _snapshotDecisionOk++;
+    if (_snapshotDecisionTotal > 50) { _snapshotDecisionTotal = 25; _snapshotDecisionOk = Math.floor(_snapshotDecisionOk/2); }
+  }
+
+  // ========== 平衡性自检：收集分析数据 ==========
+  function collectGameAnalytics() {
+    if (!G) return null;
+    var data = {};
+
+    // 各业务 ROI 排行
+    if (G.businesses) {
+      var bizROI = [];
+      Object.entries(G.businesses).forEach(function(e) {
+        var bDef = BUSINESS_DEFS.find(function(b){return b.id===e[0];});
+        if (!bDef || e[1].level===0) return;
+        var lv = bDef.levels[e[1].level-1];
+        var income = lv ? lv.income : 0;
+        var cost = lv ? lv.cost : 0;
+        var roi = cost > 0 ? (income/cost).toFixed(2) : 'N/A';
+        bizROI.push({ id:e[0], name:bDef.name, level:e[1].level, income:income, cost:cost, roi:roi });
+      });
+      bizROI.sort(function(a,b){ return (b.income||0)-(a.income||0); });
+      data.bizROI = bizROI;
+    }
+
+    // 事件选择偏好分布
+    if (G.decisionHistory && G.decisionHistory.length > 0) {
+      var choiceDist = {};
+      G.decisionHistory.forEach(function(d) {
+        var key = d.eventId || 'unknown';
+        choiceDist[key] = (choiceDist[key] || 0) + 1;
+      });
+      data.eventChoiceDist = choiceDist;
+    }
+
+    // NPC 互动频率
+    if (G.npcFavor) {
+      data.npcFavor = G.npcFavor;
+    }
+
+    // 策略路径统计
+    var stats = G.stats || {};
+    data.strategyStats = { management:stats.management||0, tech:stats.tech||0, social:stats.social||0, finance:stats.finance||0 };
+
+    // 基本信息
+    data.tickCount = G.tickCount;
+    data.money = G.money;
+    data.reputation = G.reputation;
+    data.difficulty = G.difficulty || 'standard';
+    data.act = G.act;
+    data.milestone = G.milestone;
+
+    return data;
   }
 
   // 计算单个业务的实际年收入（供UI显示）
   function calcBizIncome(bizId, gameState) {
     if (!gameState) gameState = G;
     if (!gameState) return 0;
-    var bDef = BUSINESS_DEFS.find(function(b) { return b.id === bizId; });
+    let bDef = BUSINESS_DEFS.find(function(b) { return b.id === bizId; });
     if (!bDef) return 0;
     // 查找该业务在所有城市中的状态
-    var totalIncome = 0;
+    let totalIncome = 0;
     if (gameState.cities) {
       Object.entries(gameState.cities).forEach(function([cityId, cityData]) {
         if (!cityData || !cityData.unlocked) return;
-        var bizState = cityData.businesses && cityData.businesses[bizId];
+        let bizState = cityData.businesses && cityData.businesses[bizId];
         if (!bizState || bizState.level === 0) return;
-        var lv = bDef.levels[bizState.level - 1];
+        let lv = bDef.levels[bizState.level - 1];
         if (!lv) return;
         totalIncome += lv.income;
       });
     }
     // 旧格式兼容
     if (totalIncome === 0 && gameState.businesses) {
-      var state = gameState.businesses[bizId];
+      let state = gameState.businesses[bizId];
       if (state && state.level > 0) {
-        var lv = bDef.levels[state.level - 1];
+        let lv = bDef.levels[state.level - 1];
         if (lv) totalIncome = lv.income;
       }
     }
     // 应用基础修正系数（简化版，不含全部联动）
-    var stressMul = getStressMultiplier();
-    var repMul = getRepMultiplier();
-    var originMul = getOriginMultiplier();
+    let stressMul = getStressMultiplier();
+    let repMul = getRepMultiplier();
+    let originMul = getOriginMultiplier();
     totalIncome *= stressMul * repMul * originMul;
     return totalIncome;
   }
 
   function calcSynergyMultiplier() {
     if (!G || !G.cities) return 1.0;
-    var mul = 1.0;
-    var cityCount = Object.values(G.cities).filter(function(c) { return c && c.unlocked; }).length;
+    let mul = 1.0;
+    let cityCount = Object.values(G.cities).filter(function(c) { return c && c.unlocked; }).length;
     if (cityCount >= 5) mul += 0.06;
     else if (cityCount >= 4) mul += 0.04;
     else if (cityCount >= 3) mul += 0.03;
     else if (cityCount >= 2) mul += 0.02;
-    var intlCount = Object.entries(G.cities).filter(function(entry) {
-      var id = entry[0], c = entry[1];
+    let intlCount = Object.entries(G.cities).filter(function(entry) {
+      let id = entry[0], c = entry[1];
       return c && c.unlocked && CITIES[id] && CITIES[id].isInternational;
     }).length;
     if (intlCount > 0) mul += intlCount * 0.03;
@@ -1383,7 +1691,7 @@ window.SGame = (() => {
 
   // ========== 区域解锁 ==========
   function checkRegionUnlocks() {
-    var npcBonReg = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let npcBonReg = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     Object.values(REGIONS).forEach(r => {
       if (r.unlocked) return;
       // 检查城市是否已解锁（新城市区域需要对应城市已解锁）
@@ -1395,7 +1703,7 @@ window.SGame = (() => {
       if (r.actUnlock > 0 && G.act < r.actUnlock) return;
       if (r.unlockCond) {
         // 孙秘书被动：区域解锁资金阈值降低 15%
-        var effMoney = r.unlockCond.money ? r.unlockCond.money * (1 - (npcBonReg._regionCostDiscount || 0)) : 0;
+        let effMoney = r.unlockCond.money ? r.unlockCond.money * (1 - (npcBonReg._regionCostDiscount || 0)) : 0;
         if (r.unlockCond.money && G.money >= effMoney) unlockRegion(r.id);
         if (r.unlockCond.reputation && G.reputation >= r.unlockCond.reputation) unlockRegion(r.id);
         if (r.unlockCond.act && G.act >= r.unlockCond.act) unlockRegion(r.id);
@@ -1414,12 +1722,12 @@ window.SGame = (() => {
 
   // ========== 城市解锁 ==========
   function checkCityUnlocks() {
-    var npcBonCity = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let npcBonCity = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     Object.values(CITIES).forEach(city => {
       if (city.unlockMoney === 0 && city.minAct === 0) return; // 初始城市跳过
       if (G.cities[city.id] && G.cities[city.id].unlocked) return;
       // 孙秘书被动：城市解锁资金阈值降低 10%
-      var effUnlockMoney = city.unlockMoney * (1 - (npcBonCity._cityUnlockDiscount || 0));
+      let effUnlockMoney = city.unlockMoney * (1 - (npcBonCity._cityUnlockDiscount || 0));
       if (G.money >= effUnlockMoney && G.act >= city.minAct) {
         G.cities[city.id] = { unlocked: true, businesses: {}, unlockedRegions: [] };
         // 初始化该城市所有业务默认条目
@@ -1455,28 +1763,28 @@ window.SGame = (() => {
   // 每 tick 有一定概率触发某位 NPC 主动来访，根据好感度产生不同效果
   function triggerNpcRandomVisit() {
     if (!G) return;
-    var prob = 0.08; // 基础 8%/tick
+    let prob = CONFIG.NPC_VISIT_BASE_PROB; // 基础 8%/tick
     if (G.reputation > 60) prob += 0.03;
     if (G.connections > 50) prob += 0.02;
     if (Math.random() > prob) return;
 
     // 选择来访 NPC（优先好感度中等的，既不是陌生也不是亲密）
-    var eligible = [];
-    var allNpcIds = Object.keys(NPCS);
-    for (var i = 0; i < allNpcIds.length; i++) {
-      var nid = allNpcIds[i];
-      var npc = NPCS[nid];
+    let eligible = [];
+    let allNpcIds = Object.keys(NPCS);
+    for (let i = 0; i < allNpcIds.length; i++) {
+      let nid = allNpcIds[i];
+      let npc = NPCS[nid];
       if (!npc || npc.actUnlock > G.act) continue;
-      var fav = (G.npcFavor && G.npcFavor[nid]) || 0;
+      let fav = (G.npcFavor && G.npcFavor[nid]) || 0;
       if (fav < -20) continue; // 敌对的不会主动来访
       eligible.push({ id: nid, favor: fav, npc: npc });
     }
     if (eligible.length === 0) return;
 
     // 加权随机（好感度中等优先）
-    var totalW = 0;
-    for (var j = 0; j < eligible.length; j++) {
-      var f = eligible[j].favor;
+    let totalW = 0;
+    for (let j = 0; j < eligible.length; j++) {
+      let f = eligible[j].favor;
       // 权重：0分最低，中间最高，100分次高
       if (f <= 0) eligible[j]._w = 1;
       else if (f < 30) eligible[j]._w = 5;
@@ -1486,55 +1794,55 @@ window.SGame = (() => {
       totalW += eligible[j]._w;
     }
 
-    var rand = Math.random() * totalW;
-    var acc = 0;
-    var visitor = eligible[0];
-    for (var k = 0; k < eligible.length; k++) {
+    let rand = Math.random() * totalW;
+    let acc = 0;
+    let visitor = eligible[0];
+    for (let k = 0; k < eligible.length; k++) {
       acc += eligible[k]._w;
       if (rand <= acc) { visitor = eligible[k]; break; }
     }
 
     // 根据好感等级选择来访类型
-    var npcName = visitor.npc.name;
-    var favor = visitor.favor;
+    let npcName = visitor.npc.name;
+    let favor = visitor.favor;
     if (favor < 10) {
       // 陌生人试探：小额互动
-      var smallEvents = [
+      let smallEvents = [
         { text: npcName + '路过顺便进来坐坐，寒暄了几句。', effect: function() { G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 1; } },
         { text: npcName + '听说你最近做得不错，发来一条祝贺消息。', effect: function() { G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; } },
         { text: npcName + '在社交平台上转发了你公司的一条动态。', effect: function() { if (typeof addConnections === 'function') addConnections(1); } },
       ];
-      var ev = smallEvents[Math.floor(Math.random() * smallEvents.length)];
+      let ev = smallEvents[Math.floor(Math.random() * smallEvents.length)];
       addLog('👤 ' + ev.text);
       ev.effect();
     } else if (favor < 40) {
       // 熟人：中等互动
-      var midEvents = [
+      let midEvents = [
         { text: npcName + '带来了一些行业内部消息。', effect: function() { if (typeof addConnections === 'function') addConnections(2); G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; } },
         { text: npcName + '约你喝茶，顺便介绍了一个潜在客户。', effect: function() { G.money += 15000 + Math.floor(Math.random() * 35000); G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 3; } },
         { text: npcName + '提醒你注意一个正在酝酿的行业风险。', effect: function() { G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; G.reputation = Math.min(100, (G.reputation || 0) + 2); } },
       ];
-      var ev2 = midEvents[Math.floor(Math.random() * midEvents.length)];
+      let ev2 = midEvents[Math.floor(Math.random() * midEvents.length)];
       addLog('🤝 ' + ev2.text);
       ev2.effect();
     } else if (favor < 70) {
       // 好友：有价值的互动
-      var goodEvents = [
+      let goodEvents = [
         { text: npcName + '主动提出帮你引荐一个重要人脉。', effect: function() { if (typeof addConnections === 'function') addConnections(5); G.npcFavor[visitor.id] = (G.npcFavor[visitor.id] || 0) + 2; } },
         { text: npcName + '私下给你透露了一个即将出台的政策利好。', effect: function() { G.money += 50000 + Math.floor(Math.random() * 100000); G.reputation = Math.min(100, (G.reputation || 0) + 3); } },
         { text: npcName + '邀请你参加了一个高规格的私人聚会。', effect: function() { if (typeof addConnections === 'function') addConnections(8); G.reputation = Math.min(100, (G.reputation || 0) + 5); } },
       ];
-      var ev3 = goodEvents[Math.floor(Math.random() * goodEvents.length)];
+      let ev3 = goodEvents[Math.floor(Math.random() * goodEvents.length)];
       addLog('⭐ ' + ev3.text);
       ev3.effect();
     } else {
       // 亲密：重大收益
-      var greatEvents = [
+      let greatEvents = [
         { text: npcName + '把一个重大商业机会优先给了你。', effect: function() { G.money += 100000 + Math.floor(Math.random() * 200000); if (typeof addConnections === 'function') addConnections(3); } },
         { text: npcName + '力排众议为你争取到了一个独家合作。', effect: function() { G.money += 200000; G.reputation = Math.min(100, (G.reputation || 0) + 8); if (typeof addConnections === 'function') addConnections(5); } },
         { text: npcName + '说了一句：「以后有事直接找我，不用客气。」', effect: function() { G.npcFavor[visitor.id] = Math.min(100, (G.npcFavor[visitor.id] || 0) + 8); G.money += 50000; } },
       ];
-      var ev4 = greatEvents[Math.floor(Math.random() * greatEvents.length)];
+      let ev4 = greatEvents[Math.floor(Math.random() * greatEvents.length)];
       addLog('🌟 ' + ev4.text);
       ev4.effect();
     }
@@ -1543,7 +1851,7 @@ window.SGame = (() => {
   // ========== 区域负面效果聚合 ==========
   // 汇总玩家在所有已拥有业务的区域中承受的负面效果
   function getRegionModifiers() {
-    var mods = {
+    let mods = {
       burnoutProb: 1.0,
       disasterProb: 1.0,
       negativeEventProb: 1.0,
@@ -1557,9 +1865,9 @@ window.SGame = (() => {
     Object.values(G.cities || {}).forEach(function(city) {
       if (!city || !city.businesses) return;
       Object.entries(city.businesses).forEach(function(entry) {
-        var biz = entry[1];
+        let biz = entry[1];
         if (!biz || biz.level <= 0 || !biz.region) return;
-        var r = REGIONS[biz.region];
+        let r = REGIONS[biz.region];
         if (!r) return;
         if (r.bonus.burnoutProb) mods.burnoutProb *= r.bonus.burnoutProb;
         if (r.bonus.disasterProb) mods.disasterProb *= r.bonus.disasterProb;
@@ -1571,9 +1879,9 @@ window.SGame = (() => {
       });
     });
     // 王律师法律保护：每个负面惩罚降低 15%
-    var npcBonuses = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let npcBonuses = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     if (npcBonuses._lawProtect) {
-      var prot = 0.85;
+      let prot = 0.85;
       if (mods.burnoutProb > 1) mods.burnoutProb = 1 + (mods.burnoutProb - 1) * prot;
       if (mods.disasterProb > 1) mods.disasterProb = 1 + (mods.disasterProb - 1) * prot;
       if (mods.negativeEventProb > 1) mods.negativeEventProb = 1 + (mods.negativeEventProb - 1) * prot;
@@ -1643,7 +1951,7 @@ window.SGame = (() => {
           Object.values(G.cities).forEach(function(cityData) {
             if (!cityData || !cityData.unlocked) return;
             if (!cityData.businesses) return;
-            var cityBiz = cityData.businesses[b.id];
+            let cityBiz = cityData.businesses[b.id];
             if (cityBiz && !cityBiz.unlocked) {
               cityBiz.unlocked = true;
             }
@@ -1722,7 +2030,7 @@ window.SGame = (() => {
           }
         }
         // 触发里程碑叙事事件
-        var msEvent = EVENTS.find(function(e) { return e.id === m.eventId; });
+        let msEvent = EVENTS.find(function(e) { return e.id === m.eventId; });
         if (msEvent) {
           setTimeout(function() {
             if (typeof EventSystem !== 'undefined') EventSystem.fireEvent(msEvent);
@@ -1994,7 +2302,13 @@ window.SGame = (() => {
       G.saveTime = Date.now();
       G.saveSlot = s;
       const data = { G, tickCount, pendingDecisions };
-      Storage.set('shfc_save_slot_' + s, JSON.stringify(data));
+      const jsonStr = JSON.stringify(data);
+      // 5MB 存档大小检查
+      if (jsonStr.length > 5 * 1024 * 1024) {
+        console.error('[商海浮沉] save blocked: archive exceeds 5MB (' + (jsonStr.length / 1024 / 1024).toFixed(1) + 'MB)');
+        return;
+      }
+      Storage.set('shfc_save_slot_' + s, jsonStr);
     } catch(e) {
       console.error('[商海浮沉] save error:', e);
     }
@@ -2006,8 +2320,13 @@ window.SGame = (() => {
       G.saveTime = Date.now();
       G.saveSlot = 1;
       const data = { G, tickCount, pendingDecisions };
-      Storage.set('shfc_save_slot_1', JSON.stringify(data));
-    } catch(e) {}
+      const jsonStr = JSON.stringify(data);
+      if (jsonStr.length > 5 * 1024 * 1024) {
+        console.warn('[SGame] autoSave blocked: archive exceeds 5MB');
+        return;
+      }
+      Storage.set('shfc_save_slot_1', jsonStr);
+    } catch(e) { console.warn('[SGame] autoSave failed:', e.message || e); }
   }
 
   function load(slot) {
@@ -2022,7 +2341,6 @@ window.SGame = (() => {
         pendingDecisions = (data.pendingDecisions || []).filter(d => d && d.id && d.choices && d.choices.length > 0);
         migrateSave();
         if (G.unlockedRegions && Array.isArray(G.unlockedRegions)) G.unlockedRegions.forEach(id => { if (REGIONS[id]) REGIONS[id].unlocked = true; });
-        // 检查离线收益
         checkAndShowOfflineIncome();
         return true;
       }
@@ -2036,13 +2354,13 @@ window.SGame = (() => {
         pendingDecisions = (data.pendingDecisions || []).filter(d => d && d.id && d.choices && d.choices.length > 0);
         migrateSave();
         if (G.unlockedRegions && Array.isArray(G.unlockedRegions)) G.unlockedRegions.forEach(id => { if (REGIONS[id]) REGIONS[id].unlocked = true; });
-        // 检查离线收益
         checkAndShowOfflineIncome();
         return true;
       }
       return false;
     } catch(e) {
-      console.error('[商海浮沉] load() exception:', e.message, e.stack);
+      G._loadError = e.message || '存档数据损坏';
+      console.error('[商海浮沉] 存档加载失败！可能原因：数据格式不兼容、JSON解析异常。请尝试开新游戏或删除存档文件。\n错误详情:', e.message, '\n堆栈:', e.stack);
       return false;
     }
   }
@@ -2062,9 +2380,9 @@ window.SGame = (() => {
   }
 
   // ========== 存档版本迁移 ==========
-  function migrateSave() {
-    if (!G) return;
-    // 旧存档没有 cities 字段 → 迁移为单城市模式
+
+  function migrateSaveV1() {
+    // V1: 旧存档没有 cities 字段 → 迁移为单城市模式
     if (!G.cities) {
       G.cities = {
         xinhai: {
@@ -2093,6 +2411,9 @@ window.SGame = (() => {
     Object.keys(REGIONS).forEach(rid => {
       if (!REGIONS[rid].cityId) REGIONS[rid].cityId = 'xinhai';
     });
+  }
+
+  function migrateSaveV2() {
     // 确保所有已解锁城市的区域cityId存在的区域状态正确
     Object.keys(G.cities).forEach(cid => {
       if (!CITIES[cid]) return;
@@ -2142,12 +2463,18 @@ window.SGame = (() => {
         autoGift: false, giftBudget: 50000,
         autoManualWork: true,
         autoRest: true,
+        autoNegotiate: true,
+        autoAssetBuy: true,
+        autoAssetPawn: true,
         cooldowns: {},
       };
     }
     // 迁移：旧存档 autoMode 缺少新增字段
     if (G.autoMode.autoManualWork === undefined) G.autoMode.autoManualWork = true;
     if (G.autoMode.autoRest === undefined) G.autoMode.autoRest = true;
+    if (G.autoMode.autoNegotiate === undefined) G.autoMode.autoNegotiate = true;
+    if (G.autoMode.autoAssetBuy === undefined) G.autoMode.autoAssetBuy = true;
+    if (G.autoMode.autoAssetPawn === undefined) G.autoMode.autoAssetPawn = true;
     // 迁移：旧存档没有新系统字段
     if (!G.marketShare) {
       G.marketShare = {};
@@ -2175,14 +2502,14 @@ window.SGame = (() => {
         }
         // 迁移：旧员工缺少多属性系统 attrs
         if (!emp.attrs) {
-          var roleDef = EMP_ROLES.find(function(r) { return r.id === emp.role; });
-          var weights = (roleDef && EMP_ROLE_ATTR_WEIGHTS[roleDef.id]) || { ability: 0.5, efficiency: 0.5, creativity: 0.5, experience: 0.5, charisma: 0.5 };
+          let roleDef = EMP_ROLES.find(function(r) { return r.id === emp.role; });
+          let weights = (roleDef && EMP_ROLE_ATTR_WEIGHTS[roleDef.id]) || { ability: 0.5, efficiency: 0.5, creativity: 0.5, experience: 0.5, charisma: 0.5 };
           emp.attrs = {};
           Object.keys(EMP_ATTRIBUTES).forEach(function(key) {
-            var def = EMP_ATTRIBUTES[key];
-            var w = weights[key] || 1;
-            var base = Math.floor(Math.random() * 20) + 20; // 20-39 基础值
-            var bonus = Math.floor(Math.random() * w * 10);  // 角色权重加成
+            let def = EMP_ATTRIBUTES[key];
+            let w = weights[key] || 1;
+            let base = Math.floor(Math.random() * 20) + 20;
+            let bonus = Math.floor(Math.random() * w * 10);
             emp.attrs[key] = Math.min(def.max, Math.max(def.min, base + bonus));
           });
         }
@@ -2235,8 +2562,17 @@ window.SGame = (() => {
     if (typeof G.money !== 'number' || isNaN(G.money)) G.money = 0;
   }
 
+  function migrateSave() {
+    if (!G) return;
+    let ver = G.SAVE_VERSION || 0;
+    if (ver < 1) migrateSaveV1();
+    if (ver < 2) migrateSaveV2();
+    G.SAVE_VERSION = 2;
+  }
+
+
   function reset() {
-    try { for (let i = 1; i <= 3; i++) Storage.remove('shfc_save_slot_' + i); } catch(e) {}
+    try { for (let i = 1; i <= 3; i++) Storage.remove('shfc_save_slot_' + i); } catch(e) { console.warn('[SGame] reset: failed to remove save slots:', e.message || e); }
     G = null;
     if (gameTimer) clearInterval(gameTimer);
     if (eventTimer) clearInterval(eventTimer);
@@ -2317,10 +2653,20 @@ window.SGame = (() => {
     eventTimer = setInterval(() => {
       if (isPaused) return;
       if (pendingDecisions.length >= CONFIG.MAX_PENDING_DECISIONS) return;
-      if (Math.random() < CONFIG.EVENT_BASE_PROB) {
+      if (Math.random() < getEventProb()) {
         tryFireEvent();
       }
     }, CONFIG.EVENT_CHECK_INTERVAL * 1000);
+  }
+
+  function getEventProb() {
+    if (!G) return CONFIG.EVENT_BASE_PROB;
+    if (G.difficulty === 'sandbox') return 0; // 沙盒无随机事件
+    if (typeof DIFFICULTY_PRESETS !== 'undefined' && DIFFICULTY_PRESETS) {
+      const preset = DIFFICULTY_PRESETS[G.difficulty] || DIFFICULTY_PRESETS.standard;
+      return CONFIG.EVENT_BASE_PROB * (preset.eventFreqMult || 1.0);
+    }
+    return CONFIG.EVENT_BASE_PROB;
   }
 
   function tryFireEvent() {
@@ -2328,6 +2674,10 @@ window.SGame = (() => {
     const actEvents = getActEvents();
     const available = actEvents.filter(e => {
       if (e.cooldown && G.eventCooldowns[e.id] && G.tickCount - G.eventCooldowns[e.id] < e.cooldown) return false;
+      // 条件标签过滤：检查地区/行业/资产门槛（委托给 EventSystem）
+      if (e.conditionTags && typeof EventSystem !== 'undefined' && EventSystem._checkConditionTags) {
+        if (!EventSystem._checkConditionTags(e)) return false;
+      }
       return true;
     });
     if (available.length === 0) return;
@@ -2353,13 +2703,13 @@ window.SGame = (() => {
         if (isNegativeNpc) w *= 1.3;
       }
       // 王律师被动：法律保护 → 负面事件权重 -30%
-      var npcBonEvt = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+      let npcBonEvt = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
       if (npcBonEvt._lawProtect) {
         const isCrisis = e.type === 'crisis' || (Array.isArray(e.effects.stress) && e.effects.stress[1] > 0);
         if (isCrisis) w *= 0.7;
       }
       // 区域负面效果：负面事件/政策事件概率增加
-      var rMods = typeof getRegionModifiers === 'function' ? getRegionModifiers() : null;
+      let rMods = typeof getRegionModifiers === 'function' ? getRegionModifiers() : null;
       if (rMods) {
         if (rMods.negativeEventProb > 1.0 && (e.type === 'crisis' || (Array.isArray(e.effects.money) && e.effects.money[1] < 1.0))) {
           w *= rMods.negativeEventProb;
@@ -2441,7 +2791,10 @@ window.SGame = (() => {
     if (n >= 1e12) return sign + (n / 1e12).toFixed(2) + '万亿';
     if (n >= 1e8) return sign + (n / 1e8).toFixed(1) + '亿';
     if (n >= 1e4) return sign + (n / 1e4).toFixed(1) + '万';
-    return sign + n.toFixed(0);
+    // Add thousand separators
+    const parts = n.toFixed(0).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return sign + parts.join('.');
   }
 
   function getEmpMax() {
@@ -2518,6 +2871,9 @@ window.SGame = (() => {
         autoGift: false, giftBudget: 50000,
         autoManualWork: true,
         autoRest: true,
+        autoNegotiate: true,
+        autoAssetBuy: true,
+        autoAssetPawn: true,
         cooldowns: {},
       };
     }
@@ -2529,7 +2885,7 @@ window.SGame = (() => {
       // 开启托管时立即处理已有的 pending decisions
       if (G.autoMode.eventDecide && pendingDecisions.length > 0) {
         addLog('[托管] 发现 ' + pendingDecisions.length + ' 个待处理决策，开始自动处理...');
-        var toProcess = pendingDecisions.slice();
+        let toProcess = pendingDecisions.slice();
         toProcess.forEach(function(evt) {
           try { autoDecide(evt); } catch(e) { console.error('[托管] 处理待决策事件异常:', e); }
         });
@@ -2639,49 +2995,35 @@ window.SGame = (() => {
 
     // 从 pending 中移除
     pendingDecisions = pendingDecisions.filter(d => d !== event);
+    // 记录决策结果（供动态难度快照使用）
+    _recordDecisionOutcome(true);
 
     // 优先用 EventSystem.choose（它会处理效果应用、卡片移除、日志记录）
     if (typeof EventSystem !== 'undefined') {
       // EventSystem.choose 内部用 EVENTS.find 查找，对节日/LLM 事件可能找不到
       // 先尝试调用，如果 choose 无法处理则手动应用
-      var foundInEvents = typeof EVENTS !== 'undefined' && EVENTS.find(function(e) { return e.id === event.id; });
+      let foundInEvents = typeof EVENTS !== 'undefined' && EVENTS.find(function(e) { return e.id === event.id; });
       if (foundInEvents) {
         EventSystem.choose(event.id, best.idx);
       } else {
         // 非 EVENTS 事件（节日/LLM 生成），手动应用效果
-        var bestChoice = event.choices[best.idx];
+        let bestChoice = event.choices[best.idx];
         if (bestChoice && bestChoice.effect && typeof EventSystem !== 'undefined' && EventSystem.applyEffects) {
           EventSystem.applyEffects(bestChoice.effect);
         } else if (bestChoice && bestChoice.effect) {
-          // fallback：直接应用效果
-          var eff = bestChoice.effect;
-          if (eff.money) {
-            if (eff.money > -1 && eff.money < 1 && eff.money !== 0) G.money *= eff.money;
-            else G.money += eff.money;
-          }
-          if (eff.moneyAbs) G.money += eff.moneyAbs;
-          if (eff.reputation) G.reputation = Math.max(0, Math.min(100, G.reputation + eff.reputation));
-          if (eff.stress) G.stress = Math.max(0, Math.min(100, G.stress + eff.stress));
-          if (eff.connections) {
-            var scaled = Math.floor(eff.connections * (CONFIG.CONNECTIONS_GAIN_SCALE || 0.6));
-            G.connections = Math.min(CONFIG.MAX_CONNECTIONS || 100, Math.max(0, G.connections + scaled));
-          }
-          if (eff.reputationMul) G.reputation = Math.max(0, Math.min(100, G.reputation * eff.reputationMul));
-          if (eff.stressMul) G.stress = Math.max(0, Math.min(100, G.stress * eff.stressMul));
-          if (eff.npcFavor && typeof NPCSystem !== 'undefined') {
-            Object.entries(eff.npcFavor).forEach(function(entry) {
-              NPCSystem.changeFavor(entry[0], entry[1]);
-            });
+          // fallback：委托 EventSystem.applyEffects 统一处理
+          if (typeof EventSystem !== 'undefined' && EventSystem.applyEffects) {
+            EventSystem.applyEffects(bestChoice.effect);
           }
         }
         // 记录决策
         G.decisionHistory.push({ eventId: event.id, choice: best.text, tick: G.tickCount });
         if (G.decisionHistory.length > 500) G.decisionHistory = G.decisionHistory.slice(-200);
         // 移除事件卡片
-        var card = document.getElementById('event-' + event.id);
+        let card = document.getElementById('event-' + event.id);
         if (card) card.remove();
         // 重新渲染UI
-        if (typeof UI !== 'undefined' && UI.renderAll) { try { UI.renderAll(); } catch(e) {} }
+        if (typeof UI !== 'undefined' && UI.renderAll) { try { UI.renderAll(); } catch(e) { console.warn('[SGame] renderAll failed after event handled:', e.message || e); } }
       }
     }
   }
@@ -2734,31 +3076,14 @@ window.SGame = (() => {
     return true;
   }
 
-  // ========== 科技研发系统 ==========
-  // (已提取至 core-research.js)
-  function generateRPT() {}
-  // (已提取至 core-research.js)
-  function startResearch(techId) { return window.SGame.startResearch(techId); }
-  // (已提取至 core-research.js)
-  function checkResearchProgress() {}
-  // (已提取至 core-research.js)
-  function getTechBonus() { return window.SGame.getTechBonus(); }
-
-  // ========== 股票投资系统（已提取至 core-stock.js） ==========
-  function updateStockPrices() {}
-  function buyStock(stockId, shares) { return window.SGame.buyStock(stockId, shares); }
-  function sellStock(stockId, shares) { return window.SGame.sellStock(stockId, shares); }
-  function getStockPortfolioValue() { return window.SGame.getStockPortfolioValue(); }
-  function getStockCostBasis() { return window.SGame.getStockCostBasis(); }
-
   // ========== 银行贷款系统 ==========
   function applyLoan(amount, duration) {
     if (!G) return { ok: false, msg: '游戏未开始' };
     if (G.loans.length >= 3) return { ok: false, msg: '最多同时3笔贷款' };
-    const totalAssets = G.money + getStockPortfolioValue();
+    const totalAssets = G.money + window.SGame.getStockPortfolioValue();
     // 金行长被动：贷款额度上限 +20%
-    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
-    var maxLoan = totalAssets * 0.5 * (1 + (npcBon._loanCapBonus || 0));
+    let npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let maxLoan = totalAssets * 0.5 * (1 + (npcBon._loanCapBonus || 0));
     if (amount > maxLoan) return { ok: false, msg: `贷款额度上限 ${formatMoney(maxLoan)}（总资产50%${npcBon._loanCapBonus ? '(+金行长加成)' : ''}）` };
     if (amount < 10000) return { ok: false, msg: '最低贷款金额 10,000' };
     // 利率：声誉越高利率越低 / 金行长被动：额外 -1.5%
@@ -2884,7 +3209,7 @@ window.SGame = (() => {
   function markTutorialDone() {
     try {
       Storage.set('shfc_tutorial_done', '1');
-    } catch(e) {}
+    } catch(e) { console.warn('[SGame] markTutorialDone: Storage.set failed:', e.message || e); }
   }
 
 
@@ -2904,8 +3229,12 @@ window.SGame = (() => {
     if (!G || !G.autoMode || !G.autoMode.enabled) return;
     const am = G.autoMode;
     // 防御：确保新字段存在
+    if (am.autoHire === undefined) am.autoHire = true;
     if (am.autoManualWork === undefined) am.autoManualWork = true;
     if (am.autoRest === undefined) am.autoRest = true;
+    if (am.autoNegotiate === undefined) am.autoNegotiate = true;
+    if (am.autoAssetBuy === undefined) am.autoAssetBuy = true;
+    if (am.autoAssetPawn === undefined) am.autoAssetPawn = true;
     am.cooldowns = am.cooldowns || {};
     const now = G.tickCount;
     const cd = (key, interval) => (am.cooldowns[key] && (now - am.cooldowns[key]) < interval);
@@ -2920,7 +3249,7 @@ window.SGame = (() => {
     const stageCDMult = stage === 'early' ? 1.5 : stage === 'late' ? 0.7 : 1.0;
 
     // === 日志批量合并 ===
-    var batchLogs = [];
+    let batchLogs = [];
 
     function bLog(msg) { batchLogs.push(msg); }
     function flushBatch() {
@@ -2939,7 +3268,7 @@ window.SGame = (() => {
     // 0. 自动处理已有的 pending decisions（每次 tick 最多处理1个，避免洪泛）
     if (am.eventDecide && pendingDecisions.length > 0 && !cd('eventDecide', 1)) {
       safeRun('自动决策', function(){
-        var evt = pendingDecisions[0];
+        let evt = pendingDecisions[0];
         if (evt) { autoDecide(evt); setCd('eventDecide'); }
       });
     }
@@ -2964,8 +3293,8 @@ window.SGame = (() => {
     if (am.autoGift && !cd('gift', stage === 'late' ? 20 : 30)) { safeRun('送礼', function(){ autoGiftStrategy(bLog); setCd('gift'); }); }
     // 10. 贷款检查（每60 tick）
     if (am.autoLoan && !cd('loan', 60)) { safeRun('贷款', function(){ autoLoanStrategy(bLog); setCd('loan'); }); }
-    // 11. 自动拉项目（CD 到了就拉，受设置开关控制）
-    if (am.autoManualWork) { safeRun('拉项目', function(){ autoManualWorkStrategy(); }); }
+    // 11. 自动拉项目（与UI按钮同步：wall-clock CD归零即触发）
+    if (am.autoManualWork && getManualWorkCdRemain() === 0) { safeRun('拉项目', function(){ autoManualWorkStrategy(); }); }
     // 11.5 自动NPC商务约谈（每60 tick，好感>40的NPC）
     if (am.autoNegotiate !== false && !cd('negotiate', 60)) { safeRun('商务约谈', function(){ autoNegotiateStrategy(bLog); setCd('negotiate'); }); }
     // 12. 资产自动投资（每30 tick，资金充裕时购买资产）
@@ -2981,24 +3310,24 @@ window.SGame = (() => {
   // 托管：自动购买资产（资金充裕时）- 改用ID
   function autoAssetBuyStrategy(bLog) {
     if (!G || !G.assetMarketListings || G.assetMarketListings.length === 0) return;
-    var slotCap = (typeof CONFIG !== 'undefined' && CONFIG.ASSET_MAX_SLOTS) || 20;
+    let slotCap = (typeof CONFIG !== 'undefined' && CONFIG.ASSET_MAX_SLOTS) || 20;
     if (G.assets.length >= slotCap) return;
     // 至少保留30%流动资金
-    var reserveRatio = 0.3;
-    var totalIncome = typeof calcTotalIncome === 'function' ? calcTotalIncome() : 0;
-    var reserve = totalIncome * 10;
-    var available = G.money - reserve;
+    let reserveRatio = 0.3;
+    let totalIncome = typeof calcTotalIncome === 'function' ? calcTotalIncome() : 0;
+    let reserve = totalIncome * 10;
+    let available = G.money - reserve;
     if (available <= 0) return;
-    var bestIdx = -1;
-    var bestScore = -1;
-    for (var i = 0; i < G.assetMarketListings.length; i++) {
-      var l = G.assetMarketListings[i];
+    let bestIdx = -1;
+    let bestScore = -1;
+    for (let i = 0; i < G.assetMarketListings.length; i++) {
+      let l = G.assetMarketListings[i];
       if (l.price > available * 0.5) continue;
-      var score = (l.trend || 0.003) * 100 - (l.volatility || 0.05) * 20 + (l.rarity === 'epic' ? 0.3 : l.rarity === 'rare' ? 0.2 : 0);
+      let score = (l.trend || 0.003) * 100 - (l.volatility || 0.05) * 20 + (l.rarity === 'epic' ? 0.3 : l.rarity === 'rare' ? 0.2 : 0);
       if (score > bestScore) { bestScore = score; bestIdx = i; }
     }
     if (bestIdx >= 0 && buyAsset(bestIdx)) {
-      var lastAsset = G.assets[G.assets.length - 1];
+      let lastAsset = G.assets[G.assets.length - 1];
       bLog('购入资产：' + (lastAsset ? lastAsset.name : '未知'));
     }
   }
@@ -3006,18 +3335,18 @@ window.SGame = (() => {
   // 托管：紧急典当（资金窘迫时）- 改用ID
   function autoAssetPawnStrategy(bLog) {
     if (!G || G.assets.length === 0) return;
-    var totalExpense = typeof calcTotalExpense === 'function' ? calcTotalExpense() : 0;
+    let totalExpense = typeof calcTotalExpense === 'function' ? calcTotalExpense() : 0;
     if (G.money > totalExpense * 2) return;
-    var worstIdx = -1;
-    var worstVal = Infinity;
-    for (var i = 0; i < G.assets.length; i++) {
-      var inAuction = G.assetAuctionList && G.assetAuctionList.some(function(a) { return a.assetId === G.assets[i].id; });
+    let worstIdx = -1;
+    let worstVal = Infinity;
+    for (let i = 0; i < G.assets.length; i++) {
+      let inAuction = G.assetAuctionList && G.assetAuctionList.some(function(a) { return a.assetId === G.assets[i].id; });
       if (inAuction) continue;
-      var cv = G.assets[i].currentPrice || G.assets[i].purchasePrice;
+      let cv = G.assets[i].currentPrice || G.assets[i].purchasePrice;
       if (cv < worstVal) { worstVal = cv; worstIdx = i; }
     }
     if (worstIdx >= 0) {
-      var ast = G.assets[worstIdx];
+      let ast = G.assets[worstIdx];
       if (pawnAsset(ast.id)) {
         bLog('典当救急：' + ast.name);
       }
@@ -3134,7 +3463,7 @@ window.SGame = (() => {
       if (G.money >= c.cost * 2) {
         if (c.cost > 0) G.money -= c.cost;
         // 在对应城市中开业
-        var targetCity = G.cities && G.cities[c.cityId];
+        let targetCity = G.cities && G.cities[c.cityId];
         if (targetCity && targetCity.businesses) {
           targetCity.businesses[c.bizId] = targetCity.businesses[c.bizId] || { level: 0, region: null, unlocked: true };
           targetCity.businesses[c.bizId].level = 1;
@@ -3206,7 +3535,7 @@ window.SGame = (() => {
       if (G.money >= cost / threshold) {
         G.money -= cost;
         // 升级对应城市的业务
-        var targetCity = G.cities && G.cities[c.cityId];
+        let targetCity = G.cities && G.cities[c.cityId];
         if (targetCity && targetCity.businesses && targetCity.businesses[c.bizId]) {
           targetCity.businesses[c.bizId].level++;
         }
@@ -3225,10 +3554,7 @@ window.SGame = (() => {
     if (!G) return;
     const maxEmp = isHRManaged() ? getEmpMax() : Math.min(G.autoMode.maxEmployees || 8, getEmpMax());
     if (G.employees.length >= maxEmp) return;
-    const curTotalSalary = G.employees.reduce((s, e) => s + calcActualSalary(e.baseSalary || e.salary, G) * 10000, 0);
-    // 放宽招聘条件：只要收入 >= 工资的1.0倍即可招聘（而非1.5倍），避免招聘只开局触发
-    const totalIncome = calcTotalIncome();
-    if (totalIncome < curTotalSalary * 1.0 && G.money < curTotalSalary * 12) return;
+    // 招聘不检查金钱（与手动UI招聘一致）
     // HR 统管模式
     if (isHRManaged()) {
       const depts = calcDeptStats();
@@ -3263,19 +3589,17 @@ window.SGame = (() => {
         if (def.req.money && G.money < def.req.money) continue;
         if (def.req.techLv && (G.completedResearch && G.completedResearch.digital || 0) < def.req.techLv) continue;
       }
-      const estimatedSalary = calcActualSalary(def.baseSalary, G);
-      // 实习生实习期工资打折，降低招人门槛
-      var salaryForCheck = (def.id === 'intern') ? estimatedSalary * (CONFIG.INTERN_SALARY_RATIO || 0.5) : estimatedSalary;
-      if (G.money >= salaryForCheck * 10000 * 3) { chosenRole = def; break; }
+      chosenRole = def; break;
     }
+    // 如果按优先级没找到合适角色，随机选一个满足前置条件的
     if (!chosenRole) {
       const candidates = EMP_ROLES.filter(r => {
         if (r.req) {
           if (r.req.empCount && G.employees.length < r.req.empCount) return false;
           if (r.req.money && G.money < r.req.money) return false;
+          if (r.req.techLv && (G.completedResearch && G.completedResearch.digital || 0) < r.req.techLv) return false;
         }
-        const estSalary = calcActualSalary(r.baseSalary, G);
-        return G.money >= estSalary * 10000 * 3;
+        return true;
       });
       if (candidates.length === 0) return;
       chosenRole = candidates[Math.floor(Math.random() * candidates.length)];
@@ -3318,7 +3642,7 @@ window.SGame = (() => {
     if (!G || G.activeResearch) return;
     // === 智能路线选择：根据游戏阶段和需求动态排序 ===
     const stage = getGameStage();
-    var routes = ['digital', 'ai', 'blockchain'];
+    let routes = ['digital', 'ai', 'blockchain'];
     // 现金流紧张 → 优先数字化（降薪）
     if (stage === 'early' || G.money < (G.moneyPeak || G.money) * 0.3) {
       routes = ['digital', 'ai', 'blockchain'];
@@ -3333,8 +3657,8 @@ window.SGame = (() => {
     if (G.stats && G.stats.tech >= 6) {
       routes = ['blockchain'].concat(routes.filter(function(r) { return r !== 'blockchain'; }));
     }
-    for (var i = 0; i < routes.length; i++) {
-      var rid = routes[i];
+    for (let i = 0; i < routes.length; i++) {
+      let rid = routes[i];
       const tree = TECH_TREE[rid];
       if (!tree || !tree.levels) continue;
       const curLevel = G.completedResearch[rid] || 0;
@@ -3420,10 +3744,10 @@ window.SGame = (() => {
     if (!G || !G.npcFavor) return;
     if (G.money < (G.autoMode.giftBudget || 50000) * 1.5) return;
     // 按好感度排序，只考虑今天还没送过的 NPC
-    var candidates = [];
+    let candidates = [];
     Object.entries(G.npcFavor).forEach(function(entry) {
-      var npcId = entry[0], favor = entry[1];
-      var npc = NPCS[npcId];
+      let npcId = entry[0], favor = entry[1];
+      let npc = NPCS[npcId];
       if (!npc || (npc.actUnlock || 0) > G.act) return;
       // 检查每日冷却（通过 NPC 系统）
       if (typeof NPCSystem !== 'undefined' && !NPCSystem.canGiftToday(npcId)) return;
@@ -3431,13 +3755,13 @@ window.SGame = (() => {
     });
     if (candidates.length === 0) return;
     candidates.sort(function(a, b) { return a.favor - b.favor; });
-    var target = candidates[0];
+    let target = candidates[0];
     if (target.favor >= 80) return; // 好感够高了，不送
 
     // 根据 NPC 偏好选择礼物类型
-    var prefs = target.npc.giftPreferences || {};
-    var giftTypes = ['wine', 'book', 'art', 'tech', 'luxury'];
-    var chosenGift = null;
+    let prefs = target.npc.giftPreferences || {};
+    let giftTypes = ['wine', 'book', 'art', 'tech', 'luxury'];
+    let chosenGift = null;
     // 优先选最爱的，其次喜欢的
     if (prefs.love && prefs.love.length > 0) chosenGift = prefs.love[0];
     else if (prefs.like && prefs.like.length > 0) chosenGift = prefs.like[0];
@@ -3445,7 +3769,7 @@ window.SGame = (() => {
 
     // 调用 NPC 系统的送礼方法（含每日冷却、偏好计算、联动传播）
     if (typeof NPCSystem !== 'undefined' && typeof NPCSystem.giveGift === 'function') {
-      var result = NPCSystem.giveGift(target.npcId, chosenGift);
+      let result = NPCSystem.giveGift(target.npcId, chosenGift);
       if (result.ok) {
         bLog('送礼 ' + target.npc.name);
         if (G.autoStats) G.autoStats.giftsGiven++;
@@ -3460,7 +3784,7 @@ window.SGame = (() => {
     const stage = getGameStage();
     const loanThreshold = stage === 'early' ? 1.5 : stage === 'mid' ? 2.5 : 2.0;
     if (G.money > totalSalary * loanThreshold) return;
-    const totalAssets = G.money + (typeof getStockPortfolioValue === 'function' ? getStockPortfolioValue() : 0);
+    const totalAssets = G.money + (typeof window.SGame.getStockPortfolioValue === 'function' ? window.SGame.getStockPortfolioValue() : 0);
     // 早期少借，后期可以借更多
     const loanRatio = stage === 'early' ? 0.08 : stage === 'mid' ? 0.12 : 0.18;
     const loanAmt = Math.floor(totalAssets * loanRatio);
@@ -3473,7 +3797,7 @@ window.SGame = (() => {
   // 自动休息策略：疲劳>60的员工自动休息，每10tick检查
   function autoRestStrategy(bLog) {
     if (!G) return;
-    var rested = [];
+    let rested = [];
     G.employees.forEach(function(emp) {
       if ((emp.fatigue || 0) > 60 && G.money >= 5000) {
         G.money -= 5000;
@@ -3487,21 +3811,21 @@ window.SGame = (() => {
     }
   }
 
-  // 自动拉项目策略：CD到了就拉，同时刷新UI按钮状态
+  // 自动拉项目策略：与UI按钮逻辑完全同步，CD归零即触发（wall-clock判断）
   function autoManualWorkStrategy() {
     if (!G) return;
     if (!G.autoMode || !G.autoMode.autoManualWork) return;
-    const cdRemain = getManualWorkCdRemain();
-    if (cdRemain > 0) return;
+    // 直接调用 manualWork()，它内部会检查 manualWorkCdUntil 并设置新 CD
+    // 此时 getManualWorkCdRemain() === 0 已由上层保证，等同于按钮可点击
     const result = manualWork();
     if (result && result.success && result.earn > 0) {
       if (G.autoStats) { G.autoStats.manualWorks++; G.autoStats.totalIncome += result.earn; }
       addLog('[托管] 🤝 自动拉项目 +' + formatMoney(result.earn));
       if (typeof UI !== 'undefined' && UI.renderManualButton) {
-        try { UI.renderManualButton(); } catch(e) {}
+        try { UI.renderManualButton(); } catch(e) { console.warn('[SGame] autoMode: renderManualButton failed:', e.message || e); }
       }
       if (typeof UI !== 'undefined' && UI.startCdTimer) {
-        try { UI.startCdTimer(); } catch(e) {}
+        try { UI.startCdTimer(); } catch(e) { console.warn('[SGame] autoMode: startCdTimer failed:', e.message || e); }
       }
     }
   }
@@ -3510,27 +3834,19 @@ window.SGame = (() => {
   function autoNegotiateStrategy(bLog) {
     if (!G || !G.npcFavor) return;
     // 筛选好感度>40的NPC，随机选一个进行商务约谈
-    var eligibleNpcIds = Object.entries(G.npcFavor)
+    let eligibleNpcIds = Object.entries(G.npcFavor)
       .filter(function(e) { return e[1] > 40; })
       .map(function(e) { return e[0]; });
     if (eligibleNpcIds.length === 0) return;
-    var npcId = eligibleNpcIds[Math.floor(Math.random() * eligibleNpcIds.length)];
+    let npcId = eligibleNpcIds[Math.floor(Math.random() * eligibleNpcIds.length)];
     if (typeof NPCSystem !== 'undefined' && typeof NPCSystem.negotiate === 'function') {
       NPCSystem.negotiate(npcId, 'business');
-      var npcName = (NPCS[npcId] && NPCS[npcId].name) || npcId;
+      let npcName = (NPCS[npcId] && NPCS[npcId].name) || npcId;
       bLog('💼 与' + npcName + '商务约谈');
     }
   }
 
 
-
-  // ===================================================
-  //  竞争对手AI系统
-  // ===================================================
-  // (已提取至 core-rival.js)
-  function updateRivals() {}
-  // (已提取至 core-rival.js)
-  function getRivalRank() { return window.SGame.getRivalRank(); }
 
   // ===================================================
   //  联动：新闻→股票
@@ -3663,7 +3979,7 @@ window.SGame = (() => {
     if (!G || !G.subsidiaries) return;
     let totalSubIncome = 0;
     // 联动：子公司收益比例随母公司规模提升
-    const playerTotalAssets = G.money + getStockPortfolioValue();
+    const playerTotalAssets = G.money + window.SGame.getStockPortfolioValue();
     const scaleBonus = Math.min(0.20, Math.floor(playerTotalAssets / 10000000) * 0.02); // 每1000万+2%
     const incomeRate = 0.60 + scaleBonus; // 基础60%，最高80%
 
@@ -3739,7 +4055,7 @@ window.SGame = (() => {
   // ===================================================
   function calcMaintenanceCost() {
     if (!G) return 0;
-    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     let total = 0;
     // 遍历所有已解锁城市
     Object.values(G.cities || {}).forEach(city => {
@@ -3855,7 +4171,7 @@ window.SGame = (() => {
       { id: 'ms_biz_10', name: '满级业务', desc: '任意业务达到10级', icon: '🔥', cond: () => BUSINESS_DEFS.some(bDef => getAllCitiesBizMaxLevel(bDef.id) >= 10) },
       { id: 'ms_all_biz_10', name: '全能满级', desc: '所有业务达到10级', icon: '👑', cond: () => BUSINESS_DEFS.every(bDef => getAllCitiesBizMaxLevel(bDef.id) >= 10) },
       { id: 'ms_tech_max', name: '科技全满', desc: '三条研发路线全满', icon: '🔬', cond: () => G.completedResearch && Object.values(G.completedResearch).every(v => v >= 5) },
-      { id: 'ms_rank_1', name: '榜首', desc: '竞争对手排名中位列第一', icon: '🥇', cond: () => getRivalRank().rank === 1 && getRivalRank().total >= 2 },
+      { id: 'ms_rank_1', name: '榜首', desc: '竞争对手排名中位列第一', icon: '🥇', cond: () => window.SGame.getRivalRank().rank === 1 && window.SGame.getRivalRank().total >= 2 },
       { id: 'ms_comeback', name: '东山再起', desc: '破产后资产重返千万', icon: '🔥', cond: () => G.comebackFromBankruptcy && G.money >= 10000000 },
     ];
     advMilestones.forEach(ms => {
@@ -3892,11 +4208,11 @@ window.SGame = (() => {
     if (!emp) return { ok: false, msg: '员工不存在' };
     const curSkill = emp.skill || 1;
     // 吴教练被动：技能上限 +1
-    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
-    var maxSkill = (typeof CONFIG !== 'undefined' ? CONFIG.EMP_SKILL_MAX : 5) + (npcBon._skillCapBonus || 0);
+    let npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let maxSkill = (typeof CONFIG !== 'undefined' ? CONFIG.EMP_SKILL_MAX : 5) + (npcBon._skillCapBonus || 0);
     if (curSkill >= maxSkill) return { ok: false, msg: '技能已满级' };
     // 吴教练被动：培训成本 -20%
-    var cost = CONFIG.EMP_TRAINING_COST_BASE * curSkill * curSkill * (1 - (npcBon._trainCostDiscount || 0));
+    let cost = CONFIG.EMP_TRAINING_COST_BASE * curSkill * curSkill * (1 - (npcBon._trainCostDiscount || 0));
     cost = Math.round(cost);
     if (G.money < cost) return { ok: false, msg: `培训费不足（需要${formatMoney(cost)}）` };
     G.money -= cost;
@@ -3905,6 +4221,49 @@ window.SGame = (() => {
     addLog(`📚 ${emp.name} 培训完成，技能升至 ${emp.skill} 级`);
     save();
     return { ok: true, msg: `${emp.name} 技能升至 ${emp.skill} 级` };
+  }
+
+  // ========== 员工专精训练 ==========
+  function trainEmployeeSpec(empId, specKey) {
+    if (!G) return { ok: false, msg: '游戏未开始' };
+    const emp = G.employees.find(e => e.id === empId);
+    if (!emp) return { ok: false, msg: '员工不存在' };
+    // 获取角色专精定义
+    const roleDef = EMP_ROLES.find(r => r.id === emp.role);
+    if (!roleDef || !roleDef.specialization) return { ok: false, msg: '该角色没有专精方向' };
+    const specDef = roleDef.specialization.find(s => s.key === specKey);
+    if (!specDef) return { ok: false, msg: '专精方向不存在' };
+    // 初始化员工专精记录
+    if (!emp.specializations) emp.specializations = {};
+    const curLv = emp.specializations[specKey] || 0;
+    if (curLv >= specDef.maxLv) return { ok: false, msg: `「${specDef.name}」已达最高等级` };
+    // 费用：costBase * (当前等级+1)，吴教练被动减费
+    let npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let cost = specDef.costBase * (curLv + 1);
+    cost = Math.round(cost * (1 - (npcBon._trainCostDiscount || 0)));
+    if (G.money < cost) return { ok: false, msg: `训练费不足（需要${formatMoney(cost)}）` };
+    G.money -= cost;
+    emp.specializations[specKey] = curLv + 1;
+    emp.loyalty = Math.min(100, (emp.loyalty || 0) + 3);
+    addLog(`🎯 ${emp.name} 专精「${specDef.name}」提升至 Lv.${curLv + 1}`);
+    save();
+    return { ok: true, msg: `${emp.name} 「${specDef.name}」升至 Lv.${curLv + 1}` };
+  }
+
+  // ========== 员工专精收入倍率汇总 ==========
+  function calcSpecIncomeBonus() {
+    if (!G || !G.employees) return 1.0;
+    let mult = 1.0;
+    G.employees.forEach(emp => {
+      if (!emp.specializations) return;
+      const roleDef = EMP_ROLES.find(r => r.id === emp.role);
+      if (!roleDef || !roleDef.specialization) return;
+      Object.entries(emp.specializations).forEach(([key, lv]) => {
+        const specDef = roleDef.specialization.find(s => s.key === key);
+        if (specDef) mult += specDef.incomeMultPerLv * lv;
+      });
+    });
+    return mult;
   }
 
   // ===================================================
@@ -4014,7 +4373,7 @@ window.SGame = (() => {
     const firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭'];
     const lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','飞','洋','芳','军','平'];
     for (let i = 0; i < canHire; i++) {
-      var newEmp = generateEmployeeWithAttributes(roleDef, G);
+      let newEmp = generateEmployeeWithAttributes(roleDef, G);
       G.employees.push(newEmp);
       hired++;
     }
@@ -4054,26 +4413,26 @@ window.SGame = (() => {
 
   // 生成带完整属性的员工
   function generateEmployeeWithAttributes(roleDef, gamestate) {
-    var firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭','何','林','罗','高','梁','宋','唐','许','韩','邓','冯','曹','彭','曾','萧','田','董','袁','潘','于','蒋','蔡','余','杜','叶','程','苏','魏','吕','丁','任','沈','姚','卢','姜','崔','钟','谭','陆','汪','范','廖','石','金','贾','夏','龙','万','方','雷','邱','邵','孔','白','段','薛','侯','江','尹','熊','伍'];
-    var lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','洋','雪','云','飞','翔','军','平','芳','英','丽','鑫','鹏','辉','宇','涛','博','达','超','波','清','峰','刚','龙','梅','兰','竹','菊','悦','欣','宁','安','然','阳','光','星','月','晨','辰','思','睿','逸','文','武','志','勇','义','信','礼','智','诚','恒','远','宏','建','国','海','天','山','川','林','森','松','柏','荣','盛','昌','福','寿','禄','禧','嘉','瑞','祥','康','健','宁'];
-    var name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
+    let firstNames = ['王','李','张','刘','陈','杨','赵','周','吴','徐','孙','马','朱','胡','郭','何','林','罗','高','梁','宋','唐','许','韩','邓','冯','曹','彭','曾','萧','田','董','袁','潘','于','蒋','蔡','余','杜','叶','程','苏','魏','吕','丁','任','沈','姚','卢','姜','崔','钟','谭','陆','汪','范','廖','石','金','贾','夏','龙','万','方','雷','邱','邵','孔','白','段','薛','侯','江','尹','熊','伍'];
+    let lastNames = ['明','华','强','伟','磊','静','敏','婷','杰','浩','洋','雪','云','飞','翔','军','平','芳','英','丽','鑫','鹏','辉','宇','涛','博','达','超','波','清','峰','刚','龙','梅','兰','竹','菊','悦','欣','宁','安','然','阳','光','星','月','晨','辰','思','睿','逸','文','武','志','勇','义','信','礼','智','诚','恒','远','宏','建','国','海','天','山','川','林','森','松','柏','荣','盛','昌','福','寿','禄','禧','嘉','瑞','祥','康','健','宁'];
+    let name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
     // 有概率生成三字名
     if (Math.random() < 0.3) {
       name += lastNames[Math.floor(Math.random() * lastNames.length)];
     }
-    var actualSalary = calcActualSalary(roleDef.baseSalary, gamestate);
-    var loyalty = +(30 + Math.random() * 40).toFixed(0);
+    let actualSalary = calcActualSalary(roleDef.baseSalary, gamestate);
+    let loyalty = +(30 + Math.random() * 40).toFixed(0);
 
     // 根据角色倾向生成属性
-    var weights = EMP_ROLE_ATTR_WEIGHTS[roleDef.id] || { ability: 0.5, efficiency: 0.5, creativity: 0.5, experience: 0.5, charisma: 0.5 };
-    var attrs = {};
+    let weights = EMP_ROLE_ATTR_WEIGHTS[roleDef.id] || { ability: 0.5, efficiency: 0.5, creativity: 0.5, experience: 0.5, charisma: 0.5 };
+    let attrs = {};
     Object.keys(EMP_ATTRIBUTES).forEach(function(attrKey) {
-      var w = weights[attrKey] || 0.5;
+      let w = weights[attrKey] || 0.5;
       // 基础值 = 加权随机，权重越高越可能出高值
-      var base = Math.floor(10 + w * 50 + Math.random() * 30 + Math.random() * 10);
+      let base = Math.floor(10 + w * 50 + Math.random() * 30 + Math.random() * 10);
       // 资产规模加成：公司越大，能招到的人才平均素质更高
       if (gamestate && gamestate.money > 10000000) {
-        var scaleBonus = Math.min(15, Math.log10(gamestate.money / 10000000) * 3);
+        let scaleBonus = Math.min(15, Math.log10(gamestate.money / 10000000) * 3);
         base += Math.floor(Math.random() * scaleBonus);
       }
       base = Math.max(EMP_ATTRIBUTES[attrKey].min, Math.min(EMP_ATTRIBUTES[attrKey].max, base));
@@ -4081,10 +4440,10 @@ window.SGame = (() => {
     });
 
     // 技能初始化受能力影响
-    var skill = attrs.ability > 70 ? 2 : 1;
+    let skill = attrs.ability > 70 ? 2 : 1;
 
     gamestate.empIdCounter++;
-    var emp = {
+    let emp = {
       id: gamestate.empIdCounter,
       name: name,
       role: roleDef.id,
@@ -4106,13 +4465,13 @@ window.SGame = (() => {
     }
     // 延迟计算 internConvertTarget（需要 emp.attrs 已就绪）
     if (emp.isIntern && !emp.internConvertTarget) {
-      var convertCandidates = roleDef.internConvertTo || ['developer', 'sales', 'analyst'];
-      var bestRole = null;
-      var bestScore = -1;
+      let convertCandidates = roleDef.internConvertTo || ['developer', 'sales', 'analyst'];
+      let bestRole = null;
+      let bestScore = -1;
       convertCandidates.forEach(function(rid) {
-        var weights = EMP_ROLE_ATTR_WEIGHTS[rid];
+        let weights = EMP_ROLE_ATTR_WEIGHTS[rid];
         if (!weights) return;
-        var score = 0;
+        let score = 0;
         Object.keys(weights).forEach(function(attrKey) {
           score += (emp.attrs[attrKey] || 0) * weights[attrKey];
         });
@@ -4127,17 +4486,17 @@ window.SGame = (() => {
 
   // 获取实习生转正候选角色列表（根据游戏阶段加权选择）
   function getInternConvertTarget(emp) {
-    var roleDef = EMP_ROLES.find(function(r) { return r.id === 'intern'; });
+    let roleDef = EMP_ROLES.find(function(r) { return r.id === 'intern'; });
     if (!roleDef || !roleDef.internConvertTo) return null;
-    var candidates = roleDef.internConvertTo;
+    let candidates = roleDef.internConvertTo;
     // 根据属性倾向推荐最合适的角色
     if (emp.attrs) {
-      var bestRole = null;
-      var bestScore = -1;
+      let bestRole = null;
+      let bestScore = -1;
       candidates.forEach(function(rid) {
-        var weights = EMP_ROLE_ATTR_WEIGHTS[rid];
+        let weights = EMP_ROLE_ATTR_WEIGHTS[rid];
         if (!weights) return;
-        var score = 0;
+        let score = 0;
         Object.keys(weights).forEach(function(attrKey) {
           score += (emp.attrs[attrKey] || 0) * weights[attrKey];
         });
@@ -4152,9 +4511,9 @@ window.SGame = (() => {
   // 实习生转正
   function convertIntern(emp) {
     if (!emp || !emp.isIntern || emp.internConverted) return false;
-    var targetRoleId = emp.internConvertTarget || getInternConvertTarget(emp);
+    let targetRoleId = emp.internConvertTarget || getInternConvertTarget(emp);
     if (!targetRoleId) return false;
-    var targetRole = EMP_ROLES.find(function(r) { return r.id === targetRoleId; });
+    let targetRole = EMP_ROLES.find(function(r) { return r.id === targetRoleId; });
     if (!targetRole) return false;
 
     // 转正：更新角色、薪资、属性加成
@@ -4166,7 +4525,7 @@ window.SGame = (() => {
 
     // 转正属性提升
     if (emp.attrs) {
-      var bonus = CONFIG.INTERN_CONVERT_ATTR_BONUS || 10;
+      let bonus = CONFIG.INTERN_CONVERT_ATTR_BONUS || 10;
       Object.keys(emp.attrs).forEach(function(key) {
         emp.attrs[key] = Math.min(100, (emp.attrs[key] || 0) + Math.floor(Math.random() * bonus));
       });
@@ -4205,7 +4564,7 @@ window.SGame = (() => {
   // 计算员工属性对收入的总加成
   function calcEmpAttrIncomeBonus(emp) {
     if (!emp || !emp.attrs) return 0;
-    var bonus = 0;
+    let bonus = 0;
     // 能力 → 直接收入加成（每10点+0.67%）
     bonus += (emp.attrs.ability || 50) / 1500;
     // 效率 → 等效收入（每10点+0.33%，但疲劳时惩罚减少）
@@ -4244,7 +4603,7 @@ window.SGame = (() => {
     if (G.money < totalCost) return { ok: false, msg: `资金不足（需要${formatMoney(totalCost)}）`, hired: 0 };
     let hired = 0;
     for (let i = 0; i < canHire; i++) {
-      var newEmp = generateEmployeeWithAttributes(roleDef, G);
+      let newEmp = generateEmployeeWithAttributes(roleDef, G);
       G.employees.push(newEmp);
       hired++;
     }
@@ -4334,8 +4693,8 @@ window.SGame = (() => {
         if (typeof UI !== 'undefined' && UI.renderNewsFeed) UI.renderNewsFeed();
         addLog('[快讯] ' + news.substring(0, 60) + (news.length > 60 ? '...' : ''));
         // 分析新闻情感倾向并产生游戏影响
-        var isPositive = news.includes('利好') || news.includes('增长') || news.includes('突破') || news.includes('上升');
-        var isNegative = news.includes('下滑') || news.includes('危机') || news.includes('下跌') || news.includes('风险');
+        let isPositive = news.includes('利好') || news.includes('增长') || news.includes('突破') || news.includes('上升');
+        let isNegative = news.includes('下滑') || news.includes('危机') || news.includes('下跌') || news.includes('风险');
         if (isPositive && !isNegative) {
           // 利好：短暂收入加成 + 市场情绪微涨
           G._llmNewsBonus = (G._llmNewsBonus || 0) + 0.03;
@@ -4375,7 +4734,7 @@ window.SGame = (() => {
     LLM.analyzeMarketSentiment().then(function(sentiment) {
       if (sentiment !== null && sentiment !== undefined) {
         // 平滑过渡：新值 = 旧值 * 0.6 + 新值 * 0.4
-        var oldSent = G.marketSentiment || 50;
+        let oldSent = G.marketSentiment || 50;
         G.marketSentiment = Math.round(oldSent * 0.6 + sentiment * 0.4);
         if (typeof UI !== 'undefined' && UI.renderMarketSentiment) UI.renderMarketSentiment();
       }
@@ -4388,15 +4747,15 @@ window.SGame = (() => {
     if (typeof LLM === 'undefined' || !LLM.available) return;
     G.lastDynamicEventTick = G.tickCount;
     // 30% 基础概率触发，市场情绪极端时提高概率
-    var prob = 0.3;
-    var sent = G.marketSentiment || 50;
+    let prob = CONFIG.LLM_DYNAMIC_EVENT_PROB;
+    let sent = G.marketSentiment || 50;
     if (sent <= 20 || sent >= 80) prob = 0.5;
     if (Math.random() > prob) return;
 
     LLM.generateDynamicEvent().then(function(llmEvent) {
       if (llmEvent && llmEvent.title) {
         // 将LLM事件包装为标准事件格式并触发
-        var evt = {
+        let evt = {
           id: llmEvent.id,
           title: llmEvent.title,
           type: llmEvent.type || 'normal',
@@ -4417,14 +4776,14 @@ window.SGame = (() => {
 
   // 解析LLM生成的效果描述为数值效果
   function parseLLMEffect(effectDesc) {
-    var eff = {};
+    let eff = {};
     if (!effectDesc) return eff;
-    var desc = effectDesc.toLowerCase();
+    let desc = effectDesc.toLowerCase();
     if ((desc.includes('资金') || desc.includes('金钱') || desc.includes('收入') || desc.includes('盈利')) && (desc.includes('增加') || desc.includes('获得'))) {
-      var m = desc.match(/(\d+)\s*万/);
+      let m = desc.match(/(\d+)\s*万/);
       eff.moneyAbs = m ? parseInt(m[1]) * 10000 : 50000;
     } else if ((desc.includes('资金') || desc.includes('金钱')) && (desc.includes('减少') || desc.includes('损失') || desc.includes('亏损'))) {
-      var m2 = desc.match(/(\d+)\s*万/);
+      let m2 = desc.match(/(\d+)\s*万/);
       eff.moneyAbs = m2 ? -parseInt(m2[1]) * 10000 : -30000;
     } else if (desc.includes('声誉') && (desc.includes('提升') || desc.includes('增加'))) {
       eff.reputation = desc.match(/(\d+)/) ? parseInt(desc.match(/(\d+)/)[1]) : 5;
@@ -4450,22 +4809,22 @@ window.SGame = (() => {
   // 刷新资产市场
   function refreshAssetMarket() {
     if (!G || !ASSET_TEMPLATES) return;
-    var templates = ASSET_TEMPLATES;
-    var pool = templates.slice(); // 拷贝
+    let templates = ASSET_TEMPLATES;
+    let pool = templates.slice(); // 拷贝
     // Fisher-Yates 洗牌
-    for (var i = pool.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    for (let i = pool.length - 1; i > 0; i--) {
+      let j = Math.floor(Math.random() * (i + 1));
+      let tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
     }
-    var count = Math.min((typeof CONFIG !== 'undefined' && CONFIG.ASSET_MARKET_SIZE) || 8, pool.length);
-    var listings = [];
-    var sent = G.marketSentiment || 50;
-    for (var k = 0; k < count; k++) {
-      var t = pool[k];
+    let count = Math.min((typeof CONFIG !== 'undefined' && CONFIG.ASSET_MARKET_SIZE) || 8, pool.length);
+    let listings = [];
+    let sent = G.marketSentiment || 50;
+    for (let k = 0; k < count; k++) {
+      let t = pool[k];
       // 价格计算：基准价 × 市场情绪因子 × 随机波动
-      var sentimentFactor = 0.7 + (sent / 100) * 0.6; // 0.7 ~ 1.3
-      var randomJitter = 0.85 + Math.random() * 0.3; // 0.85 ~ 1.15
-      var price = Math.round(t.basePrice * sentimentFactor * randomJitter * 10000);
+      let sentimentFactor = 0.7 + (sent / 100) * 0.6; // 0.7 ~ 1.3
+      let randomJitter = 0.85 + Math.random() * 0.3; // 0.85 ~ 1.15
+      let price = Math.round(t.basePrice * sentimentFactor * randomJitter * 10000);
       listings.push({
         templateId: t.id,
         name: t.name,
@@ -4484,18 +4843,18 @@ window.SGame = (() => {
   // 获取当前市场价格（基于模板波动和当前情绪）
   function getAssetCurrentPrice(asset) {
     if (!G) return asset.currentPrice || 0;
-    var tpl = ASSET_TEMPLATES.find(function(t) { return t.id === asset.templateId; });
+    let tpl = ASSET_TEMPLATES.find(function(t) { return t.id === asset.templateId; });
     if (!tpl) return asset.currentPrice || 0;
-    var sent = G.marketSentiment || 50;
-    var sentimentFactor = 0.7 + (sent / 100) * 0.6;
+    let sent = G.marketSentiment || 50;
+    let sentimentFactor = 0.7 + (sent / 100) * 0.6;
     // 基于购买价波动
-    var randomDrift = (Math.random() - 0.5) * 2 * (tpl.volatility || 0.05);
+    let randomDrift = (Math.random() - 0.5) * 2 * (tpl.volatility || 0.05);
     // 趋势漂移（每tick微小变化）
-    var ticksHeld = G.tickCount - asset.purchaseTick;
-    var trendDrift = (tpl.trend || 0.003) * ticksHeld * (0.5 + Math.random());
-    var newPrice = Math.round(asset.purchasePrice * (1 + randomDrift + trendDrift) * sentimentFactor / ((0.7 + (50/100) * 0.6)));
+    let ticksHeld = G.tickCount - asset.purchaseTick;
+    let trendDrift = (tpl.trend || 0.003) * ticksHeld * (0.5 + Math.random());
+    let newPrice = Math.round(asset.purchasePrice * (1 + randomDrift + trendDrift) * sentimentFactor / ((0.7 + (50/100) * 0.6)));
     // 钱老板被动：资产增值加速 5%（持有资产有额外升值）
-    var npcBonAsset = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let npcBonAsset = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
     if (npcBonAsset._assetAppreciation) newPrice = Math.round(newPrice * (1 + npcBonAsset._assetAppreciation * (ticksHeld / 50)));
     // 确保不低于购买的20%
     return Math.max(Math.round(asset.purchasePrice * 0.2), newPrice);
@@ -4504,19 +4863,19 @@ window.SGame = (() => {
   // 购买资产
   function buyAsset(listingIndex) {
     if (!G) return false;
-    var listings = G.assetMarketListings;
+    let listings = G.assetMarketListings;
     if (!listings || listingIndex < 0 || listingIndex >= listings.length) return false;
-    var slotCap = (typeof CONFIG !== 'undefined' && CONFIG.ASSET_MAX_SLOTS) || 20;
+    let slotCap = (typeof CONFIG !== 'undefined' && CONFIG.ASSET_MAX_SLOTS) || 20;
     if (G.assets.length >= slotCap) return false;
 
-    var listing = listings[listingIndex];
+    let listing = listings[listingIndex];
     // 钱老板被动：资产购买折扣 10%
-    var npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
-    var actualPrice = Math.round(listing.price * (1 - (npcBon._assetBuyDiscount || 0)));
+    let npcBon = typeof calcNpcBonus === 'function' ? calcNpcBonus() : {};
+    let actualPrice = Math.round(listing.price * (1 - (npcBon._assetBuyDiscount || 0)));
     if (G.money < actualPrice) return false;
 
     G.money -= actualPrice;
-    var asset = {
+    let asset = {
       id: 'ast_' + G.tickCount + '_' + G.assets.length,
       templateId: listing.templateId,
       name: listing.name,
@@ -4536,7 +4895,7 @@ window.SGame = (() => {
   // 按ID查找资产
   function findAssetById(assetId) {
     if (!G || !G.assets) return -1;
-    for (var i = 0; i < G.assets.length; i++) {
+    for (let i = 0; i < G.assets.length; i++) {
       if (G.assets[i].id === assetId) return i;
     }
     return -1;
@@ -4545,12 +4904,12 @@ window.SGame = (() => {
   // 挂牌拍卖（改用资产ID，避免索引漂移）
   function listAssetForAuction(assetId, askPrice) {
     if (!G) return false;
-    var assetIndex = findAssetById(assetId);
+    let assetIndex = findAssetById(assetId);
     if (assetIndex < 0) return false;
-    var sellTick = G.tickCount + (typeof CONFIG !== 'undefined' ? CONFIG.ASSET_AUCTION_MIN_TICKS : 3)
+    let sellTick = G.tickCount + (typeof CONFIG !== 'undefined' ? CONFIG.ASSET_AUCTION_MIN_TICKS : 3)
       + Math.floor(Math.random() * ((typeof CONFIG !== 'undefined' ? CONFIG.ASSET_AUCTION_MAX_TICKS : 8) - (typeof CONFIG !== 'undefined' ? CONFIG.ASSET_AUCTION_MIN_TICKS : 3) + 1));
     // 不能重复挂牌（按ID查重）
-    var alreadyListed = G.assetAuctionList.find(function(a) { return a.assetId === assetId; });
+    let alreadyListed = G.assetAuctionList.find(function(a) { return a.assetId === assetId; });
     if (alreadyListed) return false;
     G.assetAuctionList.push({
       assetId: assetId,
@@ -4565,15 +4924,15 @@ window.SGame = (() => {
   // 典当（紧急变现，改用资产ID）
   function pawnAsset(assetId) {
     if (!G) return false;
-    var assetIndex = findAssetById(assetId);
+    let assetIndex = findAssetById(assetId);
     if (assetIndex < 0) return false;
     // 取消该资产的拍卖
     G.assetAuctionList = G.assetAuctionList.filter(function(a) { return a.assetId !== assetId; });
-    var asset = G.assets[assetIndex];
-    var marketPrice = getAssetCurrentPrice(asset);
-    var pawnRatio = (typeof CONFIG !== 'undefined' ? CONFIG.ASSET_PAWN_RATIO_MIN : 0.38)
+    let asset = G.assets[assetIndex];
+    let marketPrice = getAssetCurrentPrice(asset);
+    let pawnRatio = (typeof CONFIG !== 'undefined' ? CONFIG.ASSET_PAWN_RATIO_MIN : 0.38)
       + Math.random() * ((typeof CONFIG !== 'undefined' ? CONFIG.ASSET_PAWN_RATIO_MAX : 0.55) - (typeof CONFIG !== 'undefined' ? CONFIG.ASSET_PAWN_RATIO_MIN : 0.38));
-    var cash = Math.round(marketPrice * pawnRatio);
+    let cash = Math.round(marketPrice * pawnRatio);
     G.money += cash;
     addLog('💸 典当：' + asset.name + '，回款' + formatMoney(cash) + '（市场价' + formatMoney(marketPrice) + '的' + Math.round(pawnRatio * 100) + '%）');
     G.assets.splice(assetIndex, 1);
@@ -4584,14 +4943,14 @@ window.SGame = (() => {
   // 取消拍卖（改用资产ID）
   function cancelAuction(assetId) {
     if (!G) return false;
-    var idx = -1;
-    for (var i = 0; i < G.assetAuctionList.length; i++) {
+    let idx = -1;
+    for (let i = 0; i < G.assetAuctionList.length; i++) {
       if (G.assetAuctionList[i].assetId === assetId) { idx = i; break; }
     }
     if (idx < 0) return false;
-    var auc = G.assetAuctionList[idx];
-    var assetIndex = findAssetById(assetId);
-    var assetName = (assetIndex >= 0) ? G.assets[assetIndex].name : '未知资产';
+    let auc = G.assetAuctionList[idx];
+    let assetIndex = findAssetById(assetId);
+    let assetName = (assetIndex >= 0) ? G.assets[assetIndex].name : '未知资产';
     G.assetAuctionList.splice(idx, 1);
     addLog('🔙 取消拍卖：' + assetName);
     return true;
@@ -4606,16 +4965,16 @@ window.SGame = (() => {
     }
     // #5 资产价格按需计算：移除全量预计算，改为消费者自行调用 getAssetCurrentPrice
     // 处理拍卖成交（按资产ID查找，不再依赖索引）
-    var toRemove = [];
-    for (var j = G.assetAuctionList.length - 1; j >= 0; j--) {
-      var auc = G.assetAuctionList[j];
+    let toRemove = [];
+    for (let j = G.assetAuctionList.length - 1; j >= 0; j--) {
+      let auc = G.assetAuctionList[j];
       if (G.tickCount >= auc.sellTick) {
-        var assetIndex = findAssetById(auc.assetId);
+        let assetIndex = findAssetById(auc.assetId);
         if (assetIndex < 0) { toRemove.push(j); continue; }
-        var asset = G.assets[assetIndex];
-        var marketPrice = getAssetCurrentPrice(asset); // 按需计算
-        var priceRatio = marketPrice > 0 ? auc.askPrice / marketPrice : 1;
-        var sellProb = 1.0 - Math.abs(priceRatio - 1) * 1.5;
+        let asset = G.assets[assetIndex];
+        let marketPrice = getAssetCurrentPrice(asset); // 按需计算
+        let priceRatio = marketPrice > 0 ? auc.askPrice / marketPrice : 1;
+        let sellProb = 1.0 - Math.abs(priceRatio - 1) * 1.5;
         sellProb = Math.max(0.15, Math.min(0.95, sellProb));
         if (Math.random() < sellProb) {
           // 成交
@@ -4631,7 +4990,7 @@ window.SGame = (() => {
       }
     }
     // 清理已成交/失效的拍卖记录（从大到小删除，不会影响其他索引）
-    for (var r = toRemove.length - 1; r >= 0; r--) {
+    for (let r = toRemove.length - 1; r >= 0; r--) {
       G.assetAuctionList.splice(toRemove[r], 1);
     }
   }
@@ -4639,8 +4998,8 @@ window.SGame = (() => {
   // 获取资产总估值（#5 按需计算）
   function getTotalAssetValue() {
     if (!G || !G.assets) return 0;
-    var total = 0;
-    for (var i = 0; i < G.assets.length; i++) {
+    let total = 0;
+    for (let i = 0; i < G.assets.length; i++) {
       total += G.assets[i].currentPrice || getAssetCurrentPrice(G.assets[i]) || G.assets[i].purchasePrice || 0;
     }
     return total;
@@ -4648,13 +5007,13 @@ window.SGame = (() => {
 
   // 获取资产类型名称
   function getAssetTypeName(type) {
-    var map = { estate:'房产', art:'艺术品', jewelry:'珠宝', antique:'古董', equity:'股权' };
+    let map = { estate:'房产', art:'艺术品', jewelry:'珠宝', antique:'古董', equity:'股权' };
     return map[type] || type;
   }
 
   // 获取稀有度标签
   function getRarityLabel(rarity) {
-    var map = { common:'普通', uncommon:'稀有', rare:'珍品', epic:'史诗' };
+    let map = { common:'普通', uncommon:'稀有', rare:'珍品', epic:'史诗' };
     return map[rarity] || rarity;
   }
 
@@ -4679,7 +5038,7 @@ window.SGame = (() => {
       return { ok: false, msg: '已并购过该NPC的业务。' };
     }
     if (G.maCooldown && G.maCooldown[npcId] && G.tickCount < G.maCooldown[npcId]) {
-      var remain = G.maCooldown[npcId] - G.tickCount;
+      let remain = G.maCooldown[npcId] - G.tickCount;
       return { ok: false, msg: '该业务尚在整合期，约' + remain + '个周期后可再次操作。' };
     }
     const cost = calculateMACost(npcId);
@@ -4717,7 +5076,7 @@ window.SGame = (() => {
 
   function getMARevenue() {
     if (!G.acquiredBusinesses || G.acquiredBusinesses.length === 0) return 0;
-    var total = 0;
+    let total = 0;
     G.acquiredBusinesses.forEach(function(b) { total += (b.revenuePerTick || 0); });
     return total;
   }
@@ -4727,6 +5086,9 @@ window.SGame = (() => {
   }
 
   // ========== 公开API ==========
+  // 占位：getRivalIntel 由 core-rival.js 挂载到 SGame 对象上
+  var getRivalIntel = null;
+
   return {
     initState, selectOrigin, startGame,
     get G() { return G; },
@@ -4750,7 +5112,6 @@ window.SGame = (() => {
     manualWork, getManualWorkCdRemain,
     getSkillMultiplier, unlockSkill,
     checkBankruptcy,
-    updateRivals, getRivalRank,
     generateNews, applyNewsEffects,
     manageSubsidiaries, toggleSubsidiary, getSubsidiarySummary,
     checkEndings, retireGame,
@@ -4758,8 +5119,6 @@ window.SGame = (() => {
     isFirstGame, markTutorialDone,
     toggleAutoMode, setAutoPreference, autoDecide,
     getGameStage,
-    startResearch, getTechBonus, generateRPT, checkResearchProgress,
-    buyStock, sellStock, updateStockPrices, getStockPortfolioValue, getStockCostBasis,
     applyLoan, processLoans, repayLoan,
     getSeason, checkHoliday,
     calcSynergyEffects, getSynergyStatusDisplay, calcSynergyMultiplier,
@@ -4768,6 +5127,14 @@ window.SGame = (() => {
     upgradeBusinessMax,
     batchHire,
     trainEmployee, restEmployee,
+    trainEmployeeSpec, calcSpecIncomeBonus,
+    getRivalIntel,
+    // ---- 品牌口碑系统 ----
+    getBrandStatus: () => (G && G.brand ? G.brand : null),
+    triggerBrandCrisis, recoverBrand,
+    // ---- 难度 ----
+    getDifficulty: () => (G ? G.difficulty : 'standard'),
+    getEventProb,
     checkAndShowOfflineIncome,
     // ---- HR 统管 ----
     isHRManaged, calcDeptStats, hrAutoTick,
@@ -4785,6 +5152,10 @@ window.SGame = (() => {
     refreshAssetMarket, buyAsset, listAssetForAuction, pawnAsset, cancelAuction,
     processAssetSystem, getTotalAssetValue, getAssetTypeName, getRarityLabel,
     getRegionModifiers,
+    // ---- 动态难度调节 + 平衡性自检 ----
+    getAutoBalanceFactors: () => (G && G._autoBalanceFactors ? G._autoBalanceFactors : null),
+    recordDecisionOutcome: _recordDecisionOutcome,
+    collectGameAnalytics,
     // ---- 商业并购系统 ----
     calculateMACost, acquireBusiness, getMARevenue, getMAList,
   };

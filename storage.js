@@ -14,44 +14,41 @@ window.Storage = (() => {
       }
       return serverReady;
     })
-    .catch(() => { serverReady = false; return false; });
+    .catch((e) => {
+      serverReady = false;
+      console.warn('[Storage] preload failed:', e.message || e);
+      return false;
+    });
 
-  // 同步从服务器读取单个 key（get 的兜底）
-  function syncLoadFromServer(key) {
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', '/api/load?key=' + encodeURIComponent(key), false);
-      xhr.timeout = 3000;
-      xhr.send();
-      if (xhr.status === 200) {
-        cache[key] = xhr.responseText;
-        return xhr.responseText;
-      }
-    } catch (e) {}
+  // 预加载已覆盖所有 key，缓存未命中说明 key 不存在
+  function get(key) {
+    if (key in cache) return cache[key];
+    console.warn('[Storage] key not in preload cache:', key);
     return null;
   }
 
-  function get(key) {
-    if (key in cache) return cache[key];
-    // 缓存未命中：同步从服务器读取
-    return syncLoadFromServer(key);
-  }
-
   function set(key, value) {
+    const prev = cache[key];
     cache[key] = value;
-    // 始终尝试写入服务器（不检查 serverReady，因为 set 时应该已经就绪）
     fetch('/api/save?key=' + encodeURIComponent(key), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       body: value
-    }).catch(() => {});
-    // 不再写入 localStorage
+    }).then((r) => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+    }).catch((e) => {
+      console.warn('[Storage] save failed for key "' + key + '":', e.message || e);
+      // Rollback cache on write failure
+      if (prev === undefined) { delete cache[key]; }
+      else { cache[key] = prev; }
+    });
   }
 
   function remove(key) {
     delete cache[key];
-    fetch('/api/delete?key=' + encodeURIComponent(key), { method: 'POST' }).catch(() => {});
-    // 不再清除 localStorage
+    fetch('/api/delete?key=' + encodeURIComponent(key), { method: 'POST' }).catch((e) => {
+      console.warn('[Storage] delete failed for key "' + key + '":', e.message || e);
+    });
   }
 
   function ready() { return _readyPromise; }

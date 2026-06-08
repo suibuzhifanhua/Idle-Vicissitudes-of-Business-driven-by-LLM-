@@ -16,8 +16,11 @@
     Object.entries(STOCKS).forEach(function(entry) {
       var sid = entry[0], stock = entry[1];
       var baseChange = (Math.random() - 0.50) * 2 * stock.volatility;
-      // 叠加情绪偏向（减少随机性影响）
-      var change = baseChange * 0.7 + sentBias * stock.volatility;
+      // 乘法方向偏向模型：情绪偏多时乘以上涨因子，偏空时乘以下跌因子
+      var directionBias = 1.0;
+      if (sentBias > 0) { directionBias = 1.0 + sentBias * 0.5; }
+      else if (sentBias < 0) { directionBias = 1.0 + sentBias * 0.8; }
+      var change = baseChange * 0.7 * directionBias;
       var oldPrice = G.stockPrices[sid] || stock.basePrice;
       var newPrice = Math.max(1, oldPrice * (1 + change));
       G.stockPrices[sid] = parseFloat(newPrice.toFixed(2));
@@ -35,6 +38,13 @@
     var price = G.stockPrices[stockId];
     var cost = price * shares;
     if (G.money < cost) return { ok: false, msg: '资金不足（需要' + S.formatMoney(cost) + '）' };
+    // 单股持仓上限：不超过总资产的50%
+    var totalAssets = G.money + (typeof S.getStockPortfolioValue === 'function' ? S.getStockPortfolioValue() : 0);
+    var existingValue = (G.stocks[stockId] ? G.stocks[stockId].shares : 0) * price;
+    var newPositionValue = existingValue + cost;
+    if (newPositionValue > totalAssets * 0.5) {
+      return { ok: false, msg: '单股持仓不能超过总资产的50%（当前持仓' + S.formatMoney(existingValue) + '，买入后将达' + S.formatMoney(newPositionValue) + '）' };
+    }
     G.money -= cost;
     if (!G.stocks[stockId]) G.stocks[stockId] = { shares:0, avgCost:0 };
     var totalCost = G.stocks[stockId].avgCost * G.stocks[stockId].shares + cost;

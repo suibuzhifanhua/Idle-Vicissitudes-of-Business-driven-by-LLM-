@@ -8,7 +8,7 @@ window.UI = (() => {
   let notificationsEnabled = true;
 
   // ========== 面板标签栏（一次性渲染，供 switchPanel 高亮用） ==========
-  var _tabsBuilt = false;
+  let _tabsBuilt = false;
   function buildPanelTabs() {
     if (_tabsBuilt) return;
     _tabsBuilt = true;
@@ -43,7 +43,7 @@ window.UI = (() => {
     container.insertBefore(tabBar, container.firstChild);
   }
   function switchPanel(name) {
-    if (!['dashboard', 'region', 'business', 'npc', 'asset', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking', 'milestone'].includes(name)) return;
+    if (!['dashboard', 'region', 'business', 'npc', 'asset', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking', 'milestone', 'intel'].includes(name)) return;
     currentPanel = name;
     const tabs = document.querySelectorAll('.panel-tab');
     tabs.forEach(t => t.classList.remove('active'));
@@ -76,6 +76,7 @@ window.UI = (() => {
       case 'region': renderRegions(panel); return;
       case 'business': renderBusinessList(panel); return;
       case 'npc': renderNPCPanel(panel); return;
+      case 'quest': renderQuestPanel(panel); return;
       case 'achievement': renderAchievementPanel(panel); return;
       case 'stats': renderStatPanel(panel); return;
       case 'worldmap': renderWorldMap(panel); return;
@@ -84,6 +85,7 @@ window.UI = (() => {
       case 'ranking': renderRankingPanel(panel); return;
       case 'milestone': renderMilestonePanel(panel); return;
       case 'asset': renderAssetPanel(panel); return;
+      case 'intel': renderIntelPanel(panel); return;
     }
   }
 
@@ -227,7 +229,7 @@ window.UI = (() => {
   }
 
   // #6-#7 局部更新：缓存上次渲染数据，仅变化时重绘
-  var _renderCache = {
+  let _renderCache = {
     dashboard: '', dashMoney: 0, dashIncome: 0, dashExpense: 0, dashEmpCount: 0, dashBizCount: 0,
     dashRep: 0, dashConn: 0, dashSent: 0, dashAssetCnt: 0, dashStockCnt: 0, dashResearchN: 0,
     regions: '', regionKeys: '',
@@ -332,7 +334,7 @@ window.UI = (() => {
         <div style="font-size:13px;color:var(--text-secondary);margin:12px 0;line-height:1.8;">
           你离开了 <b style="color:var(--accent-gold)">${(offlineData.hours ?? 0).toFixed(1)} 小时</b><br>
           期间经过 <b style="color:var(--accent-cyan)">${offlineData.ticks ?? 0} Tick</b><br>
-          产生收益: <b style="color:var(--green-down);font-size:18px;">+${formatMoneyComma(offlineData.income ?? 0)}</b>
+          产生收益: <b style="color:var(--green-down);font-size:18px;">+${SGame.formatMoney(offlineData.income ?? 0)}</b>
         </div>
         <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;">
           <button class="btn" style="font-size:13px;padding:8px 24px;background:linear-gradient(135deg,var(--accent-gold),#d97706);" onclick="UI.claimOfflineIncome(this)">领取收益</button>
@@ -375,12 +377,12 @@ window.UI = (() => {
     const stats = G.stats || {};
 
     el.innerHTML = `
-      <div style="font-size:13px;font-weight:600;color:var(--accent-gold);margin-bottom:8px">${G.name || '未命名'}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--accent-gold);margin-bottom:8px">${escapeHtml(G.name) || '未命名'}</div>
       <div class="stat-row"><span class="stat-label">头衔</span><span class="stat-value" style="color:var(--accent-cyan)">${rankIcon} ${G.rank || '个体户'}</span></div>
       <div class="stat-row"><span class="stat-label">资产</span><span class="stat-value" style="color:var(--accent-gold)">${SGame.formatMoney(G.money)}</span></div>
-      <div class="stat-row" style="margin-top:6px"><span class="stat-label">声誉</span><span class="stat-value ${repCls}">${(G.reputation??0).toFixed(1)}</span></div>
+      <div class="stat-row" style="margin-top:6px"><span class="stat-label">声誉</span><span class="stat-value ${repCls}">${Math.round(G.reputation??0)}</span></div>
       <div class="progress-bar"><div class="progress-fill ${repProgCls}" style="width:${G.reputation??0}%"></div></div>
-      <div class="stat-row" style="margin-top:6px"><span class="stat-label">压力</span><span class="stat-value ${stressCls}">${(G.stress??0).toFixed(1)}</span></div>
+      <div class="stat-row" style="margin-top:6px"><span class="stat-label">压力</span><span class="stat-value ${stressCls}">${Math.round(G.stress??0)}</span></div>
       <div class="progress-bar"><div class="progress-fill ${stressProgCls}" style="width:${G.stress??0}%"></div></div>
       <div class="stat-row"><span class="stat-label">人脉</span><span class="stat-value" style="color:var(--accent-cyan)">${G.connections ?? 0}</span></div>
       <div style="margin-top:8px;font-size:10px;color:var(--text-muted)">
@@ -388,6 +390,32 @@ window.UI = (() => {
       </div>
       <div style="font-size:10px;color:var(--text-muted);margin-top:2px">压力模式: ${G.stressMode ?? '--'}</div>
     `;
+  }
+
+  // 从 bonus 数值动态生成区域加成描述文本
+  function getRegionBonusDesc(bonus) {
+    if (!bonus) return '';
+    var labels = {
+      retail:'零售', tech:'科技', finance:'金融', trade:'贸易',
+      logistics:'物流', manufacturing:'制造', repGain:'声望获取',
+      connGain:'人脉获取', rdBonus:'研发速度', cost:'成本',
+      opsCost:'运营成本', socialCost:'社交成本',
+      disasterProb:'灾害概率', burnoutProb:'过劳概率',
+      negativeEventProb:'负面事件概率', rumorSpread:'谣言传播',
+      policyEventProb:'政策事件概率'
+    };
+    var parts = [];
+    Object.keys(bonus).forEach(function(k) {
+      var v = bonus[k];
+      if (typeof v === 'boolean') {
+        if (v && labels[k]) parts.push(labels[k]);
+      } else if (typeof v === 'number') {
+        var label = labels[k] || k;
+        if (v > 1) parts.push(label + '+' + ((v - 1) * 100).toFixed(0) + '%');
+        else if (v < 1) parts.push(label + '-' + ((1 - v) * 100).toFixed(0) + '%');
+      }
+    });
+    return parts.length > 0 ? parts.join(' | ') : '无加成';
   }
 
   // ========== 区域面板 ==========
@@ -413,7 +441,7 @@ window.UI = (() => {
       }
       html += `<div class="stat-row" style="font-size:11px">
         <span class="stat-label">${r.name}</span>
-        <span class="stat-value" style="font-size:10px;color:var(--text-muted)">${r.bonus.desc}</span>
+        <span class="stat-value" style="font-size:10px;color:var(--text-muted)">${getRegionBonusDesc(r.bonus)}</span>
       </div>`;
     });
     el.innerHTML = html;
@@ -483,7 +511,7 @@ window.UI = (() => {
       }
 
       const lvColorClass = lv > 0 ? 'biz-lv-' + Math.min(lv, 5) : '';
-      html += `<div style="padding:10px 0;border-bottom:1px solid var(--border)" class="${lvColorClass}">
+      html += `<div data-biz-id="${b.id}" style="padding:10px 0;border-bottom:1px solid var(--border)" class="${lvColorClass}">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:12px;font-weight:600" class="${lvColorClass}">${b.icon} ${b.name} ${lv > 0 ? `Lv.${lv}` : ''}</span>
           <span style="font-size:10px;color:var(--text-muted)">${lv === 0 ? '未开业' : def.name}</span>
@@ -540,6 +568,7 @@ window.UI = (() => {
         </div>`;
       }
     }
+    // 直接渲染（增量更新函数暂未实现，回退到全量渲染）
     el.innerHTML = html;
     // 已并购业务列表
     var maList = (SGame && typeof SGame.getMAList === 'function') ? SGame.getMAList() : [];
@@ -686,7 +715,6 @@ window.UI = (() => {
     if (!G) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">等待游戏数据加载...</div>'; return; }
     const income = SGame.calcTotalIncome() ?? 0;
     const rawExpense = (G.employees || []).reduce((s, e) => s + calcActualSalary(e.baseSalary ?? e.salary, G) * 10000, 0);
-    // HR 统管工资折扣
     let expense = rawExpense;
     if (typeof SGame.isHRManaged === 'function' && SGame.isHRManaged()) {
       const hrEmp = (G.employees || []).find(e => e.role === 'hr');
@@ -702,19 +730,56 @@ window.UI = (() => {
     const timeInfo = getTimeDisplay(G);
     const tickMs = (typeof CONFIG !== 'undefined' && CONFIG && CONFIG.TICK_MS) ? CONFIG.TICK_MS : 5000;
 
-    // 市场情绪仪表盘显示 (#9)
-    const sentiment = G.marketSentiment !== undefined ? G.marketSentiment : 50;
-    var sentColor, sentIcon, sentLabel;
-    if (sentiment >= 80) { sentColor = 'var(--red-up)'; sentIcon = '🔥'; sentLabel = '极度乐观'; }
-    else if (sentiment >= 65) { sentColor = 'var(--accent-gold)'; sentIcon = '☀'; sentLabel = '偏乐观'; }
-    else if (sentiment >= 45) { sentColor = 'var(--text-secondary)'; sentIcon = '☁'; sentLabel = '中性'; }
-    else if (sentiment >= 25) { sentColor = 'var(--accent-blue)'; sentIcon = '🌧'; sentLabel = '偏悲观'; }
-    else { sentColor = 'var(--green-down)'; sentIcon = '❄'; sentLabel = '极度悲观'; }
+    const autoStatusHtml = renderDashboardAutoStatus(G);
+    const stockCardHtml = renderDashboardStockCard(G);
+    const researchCardHtml = renderDashboardResearchCard(G);
 
-    // 资产估值
-    const assetVal = (typeof SGame.getTotalAssetValue === 'function') ? SGame.getTotalAssetValue() : 0;
+    el.innerHTML = `
+      <div class="dash-card" style="grid-column:span 2;">
+        <div class="dash-label">${rankIcon} ${G.rank || '个体户'}  |  ${citySelectHtml}</div>
+        <div class="dash-value" style="color:var(--accent-gold);font-size:28px;">${SGame.formatMoney(G.money ?? 0)} ${trendHtml}</div>
+        <div class="dash-sub">${timeInfo} |  当前总资产</div>
+        ${autoStatusHtml}
+        ${chartHtml}
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">Tick收益</div>
+        <div class="dash-value" style="color:var(--green-down)">+${SGame.formatMoney(income)}</div>
+        <div class="dash-sub">每${(tickMs/1000).toFixed(0)}秒</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">工资支出</div>
+        <div class="dash-value" style="color:var(--red-up)">-${SGame.formatMoney(expense)}</div>
+        <div class="dash-sub">每Tick</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">维护成本</div>
+        <div class="dash-value" style="color:var(--red-up);font-size:18px;">-${SGame.formatMoney(maintenanceCost)}</div>
+        <div class="dash-sub">每Tick</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">员工数</div>
+        <div class="dash-value" style="color:var(--accent-blue)">${(G.employees || []).length}</div>
+        <div class="dash-sub">上限 ${SGame.getEmpMax()}</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-label">业务数</div>
+        <div class="dash-value" style="color:var(--accent-cyan)">${Object.values(G.businesses || {}).filter(b => b.level > 0).length}</div>
+        <div class="dash-sub">已开业</div>
+      </div>
+      ${stockCardHtml}
+      ${researchCardHtml}
+      ${renderDashboardBrandCard(G)}
+      ${renderDashboardSentimentCard(G)}
+      ${renderDashboardAssetCard(G)}
+      ${renderDashboardBreakdownCard(G, breakdownHtml)}
+    `;
 
-    // 托管状态标签
+    renderDashboardExtraRow(G);
+    renderManualButton();
+  }
+
+  function renderDashboardAutoStatus(G) {
     let autoStatusHtml = '';
     if (G.autoMode && G.autoMode.enabled) {
       const am = G.autoMode;
@@ -730,7 +795,6 @@ window.UI = (() => {
       if (am.autoRepay || am.autoLoan) badges.push(dot + '贷款');
       if (am.autoGift) badges.push(dot + '社交');
 
-      // #18 增强托管状态：脉冲绿点 + 运行中横幅
       autoStatusHtml = '<div class="auto-banner">' +
         '<div style="display:flex;align-items:center;gap:4px;">' +
         '<span class="auto-dot"></span>' +
@@ -740,11 +804,10 @@ window.UI = (() => {
         '<div style="font-size:10px;color:var(--text-muted);padding:4px 0 2px 14px;display:flex;align-items:center;gap:3px;flex-wrap:wrap;">' +
         badges.join(' · ') + '</div></div>';
 
-      // 托管统计行
-      var stats = G.autoStats;
+      let stats = G.autoStats;
       if (stats && stats.totalTicks > 0) {
-        var runtimeMin = stats.startedAt ? Math.floor((Date.now() - stats.startedAt) / 60000) : 0;
-        var runtimeStr = runtimeMin >= 60 ? Math.floor(runtimeMin/60) + 'h' + (runtimeMin%60) + 'm' : runtimeMin + 'min';
+        let runtimeMin = stats.startedAt ? Math.floor((Date.now() - stats.startedAt) / 60000) : 0;
+        let runtimeStr = runtimeMin >= 60 ? Math.floor(runtimeMin/60) + 'h' + (runtimeMin%60) + 'm' : runtimeMin + 'min';
         autoStatusHtml += '<div style="font-size:10px;color:var(--text-muted);padding:4px 2px;display:flex;gap:8px;flex-wrap:wrap;">' +
           '<span>⏱ 运行' + runtimeStr + '</span>' +
           '<span>📋 ' + stats.decisions + '决策</span>' +
@@ -757,120 +820,128 @@ window.UI = (() => {
           '</div>';
       }
     }
+    return autoStatusHtml;
+  }
 
-    // #17 股票持仓摘要数据
-    var stockCount = 0, stockPortVal = 0, stockCost = 0;
+  function renderDashboardStockCard(G) {
+    let stockCount = 0, stockPortVal = 0, stockCost = 0;
     if (G.stocks) {
       stockCount = Object.keys(G.stocks).length;
       stockPortVal = typeof SGame.getStockPortfolioValue === 'function' ? SGame.getStockPortfolioValue() : 0;
       stockCost = typeof SGame.getStockCostBasis === 'function' ? SGame.getStockCostBasis() : 0;
     }
-    var stockPnl = stockPortVal - stockCost;
-    var stockPnlColor = stockPnl >= 0 ? 'var(--green-down)' : 'var(--red-up)';
-    var stockPnlSign = stockPnl >= 0 ? '+' : '';
-    var stockCardHtml = '';
+    const stockPnl = stockPortVal - stockCost;
+    const stockPnlColor = stockPnl >= 0 ? 'var(--green-down)' : 'var(--red-up)';
+    const stockPnlSign = stockPnl >= 0 ? '+' : '';
     if (stockCount > 0) {
-      stockCardHtml = '<div class="dash-card">' +
+      return '<div class="dash-card">' +
         '<div class="dash-label">📈 股票持仓</div>' +
-        '<div class="dash-value" style="color:var(--accent-gold);font-size:18px;">' + formatMoneyComma(stockPortVal) + '</div>' +
-        '<div class="dash-sub">持有 ' + stockCount + ' 支 | 盈亏 <b style="color:' + stockPnlColor + '">' + stockPnlSign + formatMoneyComma(stockPnl) + '</b></div>' +
+        '<div class="dash-value" style="color:var(--accent-gold);font-size:18px;">' + SGame.formatMoney(stockPortVal) + '</div>' +
+        '<div class="dash-sub">持有 ' + stockCount + ' 支 | 盈亏 <b style="color:' + stockPnlColor + '">' + stockPnlSign + SGame.formatMoney(stockPnl) + '</b></div>' +
         '</div>';
     }
+    return '';
+  }
 
-    // #17 研发进度摘要数据
-    var researchCardHtml = '';
-    var routes = [
+  function renderDashboardResearchCard(G) {
+    const routes = [
       { id:'digital', name:'数字化', icon:'💻' },
       { id:'ai', name:'AI自动化', icon:'🤖' },
       { id:'blockchain', name:'区块链', icon:'🔗' }
     ];
-    var researchTotal = 0, researchCompleted = 0;
-    var activeResearchName = '';
+    let researchTotal = 0, researchCompleted = 0;
+    let activeResearchName = '';
     routes.forEach(function(r) {
-      var techDefs = TECH_TREE && TECH_TREE[r.id] ? TECH_TREE[r.id] : null;
+      const techDefs = TECH_TREE && TECH_TREE[r.id] ? TECH_TREE[r.id] : null;
       if (techDefs && techDefs.levels) {
         researchTotal += techDefs.levels.length;
-        var completed = (G.completedResearch && G.completedResearch[r.id]) || 0;
+        const completed = (G.completedResearch && G.completedResearch[r.id]) || 0;
         researchCompleted += completed;
       }
     });
     if (G.activeResearch && G.activeResearch.techId) {
-      var ar = G.activeResearch;
-      var arRoute = routes.find(function(r) { return r.id === ar.techId; });
+      const ar = G.activeResearch;
+      const arRoute = routes.find(function(r) { return r.id === ar.techId; });
       if (arRoute) activeResearchName = arRoute.icon + ' ' + arRoute.name + ' Lv.' + (ar.level);
     }
     if (researchTotal > 0 && (researchCompleted > 0 || activeResearchName)) {
-      var researchPct = Math.round(researchCompleted / researchTotal * 100);
-      researchCardHtml = '<div class="dash-card">' +
+      const researchPct = Math.round(researchCompleted / researchTotal * 100);
+      return '<div class="dash-card">' +
         '<div class="dash-label">🔬 研发进度</div>' +
         '<div class="dash-value" style="color:var(--accent-cyan)">' + researchCompleted + '/' + researchTotal + '</div>' +
         '<div class="stat-bar" style="margin-top:4px;"><div class="stat-bar-fill" style="width:' + researchPct + '%;background:var(--accent-cyan)"></div></div>' +
         (activeResearchName ? '<div class="dash-sub">' + activeResearchName + ' 研发中</div>' : '<div class="dash-sub">完成率 ' + researchPct + '%</div>') +
         '</div>';
     }
+    return '';
+  }
 
-    el.innerHTML = `
-      <div class="dash-card" style="grid-column:span 2;">
-        <div class="dash-label">${rankIcon} ${G.rank || '个体户'}  |  ${citySelectHtml}</div>
-        <div class="dash-value" style="color:var(--accent-gold);font-size:28px;">${formatMoneyComma(G.money ?? 0)} ${trendHtml}</div>
-        <div class="dash-sub">${timeInfo} |  当前总资产</div>
-        ${autoStatusHtml}
-        ${chartHtml}
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">Tick收益</div>
-        <div class="dash-value" style="color:var(--green-down)">+${formatMoneyComma(income)}</div>
-        <div class="dash-sub">每${(tickMs/1000).toFixed(0)}秒</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">工资支出</div>
-        <div class="dash-value" style="color:var(--red-up)">-${formatMoneyComma(expense)}</div>
-        <div class="dash-sub">每Tick</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">维护成本</div>
-        <div class="dash-value" style="color:var(--red-up);font-size:18px;">-${formatMoneyComma(maintenanceCost)}</div>
-        <div class="dash-sub">每Tick</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">员工数</div>
-        <div class="dash-value" style="color:var(--accent-blue)">${(G.employees || []).length}</div>
-        <div class="dash-sub">上限 ${SGame.getEmpMax()}</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">业务数</div>
-        <div class="dash-value" style="color:var(--accent-cyan)">${Object.values(G.businesses || {}).filter(b => b.level > 0).length}</div>
-        <div class="dash-sub">已开业</div>
-      </div>
-      ${stockCardHtml}
-      ${researchCardHtml}
-      <div class="dash-card">
-        <div class="dash-label">声望</div>
-        <div class="dash-value" style="color:var(--accent-gold)">${G.reputation ?? 0}</div>
-        <div class="dash-sub">/100</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">人脉</div>
-        <div class="dash-value" style="color:var(--accent-cyan)">${G.connections ?? 0}</div>
-        <div class="dash-sub">上限 ${(typeof CONFIG !== 'undefined' && CONFIG.MAX_CONNECTIONS) || 100}</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">📊 市场情绪</div>
-        <div class="dash-value" style="color:${sentColor}">${sentIcon} ${sentiment}</div>
-        <div class="dash-sub">${sentLabel} (LLM分析)</div>
-      </div>
-      <div class="dash-card">
-        <div class="dash-label">💎 资产估值</div>
-        <div class="dash-value" style="color:var(--accent-gold)">${formatMoneyComma(assetVal)}</div>
-        <div class="dash-sub">${G.assets ? G.assets.length : 0} 件</div>
-      </div>
-      <div class="dash-card" style="grid-column:span 2;">
-        <div class="dash-label">收入构成</div>
-        ${breakdownHtml}
-      </div>
-    `;
+  function renderDashboardBrandCard(G) {
+    const brand = G.brand;
+    if (!brand) return '';
+    const awarenessColor = brand.awareness >= 80 ? 'var(--accent-cyan)' : brand.awareness >= 50 ? 'var(--accent-gold)' : 'var(--red-up)';
+    const ratingColor = brand.rating >= 80 ? 'var(--green-down)' : brand.rating >= 50 ? 'var(--accent-gold)' : 'var(--red-up)';
+    return '<div class="dash-card">' +
+      '<div class="dash-label">📢 品牌口碑</div>' +
+      '<div style="margin:4px 0"><span style="font-size:10px;color:var(--text-secondary)">知名度</span>' +
+      '<div class="stat-bar" style="margin-top:2px"><div class="stat-bar-fill" style="width:' + brand.awareness + '%;background:' + awarenessColor + '"></div></div>' +
+      '<span style="font-size:10px;color:' + awarenessColor + '">' + Math.round(brand.awareness) + '/100</span></div>' +
+      '<div style="margin:4px 0"><span style="font-size:10px;color:var(--text-secondary)">口碑评分</span>' +
+      '<div class="stat-bar" style="margin-top:2px"><div class="stat-bar-fill" style="width:' + brand.rating + '%;background:' + ratingColor + '"></div></div>' +
+      '<span style="font-size:10px;color:' + ratingColor + '">' + Math.round(brand.rating) + '/100</span></div>' +
+      (brand.crisisHistory && brand.crisisHistory.length > 0
+        ? '<div class="dash-sub" style="color:var(--red-up)">⚠ 近期品牌危机 ' + brand.crisisHistory.length + ' 次</div>'
+        : '<div class="dash-sub">品牌健康运作中</div>') +
+      '</div>';
+  }
 
-    // 追加股票&贷款信息行
+  function renderDashboardSentimentCard(G) {
+    const sentiment = G.marketSentiment !== undefined ? G.marketSentiment : 50;
+    let sentColor, sentIcon, sentLabel;
+    if (sentiment >= 80) { sentColor = 'var(--red-up)'; sentIcon = '🔥'; sentLabel = '极度乐观'; }
+    else if (sentiment >= 65) { sentColor = 'var(--accent-gold)'; sentIcon = '☀'; sentLabel = '偏乐观'; }
+    else if (sentiment >= 45) { sentColor = 'var(--text-secondary)'; sentIcon = '☁'; sentLabel = '中性'; }
+    else if (sentiment >= 25) { sentColor = 'var(--accent-blue)'; sentIcon = '🌧'; sentLabel = '偏悲观'; }
+    else { sentColor = 'var(--green-down)'; sentIcon = '❄'; sentLabel = '极度悲观'; }
+    return '<div class="dash-card">' +
+      '<div class="dash-label">📊 市场情绪</div>' +
+      '<div class="dash-value" style="color:' + sentColor + '">' + sentIcon + ' ' + sentiment + '</div>' +
+      '<div class="dash-sub">' + sentLabel + ' (LLM分析)</div>' +
+      '</div>';
+  }
+
+  function renderDashboardAssetCard(G) {
+    const assetVal = (typeof SGame.getTotalAssetValue === 'function') ? SGame.getTotalAssetValue() : 0;
+    return '<div class="dash-card">' +
+      '<div class="dash-label">💎 资产估值</div>' +
+      '<div class="dash-value" style="color:var(--accent-gold)">' + SGame.formatMoney(assetVal) + '</div>' +
+      '<div class="dash-sub">' + (G.assets ? G.assets.length : 0) + ' 件</div>' +
+      '</div>';
+  }
+
+  function renderDashboardBreakdownCard(G, breakdownHtml) {
+    const repCount = G.reputation ?? 0;
+    const connCount = G.connections ?? 0;
+    const connMax = (typeof CONFIG !== 'undefined' && CONFIG.MAX_CONNECTIONS) || 100;
+    return ''
+      + '<div class="dash-card">'
+        + '<div class="dash-label">声望</div>'
+        + '<div class="dash-value" style="color:var(--accent-gold)">' + repCount + '</div>'
+        + '<div class="dash-sub">/100</div>'
+      + '</div>'
+      + '<div class="dash-card">'
+        + '<div class="dash-label">人脉</div>'
+        + '<div class="dash-value" style="color:var(--accent-cyan)">' + connCount + '</div>'
+        + '<div class="dash-sub">上限 ' + connMax + '</div>'
+      + '</div>'
+      + '<div class="dash-card" style="grid-column:span 2;">'
+        + '<div class="dash-label">收入构成</div>'
+        + breakdownHtml
+      + '</div>';
+  }
+
+  function renderDashboardExtraRow(G) {
+    const el = document.getElementById('dashboard');
     const portfolioVal = typeof SGame.getStockPortfolioValue === 'function' ? SGame.getStockPortfolioValue() : 0;
     if (portfolioVal > 0 || (G.loans && G.loans.length > 0)) {
       const appendEl = document.getElementById('dashboard');
@@ -880,31 +951,17 @@ window.UI = (() => {
         const pnl = portfolioVal - costBasis;
         const pnlColor = pnl >= 0 ? 'var(--green-down)' : 'var(--red-up)';
         const pnlSign = pnl >= 0 ? '+' : '';
-        extraHtml += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:2px;">📈 股票市值: <b style="color:var(--accent-gold)">' + formatMoneyComma(portfolioVal) + '</b> | 盈亏: <b style="color:' + pnlColor + '">' + pnlSign + formatMoneyComma(pnl) + '</b></div>';
+        extraHtml += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:2px;">📈 股票市值: <b style="color:var(--accent-gold)">' + SGame.formatMoney(portfolioVal) + '</b> | 盈亏: <b style="color:' + pnlColor + '">' + pnlSign + SGame.formatMoney(pnl) + '</b></div>';
       }
       if (G.loans && G.loans.length > 0) {
         const totalLoan = G.loans.reduce((s, l) => s + l.amount, 0);
-        extraHtml += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:2px;">🏦 贷款余额: <b style="color:var(--red-up)">' + formatMoneyComma(totalLoan) + '</b> (' + G.loans.length + '笔)</div>';
+        extraHtml += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:2px;">🏦 贷款余额: <b style="color:var(--red-up)">' + SGame.formatMoney(totalLoan) + '</b> (' + G.loans.length + '笔)</div>';
       }
       el.innerHTML += extraHtml;
     }
-
-    renderManualButton();
   }
 
-  function formatMoneyComma(n) {
-    if (n == null || isNaN(n)) return '0';
-    const sign = n < 0 ? '-' : '';
-    n = Math.abs(n);
-    if (n >= 1e16) return sign + (n / 1e16).toFixed(2) + 'e16';
-    if (n >= 1e12) return sign + (n / 1e12).toFixed(2) + '万亿';
-    if (n >= 1e8) return sign + (n / 1e8).toFixed(1) + '亿';
-    if (n >= 1e4) return sign + (n / 1e4).toFixed(1) + '万';
-    // Add thousand separators
-    const parts = n.toFixed(0).split('.');
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return sign + parts.join('.');
-  }
+
 
   function renderAssetTrend(G) {
     const hist = G.assetHistory || [];
@@ -961,6 +1018,32 @@ window.UI = (() => {
         '<span class="income-bar-pct">' + pct + '%</span>' +
         '</div>';
     }).join('');
+  }
+
+  // ========== 员工专精渲染辅助 ==========
+  function renderEmpSpecs(emp, roleDef) {
+    if (!roleDef || !roleDef.specialization) return '';
+    if (emp.isIntern && !emp.internConverted) return '';
+    let html = '<div style="font-size:10px;color:var(--text-secondary);margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">';
+    roleDef.specialization.forEach(spec => {
+      const curLv = (emp.specializations && emp.specializations[spec.key]) || 0;
+      const nextCost = curLv < spec.maxLv ? spec.costBase * (curLv + 1) : 0;
+      let lvHtml = '';
+      for (let l = 1; l <= spec.maxLv; l++) {
+        lvHtml += `<span style="color:${l <= curLv ? 'var(--accent-cyan)' : 'var(--border)'}">◆</span>`;
+      }
+      const btnStyle = curLv < spec.maxLv
+        ? 'cursor:pointer;background:linear-gradient(135deg,var(--accent-cyan),#0891b2);color:#fff;border:none;padding:1px 5px;border-radius:3px;font-size:9px'
+        : 'background:rgba(255,255,255,0.06);color:var(--text-muted);border:none;padding:1px 5px;border-radius:3px;font-size:9px;cursor:default';
+      const btnLabel = curLv < spec.maxLv ? `${spec.name} Lv.${curLv+1} 💰${SGame.formatMoney(nextCost)}` : `${spec.name} MAX`;
+      const onclick = curLv < spec.maxLv ? `onclick="UI.trainEmployeeSpec(${emp.id},'${spec.key}')"` : '';
+      html += `<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(255,255,255,0.04);padding:2px 5px;border-radius:4px">
+        <button style="${btnStyle}" ${onclick} title="${spec.desc}">${btnLabel}</button>
+        ${lvHtml}
+      </span>`;
+    });
+    html += '</div>';
+    return html;
   }
 
   // ========== 员工列表 ==========
@@ -1026,13 +1109,14 @@ window.UI = (() => {
         });
         attrLine += '</div>';
       }
-      html += `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      html += `<div data-emp-id="${emp.id}" style="padding:8px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="font-size:13px;font-weight:600">${emp.icon} ${emp.name} <span style="font-size:11px;color:var(--text-muted)">${roleName}</span>${internBadge}</div>
             <div style="font-size:11px;color:var(--text-muted)">忠诚: <span style="color:${loyaltyColor}">${emp.loyalty.toFixed(0)}</span> | 工资: ${displaySalary.toFixed(1)}${salaryNote} | 疲劳: <span style="color:${fatigueColor}">${fatigue.toFixed(0)}</span> | 技能: Lv.${skill}</div>
             ${internProgress}
             ${attrLine}
+            ${renderEmpSpecs(emp, roleDef)}
           </div>
           <div style="display:flex;gap:4px;">
             <button class="btn" style="font-size:10px;padding:3px 8px;background:linear-gradient(135deg,var(--accent-cyan),#0891b2);" onclick="UI.trainEmployee(${emp.id})" title="培训提升技能">📚 培训</button>
@@ -1052,7 +1136,7 @@ window.UI = (() => {
     Object.entries(depts).forEach(([roleId, d]) => {
       const loyalCol = d.avgLoyalty >= 50 ? 'var(--green-down)' : d.avgLoyalty >= 20 ? 'var(--accent-gold)' : 'var(--red-up)';
       const fatigCol = d.avgFatigue >= 70 ? 'var(--red-up)' : d.avgFatigue >= 40 ? 'var(--accent-gold)' : 'var(--green-down)';
-      html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="UI.toggleDeptDetail('${roleId}')">
+      html += `<div data-emp-id="dept-${roleId}" style="padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="UI.toggleDeptDetail('${roleId}')">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="flex:1">
             <span style="font-size:12px;font-weight:600">${d.icon} ${d.name}部</span>
@@ -1069,6 +1153,7 @@ window.UI = (() => {
         <div id="dept-detail-${roleId}" style="display:none;margin-top:4px;padding-left:12px;border-left:2px solid var(--accent-cyan)"></div>
       </div>`;
     });
+    // 直接渲染（增量更新函数暂未实现，回退到全量渲染）
     el.innerHTML = html;
   }
 
@@ -1119,6 +1204,18 @@ window.UI = (() => {
       const result = SGame.trainEmployee(empId);
       if (result.ok) {
         showToast('📚', '培训成功', result.msg);
+      } else {
+        EventSystem.addLog(result.msg);
+      }
+    }
+    renderAll();
+  }
+
+  function trainEmployeeSpec(empId, specKey) {
+    if (typeof SGame.trainEmployeeSpec === 'function') {
+      const result = SGame.trainEmployeeSpec(empId, specKey);
+      if (result.ok) {
+        showToast('🎯', '专精升级', result.msg);
       } else {
         EventSystem.addLog(result.msg);
       }
@@ -1193,28 +1290,33 @@ window.UI = (() => {
 
     renderHireCards(content);
 
-    // 异步调用LLM生成员工背景和属性评价
-    hireCandidates.forEach(async (c, i) => {
-      if (typeof LLM !== 'undefined') {
-        // 生成背景
-        const bg = await LLM.generateEmployeeBackground(c);
+    // 异步调用LLM生成员工背景和属性评价（5秒超时 + 降级默认文案）
+    hireCandidates.forEach((c, i) => {
+      if (typeof LLM === 'undefined') return;
+      const bgEl = document.getElementById(`hire-bg-${i}`);
+      const evalEl = document.getElementById(`hire-eval-${i}`);
+      
+      // 生成背景（带 5 秒超时）
+      const bgPromise = LLM.generateEmployeeBackground(c);
+      const bgTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+      Promise.race([bgPromise, bgTimeout]).then((bg) => {
         c.bg = bg || `${c.roleName}，具备丰富的行业经验。`;
-        const bgEl = document.getElementById(`hire-bg-${i}`);
         if (bgEl) bgEl.textContent = c.bg;
-        // LLM生成属性评价（新增）
-        if (LLM.available && c.attrs) {
-          const attrSummary = Object.entries(c.attrs).map(([k, v]) => {
-            const def = SGame.EMP_ATTRIBUTES[k];
-            return def ? def.name + v : k + v;
-          }).join('、');
-          const prompt = '你是一个HR分析师。请用15字以内评价这位候选人的综合素质：' +
-            c.roleName + '，属性：' + attrSummary + '。一句话简洁评价，不用标点。';
-          const eval_result = await LLM.generate(prompt, 0.7);
-          if (eval_result) {
-            const evalEl = document.getElementById(`hire-eval-${i}`);
-            if (evalEl) evalEl.textContent = '💬 ' + eval_result;
-          }
-        }
+      });
+
+      // LLM生成属性评价（带 5 秒超时）
+      if (LLM.available && c.attrs) {
+        const attrSummary = Object.entries(c.attrs).map(([k, v]) => {
+          const def = SGame.EMP_ATTRIBUTES[k];
+          return def ? def.name + v : k + v;
+        }).join('、');
+        const prompt = '你是一个HR分析师。请用15字以内评价这位候选人的综合素质：' +
+          c.roleName + '，属性：' + attrSummary + '。一句话简洁评价，不用标点。';
+        const evalPromise = LLM.generate(prompt, 0.7);
+        const evalTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+        Promise.race([evalPromise, evalTimeout]).then((eval_result) => {
+          if (eval_result && evalEl) evalEl.textContent = '💬 ' + eval_result;
+        });
       }
     });
   }
@@ -1503,6 +1605,109 @@ window.UI = (() => {
     el.innerHTML = html;
   }
 
+  // ========== 任务面板渲染 ==========
+  function renderQuestPanel(optEl) {
+    const el = optEl || document.getElementById('quest-panel');
+    if (!el) return;
+    const G = SGame.G;
+    if (!G) { el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">暂无任务</div>'; return; }
+
+    let html = '<div style="font-size:13px;font-weight:700;color:var(--accent-gold);margin-bottom:10px;">📋 NPC任务线</div>';
+    let hasQuests = false;
+
+    Object.values(NPCS).forEach(npc => {
+      if (!npc.questLines) return;
+      const favor = NPCSystem.getFavor(npc.id);
+      const completed = (G.questCompleted && G.questCompleted[npc.id]) || [];
+      const progress = (G.questProgress && G.questProgress[npc.id]) || {};
+      const act = G.act ?? 1;
+      if (npc.actUnlock >= act) return;
+
+      let npcHasQuests = false;
+      let npcHtml = `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;margin-bottom:4px;font-weight:600;">${npc.name}</div>`;
+
+      npc.questLines.forEach(q => {
+        const isCompleted = completed.includes(q.id);
+        const prog = progress[q.id];
+        const inProgress = !!prog;
+        const daysOk = !q.reqDays || G.tickCount >= q.reqDays;
+        const assetOk = !q.reqAssetLevel || G.money >= q.reqAssetLevel;
+        const favorOk = favor >= q.reqFavor;
+
+        let status = '';
+        let statusColor = '';
+        let bgColor = '';
+
+        if (isCompleted) {
+          status = '✅ 已完成';
+          statusColor = 'var(--green-down)';
+          bgColor = 'rgba(0,255,0,0.03)';
+        } else if (inProgress) {
+          const curStep = prog.stepIndex + 1;
+          const totalSteps = q.steps.length;
+          status = `⏳ 第${curStep}/${totalSteps}步`;
+          statusColor = 'var(--accent-gold)';
+          bgColor = 'rgba(255,215,0,0.05)';
+        } else if (!favorOk) {
+          status = `🔒 好感度 ${Math.floor(favor)}/${q.reqFavor}`;
+          statusColor = 'var(--text-muted)';
+          bgColor = 'transparent';
+        } else if (!daysOk) {
+          status = `🔒 第${q.reqDays}Tick解锁`;
+          statusColor = 'var(--text-muted)';
+          bgColor = 'transparent';
+        } else if (!assetOk) {
+          status = `🔒 资产 ≥ ${SGame.formatMoney(q.reqAssetLevel)}`;
+          statusColor = 'var(--text-muted)';
+          bgColor = 'transparent';
+        } else {
+          status = '可接取';
+          statusColor = 'var(--green-up)';
+          bgColor = 'rgba(0,255,0,0.03)';
+        }
+
+        // 奖励预览
+        let rewardPreview = '';
+        if (q.steps && q.steps.length > 0) {
+          const totalRewards = {};
+          q.steps.forEach(s => {
+            if (!s.reward) return;
+            Object.entries(s.reward).forEach(([k, v]) => {
+              totalRewards[k] = (totalRewards[k] || 0) + v;
+            });
+          });
+          const previewParts = [];
+          if (totalRewards.money) previewParts.push(`💰${SGame.formatMoney(totalRewards.money)}`);
+          if (totalRewards.reputation) previewParts.push(`⭐${totalRewards.reputation}`);
+          if (totalRewards.connections) previewParts.push(`👥${totalRewards.connections}`);
+          if (totalRewards.statPoints) previewParts.push(`⭐SP×${totalRewards.statPoints}`);
+          if (totalRewards.npcFavor) {
+            Object.entries(totalRewards.npcFavor).forEach(([nid, v]) => {
+              const nn = NPCS[nid] ? NPCS[nid].name : nid;
+              previewParts.push(`❤${nn}+${v}`);
+            });
+          }
+          if (previewParts.length > 0) rewardPreview = `<span style="font-size:10px;color:var(--text-muted);margin-left:6px;">[${previewParts.join(' ')}]</span>`;
+        }
+
+        npcHtml += `<div style="font-size:10px;padding:4px 8px;margin:2px 0;border-radius:4px;background:${bgColor};color:${statusColor};display:flex;justify-content:space-between;align-items:center;">
+          <span>${q.name} ${rewardPreview}</span>
+          <span style="font-weight:600;white-space:nowrap;">${status}</span>
+        </div>`;
+
+        npcHasQuests = true;
+        hasQuests = true;
+      });
+
+      if (npcHasQuests) html += npcHtml;
+    });
+
+    if (!hasQuests) html += '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">暂无可用任务</div>';
+
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;padding-top:6px;border-top:1px solid var(--border-color);">点击NPC面板中的 "📋 任务名" 开始任务</div>';
+    el.innerHTML = html;
+  }
+
   // ========== 幕次显示 ==========
   function renderActDisplay() {
     const el = document.getElementById('act-display');
@@ -1584,7 +1789,7 @@ window.UI = (() => {
   }
 
   // ========== 事件日志 ==========
-  var eventLogSearch = '';
+  let eventLogSearch = '';
   function renderEventLog() {
     const el = document.getElementById('event-log');
     if (!el) return;
@@ -1608,6 +1813,7 @@ window.UI = (() => {
       'style="flex:1;font-size:11px;padding:4px 8px;background:var(--bg-primary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);outline:none;" ' +
       'oninput="UI._eventLogSearch(this.value)" />' +
       (searchTerm ? '<button style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-muted);cursor:pointer;" onclick="UI._clearEventLogSearch()">✕</button>' : '') +
+      '<button style="font-size:10px;padding:2px 8px;background:var(--bg-hover);border:1px solid var(--border);border-radius:3px;color:var(--accent-gold);cursor:pointer;white-space:nowrap;" onclick="UI.triggerBalanceCheck()" title="AI数值平衡自检">⚖ 自检</button>' +
       '</div>';
 
     if (resultCount === 0) {
@@ -1632,7 +1838,8 @@ window.UI = (() => {
   }
 
   function escapeHtml(str) {
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   function highlightText(text, query) {
@@ -1734,7 +1941,7 @@ window.UI = (() => {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast-notify';
-    toast.innerHTML = '<div style="display:flex;align-items:center"><span class="toast-icon">' + (icon || '') + '</span><div><div class="toast-name">' + (title || '') + '</div><div class="toast-desc">' + (desc || '') + '</div></div></div>';
+    toast.innerHTML = '<div style="display:flex;align-items:center"><span class="toast-icon">' + escapeHtml(icon || '') + '</span><div><div class="toast-name">' + escapeHtml(title || '') + '</div><div class="toast-desc">' + escapeHtml(desc || '') + '</div></div></div>';
     container.appendChild(toast);
     // 默认3.2秒后自动移除
     setTimeout(() => {
@@ -1854,6 +2061,141 @@ window.UI = (() => {
       console.error('[商海浮沉] toggleAutoMode error:', e);
       try { renderAutoButton(); } catch(_) {}
     }
+  }
+
+  // ========== 平衡性自检 ==========
+  function triggerBalanceCheck() {
+    var G = SGame.G;
+    if (!G) { showToast('⚠', '未开始游戏', '请先开始游戏再使用自检功能'); return; }
+    if (typeof SGame.collectGameAnalytics !== 'function') { showToast('⚠', '功能不可用', 'collectGameAnalytics 未定义'); return; }
+    var data = SGame.collectGameAnalytics();
+    if (!data) { showToast('⚠', '数据收集失败', '无法获取游戏分析数据'); return; }
+
+    // 打开模态框，显示加载中
+    var modal = document.getElementById('modal-balance');
+    var content = document.getElementById('balance-report-content');
+    if (!modal || !content) return;
+    modal.classList.add('active');
+    content.innerHTML = '<div class="balance-loading"><div class="spinner"></div><div style="margin-top:8px;font-size:12px;color:var(--text-muted);">正在分析游戏平衡性...</div></div>';
+    showToast('⚖', '自检中...', '正在分析游戏平衡性，请稍候');
+
+    var fm = typeof SGame.formatMoney === 'function' ? SGame.formatMoney : function(v) { return (v||0).toLocaleString(); };
+
+    if (typeof LLM !== 'undefined' && typeof LLM.suggestBalanceTuning === 'function') {
+      LLM.suggestBalanceTuning(data).then(function(result) {
+        renderBalanceReport(content, G, data, result, fm, true);
+      }).catch(function(e) {
+        renderBalanceReport(content, G, data, null, fm, true, 'LLM调用异常：' + (e.message||e));
+      });
+    } else {
+      renderBalanceReport(content, G, data, null, fm, false);
+    }
+  }
+
+  function renderBalanceReport(content, G, data, result, fm, hasLLM, llmError) {
+    var html = '';
+
+    // === 概览统计 ===
+    var stress = Math.round(G.stress || 0);
+    var stressClass = stress > 70 ? 'danger' : (stress > 40 ? 'warning' : 'success');
+    var rep = Math.round(G.reputation || 0);
+    var repClass = rep > 80 ? 'success' : (rep > 40 ? '' : 'warning');
+    var actLabel = G.act || 1;
+    var diffLabel = { easy: '🟢 简单', standard: '🟡 标准', hard: '🔴 困难' }[G.difficulty] || G.difficulty;
+
+    html += '<div class="balance-overview">';
+    html += '<div class="balance-stat"><div class="stat-value">' + fm(G.money || 0) + '</div><div class="stat-label">💰 当前资金</div></div>';
+    html += '<div class="balance-stat"><div class="stat-value">' + actLabel + '</div><div class="stat-label">📖 当前幕</div></div>';
+    html += '<div class="balance-stat"><div class="stat-value">' + diffLabel + '</div><div class="stat-label">⚙ 难度</div></div>';
+    html += '<div class="balance-stat ' + stressClass + '"><div class="stat-value">' + stress + '%</div><div class="stat-label">😰 压力</div></div>';
+    html += '<div class="balance-stat ' + repClass + '"><div class="stat-value">' + rep + '</div><div class="stat-label">⭐ 声誉</div></div>';
+    html += '<div class="balance-stat"><div class="stat-value">' + (G.tickCount || 0) + '</div><div class="stat-label">🕐 Tick</div></div>';
+    html += '<div class="balance-stat"><div class="stat-value">' + (G.empIdCounter || G.employees ? G.employees.length : 0) + '</div><div class="stat-label">👥 员工</div></div>';
+    html += '</div>';
+
+    // === AI 分析摘要 ===
+    if (hasLLM && result && (result.summary || (result.suggestions && result.suggestions.length > 0))) {
+      html += '<div class="balance-section-title">🤖 AI 数值分析</div>';
+      if (result.summary) {
+        html += '<div class="balance-summary">📋 ' + escapeHtml(result.summary) + '</div>';
+      }
+      if (result.suggestions && result.suggestions.length > 0) {
+        html += '<div class="balance-section-title">🔧 调整建议</div>';
+        html += '<table class="balance-table"><thead><tr><th>优先级</th><th>调整项</th><th>当前值</th><th>建议值</th><th>理由</th></tr></thead><tbody>';
+        result.suggestions.forEach(function(s, i) {
+          var pClass = s.priority || (i === 0 ? 'p0' : (i === 1 ? 'p1' : 'p2'));
+          var severityLabel = pClass === 'p0' ? '紧急' : (pClass === 'p1' ? '重要' : '建议');
+          html += '<tr class="' + pClass + '">';
+          html += '<td><span class="balance-severity ' + pClass + '">' + severityLabel + '</span></td>';
+          html += '<td style="font-weight:600;color:var(--text-primary)">' + escapeHtml(s.target || '---') + '</td>';
+          html += '<td style="color:var(--text-muted)">' + escapeHtml(String(s.current || '---')) + '</td>';
+          html += '<td style="color:var(--accent-gold)">' + escapeHtml(String(s.suggested || '---')) + '</td>';
+          html += '<td style="font-size:11px;max-width:200px">' + escapeHtml(s.reason || '---') + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+    } else if (hasLLM && llmError) {
+      html += '<div class="balance-section-title">🤖 AI 分析</div>';
+      html += '<div class="balance-error">⚠️ ' + escapeHtml(llmError) + '</div>';
+    } else if (!hasLLM) {
+      html += '<div class="balance-section-title">📊 基础分析</div>';
+      html += '<div class="balance-summary" style="background:rgba(59,130,246,0.05);border-color:rgba(59,130,246,0.2);">💡 LLM 未连接，以下为基于规则的基础数据。联网后可使用 AI 进行深度数值分析。</div>';
+    }
+
+    // === 业务 ROI 排行 ===
+    if (data.bizROI && data.bizROI.length > 0) {
+      html += '<div class="balance-section-title">📈 业务 ROI 排行</div>';
+      var maxIncome = data.bizROI.length > 0 ? Math.max.apply(null, data.bizROI.map(function(b) { return b.income || 0; })) : 1;
+      html += '<table class="balance-table"><thead><tr><th>#</th><th>业务</th><th>等级</th><th>收入/Tick</th><th>ROI</th><th>占比</th></tr></thead><tbody>';
+      data.bizROI.forEach(function(b, i) {
+        var pct = maxIncome > 0 ? Math.round((b.income || 0) / maxIncome * 100) : 0;
+        html += '<tr>';
+        html += '<td style="color:var(--text-muted)">' + (i + 1) + '</td>';
+        html += '<td style="font-weight:600;color:var(--text-primary)">' + escapeHtml(b.name) + '</td>';
+        html += '<td>Lv.' + b.level + '</td>';
+        html += '<td>' + (b.income || 0).toFixed(2) + '</td>';
+        html += '<td style="color:' + (b.roi > 1.5 ? 'var(--green-down)' : (b.roi > 0.8 ? 'var(--text-secondary)' : 'var(--red-up)')) + '">' + b.roi + '</td>';
+        html += '<td><div class="balance-roi-bar"><div class="fill" style="width:' + pct + '%"></div></div><span style="font-size:9px;color:var(--text-muted)">' + pct + '%</span></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+
+    // === 策略分布 ===
+    if (data.strategyStats) {
+      var ss = data.strategyStats;
+      html += '<div class="balance-section-title">🎯 技能分配</div>';
+      html += '<div class="balance-overview" style="grid-template-columns:repeat(4,1fr)">';
+      html += '<div class="balance-stat"><div class="stat-value">' + (ss.management || 0) + '</div><div class="stat-label">📊 管理</div></div>';
+      html += '<div class="balance-stat"><div class="stat-value">' + (ss.tech || 0) + '</div><div class="stat-label">💻 技术</div></div>';
+      html += '<div class="balance-stat"><div class="stat-value">' + (ss.social || 0) + '</div><div class="stat-label">🤝 社交</div></div>';
+      html += '<div class="balance-stat"><div class="stat-value">' + (ss.finance || 0) + '</div><div class="stat-label">💹 金融</div></div>';
+      html += '</div>';
+    }
+
+    // === 风险提示 ===
+    if (stress > 60) {
+      html += '<div class="advisor-warning">⚠️ <b>压力过高（' + stress + '%）</b>：收入系数已降至 ' + (SGame.getStressMultiplier ? (SGame.getStressMultiplier() * 100).toFixed(0) : '?') + '%。建议立即降低压力：安排员工休息、减少扩张速度。</div>';
+    }
+    if (rep < 20 && G.tickCount > 50) {
+      html += '<div class="advisor-warning">⚠️ <b>声誉过低（' + rep + '）</b>：可能导致客户流失和合作机会减少。建议通过投资公关或增加公益捐赠来提升声誉。</div>';
+    }
+    if (G.employees && G.employees.length > 8) {
+      html += '<div class="advisor-warning">⚠️ <b>员工过多（' + G.employees.length + '人，>8）</b>：已触发人头税，每多1人工资总成本增加5%。当前总人力成本可能偏高。</div>';
+    }
+
+    // === 原始数据（可折叠） ===
+    html += '<div class="balance-raw-toggle" onclick="var el=this.nextElementSibling;el.style.display=el.style.display===\'block\'?\'none\':\'block\';this.textContent=el.style.display===\'block\'?\'📂 收起原始数据\':\'📂 展开原始数据（供开发者参考）\';">📂 展开原始数据（供开发者参考）</div>';
+    html += '<div class="balance-raw">' + escapeHtml(JSON.stringify(data, null, 2)) + '</div>';
+
+    content.innerHTML = html;
+    showToast('✅', '自检完成', '请查看弹窗中的分析报告');
+  }
+
+  function closeBalanceModal() {
+    var modal = document.getElementById('modal-balance');
+    if (modal) modal.classList.remove('active');
   }
 
   // ========== 手动工作按钮 ==========
@@ -1998,38 +2340,52 @@ window.UI = (() => {
   }
 
   let tutorialStep = 0;
-  const tutorialSteps = [
-    {
-      title: '欢迎来到商海浮沉',
-      text: '你是一名怀揣梦想的创业者，来到新海市打拼。初始资金 ' + (typeof SGame !== 'undefined' && SGame.G ? formatMoneyComma(SGame.G.money) : '¥20,000') + '，你的目标是成为商业大亨。',
-      highlight: null
-    },
-    {
-      title: '第一步：开业做生意',
-      text: '左侧「业务」面板显示可开设的业务类型。点击任意业务旁的「🚀 开业」按钮，用初始资金开启你的第一门生意。\n\n💡 提示：业务会在每个Tick自动产生收益。',
-      highlight: '#business-list'
-    },
-    {
-      title: '第二步：雇佣帮手',
-      text: '生意做大后需要员工。右侧「员工」面板可以招聘人才。\n\n不同角色有不同加成：经理提升整体效率，销售提升零售收入，开发提升科技产出。\n\n💡 注意：员工需要发工资，请量力而行。',
-      highlight: '#employee-list'
-    },
-    {
-      title: '第三步：仪表盘总览',
-      text: '顶部仪表盘展示你的核心财务数据：\n• Tick收益：每周期净利润\n• 员工数/业务数：经营规模\n• 声望/人脉：社会影响力\n• 市场情绪：随LLM新闻波动，影响收益\n\n💡 托管模式下AI会帮你自动决策。',
-      highlight: '#dashboard'
-    },
-    {
-      title: '第四步：事件与决策',
-      text: '游戏会随机触发商业事件。你的每个决策都会影响：\n• 金钱增减\n• 声望变化（高声望解锁更多业务和区域）\n• 员工忠诚度\n• 市场情绪\n\n💡 没有绝对正确的选择，见机行事！',
-      highlight: '#event-area'
-    },
-    {
-      title: '更多玩法',
-      text: '🎯 解锁新城市区域获取区域加成\n💼 投资收藏品赚取差价\n📈 炒股把握市场时机\n🔬 研发科技树获得全局增益\n\n准备好了吗？点击「开始游戏」进入商海！',
-      highlight: null
+
+  // 从游戏配置数据动态生成教程步骤
+  function buildTutorialSteps() {
+    var initialMoney = (typeof SGame !== 'undefined' && SGame.G ? SGame.formatMoney(SGame.G.money) : '¥20,000');
+    var tickSec = ((typeof CONFIG !== 'undefined' && CONFIG.TICK_MS) ? CONFIG.TICK_MS : 30000) / 1000;
+    var empRoleNames = [];
+    if (typeof EMP_ROLES !== 'undefined') {
+      empRoleNames = EMP_ROLES.filter(function(r) { return r.id !== 'intern'; }).slice(0, 4).map(function(r) { return r.name + '(' + r.effect + ')'; });
     }
-  ];
+    var bizCount = (typeof BUSINESS_DEFS !== 'undefined') ? BUSINESS_DEFS.length : 7;
+    var regionCount = (typeof REGIONS !== 'undefined') ? Object.keys(REGIONS).length : 30;
+    return [
+      {
+        title: '欢迎来到商海浮沉',
+        text: '你是一名怀揣梦想的创业者，来到新海市打拼。初始资金 ' + initialMoney + '，你的目标是成为商业大亨。',
+        highlight: null
+      },
+      {
+        title: '第一步：开业做生意',
+        text: '左侧「业务」面板显示' + bizCount + '种可开设的业务类型。点击任意业务旁的「🚀 开业」按钮，用初始资金开启你的第一门生意。\n\n💡 提示：业务会在每个Tick(' + tickSec + '秒)自动产生收益。',
+        highlight: '#business-list'
+      },
+      {
+        title: '第二步：雇佣帮手',
+        text: '生意做大后需要员工。右侧「员工」面板可以招聘人才，共有' + (typeof EMP_ROLES !== 'undefined' ? EMP_ROLES.length : 11) + '种角色可选。\n\n不同角色有不同加成：' + (empRoleNames.length > 0 ? empRoleNames.join('、') : '经理提升整体效率，销售提升零售收入，开发提升科技产出') + '。\n\n💡 注意：员工需要发工资，请量力而行。',
+        highlight: '#employee-list'
+      },
+      {
+        title: '第三步：仪表盘总览',
+        text: '顶部仪表盘展示你的核心财务数据：\n• Tick收益：每' + tickSec + '秒净利润\n• 员工数/业务数：经营规模\n• 声望/人脉：社会影响力\n• 市场情绪：随LLM新闻波动，影响收益\n\n💡 托管模式下AI会帮你自动决策。',
+        highlight: '#dashboard'
+      },
+      {
+        title: '第四步：事件与决策',
+        text: '游戏会随机触发商业事件。你的每个决策都会影响：\n• 金钱增减\n• 声望变化（高声望解锁更多业务和区域）\n• 员工忠诚度\n• 市场情绪\n\n💡 没有绝对正确的选择，见机行事！',
+        highlight: '#event-area'
+      },
+      {
+        title: '更多玩法',
+        text: '🎯 解锁' + regionCount + '个城市区域获取区域加成\n💼 投资收藏品赚取差价\n📈 炒股把握市场时机\n🔬 研发科技树获得全局增益\n\n准备好了吗？点击「开始游戏」进入商海！',
+        highlight: null
+      }
+    ];
+  }
+
+  var tutorialSteps = buildTutorialSteps();
 
   function renderTutorialStep(step) {
     if (step >= tutorialSteps.length) {
@@ -2069,6 +2425,175 @@ window.UI = (() => {
     if (typeof SGame.markTutorialDone === 'function') SGame.markTutorialDone();
   }
 
+  // ========== Canvas 图表渲染 ==========
+  function renderIncomeTrendChart(G) {
+    const canvas = document.getElementById('income-trend-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const cw = parseInt(canvas.style.width) || 560;
+    const ch = parseInt(canvas.style.height) || 200;
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    ctx.scale(dpr, dpr);
+
+    const data = G.incomeHistory || [];
+    const recent = data.slice(-20);
+    const w = cw, h = ch;
+    const pad = { top: 20, right: 20, bottom: 30, left: 60 };
+    const pw = w - pad.left - pad.right;
+    const ph = h - pad.top - pad.bottom;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (recent.length < 2) {
+      ctx.fillStyle = '#666';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('数据不足，多运行几个 Tick 后生成', w / 2, h / 2);
+      return;
+    }
+
+    const incomes = recent.map(d => d.income);
+    const maxVal = Math.max(...incomes, 1);
+    const minVal = Math.min(0, ...incomes);
+
+    // Y轴刻度
+    ctx.fillStyle = '#888';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+      const val = minVal + (maxVal - minVal) * i / 4;
+      const y = pad.top + ph - (ph * (val - minVal) / (maxVal - minVal || 1));
+      ctx.fillText(SGame.formatMoney(val), pad.left - 4, y + 3);
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(w - pad.right, y);
+      ctx.stroke();
+    }
+
+    // X轴标签（Tick编号）
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#888';
+    ctx.font = '9px sans-serif';
+    const step = Math.max(1, Math.floor(recent.length / 5));
+    for (let i = 0; i < recent.length; i += step) {
+      const x = pad.left + (pw * i / (recent.length - 1 || 1));
+      ctx.fillText('T' + recent[i].tick, x, h - pad.bottom + 14);
+    }
+
+    // 折线
+    ctx.strokeStyle = '#0ea5e9';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < recent.length; i++) {
+      const x = pad.left + (pw * i / (recent.length - 1 || 1));
+      const y = pad.top + ph - (ph * (recent[i].income - minVal) / (maxVal - minVal || 1));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // 数据点
+    recent.forEach((d, i) => {
+      const x = pad.left + (pw * i / (recent.length - 1 || 1));
+      const y = pad.top + ph - (ph * (d.income - minVal) / (maxVal - minVal || 1));
+      ctx.fillStyle = '#0ea5e9';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // 零线
+    if (minVal < 0) {
+      const zeroY = pad.top + ph - (ph * (0 - minVal) / (maxVal - minVal || 1));
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, zeroY);
+      ctx.lineTo(w - pad.right, zeroY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  function renderBizPieChart(G) {
+    const canvas = document.getElementById('biz-pie-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const cw = parseInt(canvas.style.width) || 400;
+    const ch = parseInt(canvas.style.height) || 300;
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    ctx.scale(dpr, dpr);
+
+    ctx.clearRect(0, 0, cw, ch);
+
+    // 收集各业务收入
+    let bizIncomes = [];
+    if (typeof SGame.calcBizIncome === 'function') {
+      const BUSINESS_DEFS = window.BUSINESS_DEFS || [];
+      BUSINESS_DEFS.forEach(b => {
+        const income = SGame.calcBizIncome(b.id, G);
+        bizIncomes.push({ name: b.name, icon: b.icon || '', income: income });
+      });
+    }
+    bizIncomes = bizIncomes.filter(b => b.income > 0);
+    const total = bizIncomes.reduce((s, b) => s + b.income, 0);
+
+    if (total <= 0) {
+      ctx.fillStyle = '#666';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('暂无业务收入数据', cw / 2, ch / 2);
+      return;
+    }
+
+    const cx = cw * 0.4, cy = ch * 0.5, r = Math.min(cx - 20, cy - 20, 100);
+    const colors = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+
+    // 绘制饼图
+    let startAngle = -Math.PI / 2;
+    bizIncomes.forEach((b, i) => {
+      const sliceAngle = (b.income / total) * Math.PI * 2;
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, startAngle, startAngle + sliceAngle);
+      ctx.closePath();
+      ctx.fill();
+
+      // 标签线
+      const midAngle = startAngle + sliceAngle / 2;
+      const labelR = r + 18;
+      const lx = cx + Math.cos(midAngle) * labelR;
+      const ly = cy + Math.sin(midAngle) * labelR;
+      ctx.strokeStyle = colors[i % colors.length];
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(midAngle) * r, cy + Math.sin(midAngle) * r);
+      ctx.lineTo(lx, ly);
+      ctx.stroke();
+
+      startAngle += sliceAngle;
+    });
+
+    // 右侧图例
+    const lx = cx + r + 40, lyStart = cy - bizIncomes.length * 12;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    bizIncomes.forEach((b, i) => {
+      const ly = lyStart + i * 20;
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(lx, ly - 8, 10, 10);
+      ctx.fillStyle = '#ccc';
+      const pct = (b.income / total * 100).toFixed(1);
+      ctx.fillText(b.icon + ' ' + b.name + ' ' + pct + '%', lx + 14, ly);
+    });
+  }
+
   // ========== 统计面板 ==========
   function renderStatPanel(container) {
     if (!container) return;
@@ -2100,7 +2625,7 @@ window.UI = (() => {
 
     // 股票市值
     var stockValue = 0;
-    try { if (typeof SGame.getStockPortfolioValue === 'function') stockValue = SGame.getStockPortfolioValue(); } catch(e) {}
+    try { if (typeof SGame.getStockPortfolioValue === 'function') stockValue = SGame.getStockPortfolioValue(); } catch(e) { console.warn('[UI] getStockPortfolioValue failed:', e.message || e); }
 
     // 资产总值
     var assetValue = 0;
@@ -2113,7 +2638,7 @@ window.UI = (() => {
 
     // 子公司
     var subSummary = { count: 0, totalIncome: 0 };
-    try { if (typeof SGame.getSubsidiarySummary === 'function') subSummary = SGame.getSubsidiarySummary(); } catch(e) {}
+    try { if (typeof SGame.getSubsidiarySummary === 'function') subSummary = SGame.getSubsidiarySummary(); } catch(e) { console.warn('[UI] getSubsidiarySummary failed:', e.message || e); }
 
     // === 运营计算 ===
     var activeBizCount = 0, totalBizLevel = 0;
@@ -2215,8 +2740,8 @@ window.UI = (() => {
     html += row('平均幸福感', avgHappiness);
 
     html += section('玩家状态');
-    html += row('声望值', (G.reputation || 0).toFixed(1) + ' (' + (repLevelMap[G.repLevel] || G.repLevel || '--') + ')');
-    html += row('压力值', (G.stress || 0).toFixed(1) + ' (' + (stressModeMap[G.stressMode] || G.stressMode || '--') + ')');
+    html += row('声望值', Math.round(G.reputation || 0) + ' (' + (repLevelMap[G.repLevel] || G.repLevel || '--') + ')');
+    html += row('压力值', Math.round(G.stress || 0) + ' (' + (stressModeMap[G.stressMode] || G.stressMode || '--') + ')');
     html += row('人脉值', G.connections || 0);
     html += row('历史最高压力', (G.stressMax || 0).toFixed(1));
     html += row('高压运行Tick', G.stressHighTickCount || 0);
@@ -2238,7 +2763,19 @@ window.UI = (() => {
 
     html += autoHtml;
 
+    // === 数据可视化图表 ===
+    html += section('收入趋势（最近20 Tick）');
+    html += '<canvas id="income-trend-chart" width="560" height="200" style="width:100%;max-width:560px;height:200px;background:rgba(0,0,0,0.15);border-radius:8px;margin-bottom:12px;"></canvas>';
+    html += section('业务收入占比');
+    html += '<canvas id="biz-pie-chart" width="400" height="300" style="width:100%;max-width:400px;height:300px;background:rgba(0,0,0,0.15);border-radius:8px;margin-bottom:12px;"></canvas>';
+
     container.innerHTML = html;
+
+    // 延迟渲染 Canvas 图表（DOM 插入后 canvas 才可用）
+    setTimeout(function() {
+      renderIncomeTrendChart(G);
+      renderBizPieChart(G);
+    }, 10);
   }
 
   // ========== 里程碑面板 (功能9) ==========
@@ -2461,7 +2998,7 @@ window.UI = (() => {
         '<span style="font-size:20px;min-width:28px;text-align:center;">' + rankEmoji + '</span>' +
         '<span style="font-weight:600;color:' + nameColor + ';min-width:120px;">' + entity.name + '</span>' +
         '<span style="font-size:11px;color:var(--text-muted);min-width:70px;">' + (entity.boss || '') + '</span>' +
-        '<span style="font-size:12px;color:var(--accent-gold);min-width:100px;text-align:right;font-weight:600;">' + formatMoneyComma(entity.money) + '</span>' +
+        '<span style="font-size:12px;color:var(--accent-gold);min-width:100px;text-align:right;font-weight:600;">' + SGame.formatMoney(entity.money) + '</span>' +
         (entity.style ? '<span style="font-size:10px;color:' + (entity.color || 'var(--text-muted)') + ';padding:2px 8px;border-radius:4px;background:rgba(255,255,255,0.05);">' + entity.style + '</span>' : '') +
       '</div>';
     });
@@ -2558,9 +3095,9 @@ window.UI = (() => {
     const pnlSign = pnl >= 0 ? '+' : '';
 
     html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">' +
-      '投资组合市值: <b style="color:var(--accent-gold)">' + formatMoneyComma(portfolioVal) + '</b> | ' +
-      '成本: ' + formatMoneyComma(costBasis) + ' | ' +
-      '盈亏: <b style="color:' + pnlColor + '">' + pnlSign + formatMoneyComma(pnl) + '</b>' +
+      '投资组合市值: <b style="color:var(--accent-gold)">' + SGame.formatMoney(portfolioVal) + '</b> | ' +
+      '成本: ' + SGame.formatMoney(costBasis) + ' | ' +
+      '盈亏: <b style="color:' + pnlColor + '">' + pnlSign + SGame.formatMoney(pnl) + '</b>' +
       '</div>';
 
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">';
@@ -2595,14 +3132,14 @@ window.UI = (() => {
     const rateDisp = (rate * 100).toFixed(1);
 
     html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">' +
-      '可贷额度: <b style="color:var(--accent-gold)">' + formatMoneyComma(maxLoanActual) + '</b> (资产50%' + (npcBon._loanCapBonus ? '+金行长加成' : '') + ') | ' +
+      '可贷额度: <b style="color:var(--accent-gold)">' + SGame.formatMoney(maxLoanActual) + '</b> (资产50%' + (npcBon._loanCapBonus ? '+金行长加成' : '') + ') | ' +
       '利率: <b>' + rateDisp + '%</b></div>';
 
     if (G.loans && G.loans.length > 0) {
       html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">当前贷款:</div>';
       G.loans.forEach((loan, i) => {
         html += '<div style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">' +
-          '<span>贷款 ' + formatMoneyComma(loan.amount) + ' | 利率 ' + (loan.interestRate*100).toFixed(1) + '% | 剩余 ' + loan.remaining + ' Tick</span>' +
+          '<span>贷款 ' + SGame.formatMoney(loan.amount) + ' | 利率 ' + (loan.interestRate*100).toFixed(1) + '% | 剩余 ' + loan.remaining + ' Tick</span>' +
           '<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="SGame.repayLoan(' + loan.id + ');UI.renderAll();">还款</button>' +
         '</div>';
       });
@@ -2613,7 +3150,7 @@ window.UI = (() => {
       html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:10px;">申请新贷款:</div>';
       [Math.floor(maxLoan*0.2), Math.floor(maxLoan*0.4), Math.floor(maxLoan*0.6)].forEach(amt => {
         if (amt < 10000) return;
-        html += '<button class="btn" style="font-size:10px;padding:4px 10px;margin:4px;" onclick="SGame.applyLoan(' + amt + ',60);UI.renderAll();">贷 ' + formatMoneyComma(amt) + ' (60Tick)</button>';
+        html += '<button class="btn" style="font-size:10px;padding:4px 10px;margin:4px;" onclick="SGame.applyLoan(' + amt + ',60);UI.renderAll();">贷 ' + SGame.formatMoney(amt) + ' (60Tick)</button>';
       });
     } else if (!canLoan) {
       html += '<div style="font-size:11px;color:var(--red-up);margin-top:10px;">已达贷款上限（最多3笔）</div>';
@@ -2830,12 +3367,84 @@ window.UI = (() => {
     var newsDiv = document.createElement('div');
     newsDiv.className = 'log-entry llm-news-entry';
     newsDiv.style.cssText = 'border-left: 2px solid var(--accent-cyan); padding-left: 8px; background: rgba(6,182,212,0.05); border-radius: 4px;';
-    newsDiv.innerHTML = '<span class="log-time">Tick' + latest.tick + '</span> <span style="font-size:10px;color:var(--accent-cyan)">📰 商业快讯</span><br><span class="log-text">' + latest.text + '</span>';
+    newsDiv.innerHTML = '<span class="log-time">Tick' + latest.tick + '</span> <span style="font-size:10px;color:var(--accent-cyan)">📰 商业快讯</span><br><span class="log-text">' + escapeHtml(latest.text) + '</span>';
     if (logEl.firstChild) {
       logEl.insertBefore(newsDiv, logEl.firstChild);
     } else {
       logEl.appendChild(newsDiv);
     }
+  }
+
+  // ========== 商业情报面板 ==========
+  let intelResults = {};
+
+  function renderIntelPanel(panel) {
+    if (!panel) return;
+    const G = SGame.G;
+    if (!G) { panel.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">游戏未开始</div>'; return; }
+    const rivals = G.rivals || [];
+    if (!rivals.length) { panel.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">暂无竞争对手</div>'; return; }
+
+    let html = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
+    html += '<button onclick="UI.switchPanel(\'dashboard\')" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:6px 14px;font-size:13px;cursor:pointer;font-family:var(--font);transition:all 0.2s;" onmouseover="this.style.background=\'rgba(255,255,255,0.18)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.08)\'">← 返回</button>';
+    html += '<div style="font-size:16px;font-weight:700;color:var(--accent-gold)">🔍 商业情报</div>';
+    html += '</div>';
+
+    html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px;">花费资金获取竞争对手的核心信息，包括资产估算、策略倾向和弱点分析。</div>';
+
+    rivals.forEach(r => {
+      const strategyLabel = { aggressive: '🔴 激进', conservative: '🟢 保守', specialized: '🔵 专精' };
+      const intel = intelResults[r.id];
+      const hasIntel = !!intel;
+      const cardBg = intel ? 'linear-gradient(135deg,rgba(168,85,247,0.15),rgba(147,51,234,0.08))' : 'rgba(255,255,255,0.04)';
+      const borderColor = intel ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.1)';
+
+      html += `<div style="background:${cardBg};border:1px solid ${borderColor};border-radius:12px;padding:16px;margin-bottom:12px;">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">`;
+      html += `<div><span style="font-size:15px;font-weight:700;color:var(--text-primary)">${r.name}</span>`;
+      html += `<span style="margin-left:8px;font-size:11px;color:var(--text-secondary)">${strategyLabel[r.strategy] || '⚪ 未知'} · ${r.specIndustry || '全行业'}</span></div>`;
+
+      if (!hasIntel) {
+        html += `<button onclick="UI.getRivalIntel('${r.id}')" style="background:linear-gradient(135deg,var(--purple),#7c3aed);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--font);">💰 获取情报</button>`;
+      } else {
+        html += `<span style="font-size:10px;color:var(--purple)">已获取 ✓</span>`;
+      }
+
+      html += '</div>';
+
+      if (hasIntel) {
+        html += `<div style="font-size:11px;color:var(--text-secondary);line-height:1.8">`;
+        html += `<div>📊 <b>资产规模</b>：${intel.assetRange}</div>`;
+        html += `<div>🎯 <b>策略倾向</b>：${intel.strategyDesc}</div>`;
+        html += `<div>⚠️ <b>弱点分析</b>：${intel.weakness}</div>`;
+        html += `<div style="margin-top:4px;font-size:10px;color:var(--text-muted)">情报费：${SGame.formatMoney(intel.cost)} · 员工数：${intel.empCount || '?'} · 市场覆盖：${intel.coverageRange || '?'}</div>`;
+        html += '</div>';
+      } else {
+        html += `<div style="font-size:11px;color:var(--text-muted)">尚未获取情报。获取后可查看资产规模、策略倾向和弱点分析。</div>`;
+      }
+
+      html += '</div>';
+    });
+
+    panel.innerHTML = html;
+  }
+
+  // ========== 获取情报（UI 包装） ==========
+  function getRivalIntel(rivalId) {
+    if (typeof SGame.getRivalIntel !== 'function') {
+      if (typeof showToast === 'function') showToast('情报系统不可用');
+      return;
+    }
+    const result = SGame.getRivalIntel(rivalId);
+    if (!result.ok) {
+      if (typeof showToast === 'function') showToast(result.msg);
+      return;
+    }
+    intelResults[rivalId] = result.data || result;
+    const panel = document.getElementById('center-panel');
+    if (panel) renderIntelPanel(panel);
+    if (typeof showToast === 'function') showToast('情报获取成功！');
+    if (typeof renderRivalReport === 'function') renderRivalReport();
   }
 
   // #7: 竞争对手情报渲染（在右侧面板展示）
@@ -2852,12 +3461,73 @@ window.UI = (() => {
     var reportDiv = document.createElement('div');
     reportDiv.className = 'log-entry llm-rival-entry';
     reportDiv.style.cssText = 'border-left: 2px solid var(--purple); padding-left: 8px; background: rgba(168,85,247,0.05); border-radius: 4px;';
-    reportDiv.innerHTML = '<span class="log-time">Tick' + latest.tick + '</span> <span style="font-size:10px;color:var(--purple)">🔍 竞争情报</span><br><span class="log-text">' + latest.text + '</span>';
+    reportDiv.innerHTML = '<span class="log-time">Tick' + latest.tick + '</span> <span style="font-size:10px;color:var(--purple)">🔍 竞争情报</span><br><span class="log-text">' + escapeHtml(latest.text) + '</span>';
     if (logEl.firstChild) {
       logEl.insertBefore(reportDiv, logEl.firstChild);
     } else {
       logEl.appendChild(reportDiv);
     }
+  }
+
+  // ========== 智能顾问系统 ==========
+  function openAdvisor() {
+    const modal = document.getElementById('modal-advisor');
+    const content = document.getElementById('advisor-content');
+    if (!modal || !content) return;
+
+    // 打开弹窗，显示加载中
+    modal.classList.add('active');
+    content.innerHTML = '<div class="advisor-loading"><div class="spinner"></div><div style="margin-top:8px;font-size:12px;color:var(--text-muted);">顾问正在分析局势...</div></div>';
+
+    // 调用顾问系统
+    if (typeof Advisor === 'undefined' || !Advisor.getAdvice) {
+      content.innerHTML = '<div class="advisor-error">⚠️ 顾问系统未加载，请刷新页面后重试。</div>';
+      return;
+    }
+
+    Advisor.getAdvice().then(function(result) {
+      if (!result) {
+        content.innerHTML = '<div class="advisor-error">⚠️ 顾问系统返回为空，请稍后再试。</div>';
+        return;
+      }
+
+      var html = '';
+
+      // 来源标签
+      if (result.fromLLM) {
+        html += '<div style="font-size:10px;color:var(--accent-cyan);margin-bottom:8px;">🤖 由 LLM 分析师生成</div>';
+      } else {
+        html += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">📋 基于规则分析（LLM 不可用）</div>';
+      }
+
+      // 错误提示
+      if (result.error && result.error !== 'busy') {
+        html += '<div class="advisor-warning">⚠️ ' + result.error + '</div>';
+      }
+      if (result.error === 'busy') {
+        html += '<div class="advisor-cooldown">顾问正在处理上一次请求，请稍后再试。</div>';
+      }
+
+      // 建议内容（保留换行）
+      var adviceText = (result.text || '暂无建议').trim();
+      // 简单 Markdown 渲染：加粗、换行
+      adviceText = adviceText
+        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+        .replace(/\n/g, '<br>');
+      html += '<div class="advisor-text">' + adviceText + '</div>';
+
+      // 提示
+      html += '<div class="advisor-hint">💡 建议在托管模式下让 AI 自动执行，或直接手动操作。</div>';
+
+      content.innerHTML = html;
+    }).catch(function(err) {
+      content.innerHTML = '<div class="advisor-error">⚠️ 获取建议失败：' + (err.message || err) + '</div>';
+    });
+  }
+
+  function closeAdvisor() {
+    const modal = document.getElementById('modal-advisor');
+    if (modal) modal.classList.remove('active');
   }
 
   // ========== 亮色/暗色模式切换 ==========
@@ -2902,10 +3572,10 @@ window.UI = (() => {
     showToast, showMilestone, renderStatPanel,
     renderSaveSlots, saveToSlot, loadSaveSlot,
     exportSaveSlot, deleteSaveSlot, importToSlot,
-    formatMoneyComma, renderMiniAssetChart, renderIncomeBreakdown,
+    renderMiniAssetChart, renderIncomeBreakdown,
     switchPanel, openSettings,
     renderRankingPanel, showNewsDetail, retireGame,
-    renderTechPanel, renderStockPanel,
+    renderTechPanel, renderStockPanel, renderQuestPanel,
     // 事件日志搜索辅助方法 (#19)
     _eventLogSearch: function(val) { eventLogSearch = val; renderEventLog(); },
     _clearEventLogSearch: function() { eventLogSearch = ''; renderEventLog(); },
@@ -2913,6 +3583,7 @@ window.UI = (() => {
     showOfflineIncomePopup, claimOfflineIncome,
     batchHire,
     trainEmployee, restEmployee,
+    trainEmployeeSpec,
     // HR 统管
     batchTrainDept, batchHireDept, toggleDeptDetail,
     renderMilestonePanel,
@@ -2920,6 +3591,11 @@ window.UI = (() => {
     // LLM 增强渲染 (#5, #7, #9)
     renderNewsFeed, renderRivalReport, renderMarketSentiment,
     renderAssetPanel,
+    getRivalIntel, renderIntelPanel,
+    // ---- 数据可视化 ----
+    renderIncomeTrendChart, renderBizPieChart,
     toggleTheme,
+    openAdvisor, closeAdvisor,
+    triggerBalanceCheck, closeBalanceModal,
   };
 })();

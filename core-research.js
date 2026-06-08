@@ -6,11 +6,13 @@
   var S = window.SGame;
   if (!S) { setTimeout(initCoreResearch, 10); return; }
 
-  // 生成研发点数
+  // 生成研发点数（复用 tickCityLoop 区域缓存避免重复遍历）
   S.generateRPT = function() {
     var G = S.G;
     if (!G) return;
     var rptGain = 0;
+    // 复用 tickCityLoop 缓存：_cityLoopRegionMods 已有 rdBonus 乘数
+    var regionMods = S._cityLoopRegionMods;
     Object.values(G.cities || {}).forEach(function(city) {
       if (!city.unlocked) return;
       Object.entries(city.businesses || {}).forEach(function(entry) {
@@ -30,18 +32,8 @@
     if ((G.npcFavor && G.npcFavor.majizhe) > 40) rptGain *= 1.20;
     // 联动：林教授好感 > 40 → RPT 获取 +15%（学术资源）
     if ((G.npcFavor && G.npcFavor.linjiaoshou) > 40) rptGain *= 1.15;
-    // 区域加成：rdBonus 研发速度加成（遍历有业务的区域）
-    var rdRegionMul = 1.0;
-    Object.values(G.cities || {}).forEach(function(city) {
-      if (!city.unlocked) return;
-      Object.entries(city.businesses || {}).forEach(function(entry) {
-        var biz = entry[1];
-        if (!biz || biz.level <= 0 || !biz.region) return;
-        var reg = REGIONS[biz.region];
-        if (reg && reg.bonus.rdBonus) rdRegionMul *= reg.bonus.rdBonus;
-      });
-    });
-    if (rdRegionMul > 1.0) rptGain *= rdRegionMul;
+    // 区域加成：复用 tickCityLoop 的 _cityLoopRegionMods 缓存
+    if (regionMods && regionMods.rdBonus && regionMods.rdBonus > 1.0) rptGain *= regionMods.rdBonus;
     G.rpt += rptGain;
     G.rpt = Math.round(G.rpt * 100) / 100;
   };

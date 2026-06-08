@@ -20,7 +20,40 @@ window.LLM = (() => {
   function getBase() { return Settings.get('llmBase'); }
   function getModel() { return Settings.get('llmModel'); }
   function getTemp() { return Settings.get('temperature'); }
-  function getMaxTokens() { return Settings.get('maxTokens'); }
+  function getMaxTokens() {
+    if (typeof CONFIG !== 'undefined' && CONFIG.LLM_MAX_TOKENS) return CONFIG.LLM_MAX_TOKENS;
+    var v = Settings.get('maxTokens');
+    var base = v ? v : 1024;
+    // qwen3.5 系列默认启用 thinking，思考过程消耗大量 token，需增加预算
+    var m = getModel();
+    if (m && m.indexOf('qwen3.5') >= 0) base = Math.max(base, 2048);
+    return base;
+  }
+
+  // 从 thinking 内容中提取最终输出（qwen3.5 thinking 模式回退）
+  function extractFromThinking(thinking) {
+    if (!thinking) return '';
+    // 取最后 300 个字符，清理前缀数字/步骤标记
+    var tail = thinking.slice(-400);
+    // 尝试找最后一句完整的话（以句号/问号/感叹号结尾）
+    var sentences = tail.split(/(?<=[。\.\?\!])/);
+    if (sentences.length >= 2) {
+      // 取最后两句
+      var lastTwo = sentences.slice(-2).join('').trim();
+      if (lastTwo.length > 10) return lastTwo;
+    }
+    // 回退：去掉行首编号和空格，返回最后一行
+    var lines = tail.split('\n').filter(function(l) { return l.trim().length > 5; });
+    if (lines.length) return lines[lines.length - 1].trim();
+    return tail.trim();
+  }
+
+  // 构建 Ollama API 请求 URL（通过 /api/ollama 代理转发）
+  function ollamaUrl(path) {
+    var base = getBase();
+    if (!base) base = '/api/ollama';
+    return base + path;
+  }
 
   // ========== 冷却检查 ==========
   function isInCooldown() { return cooldownUntil > 0 && Date.now() < cooldownUntil; }
@@ -34,7 +67,9 @@ window.LLM = (() => {
   }
 
   function exitCooldown() {
-    if (isInCooldown() && Date.now() >= cooldownUntil) {
+    // 修复：isInCooldown() 要求 Date.now() < cooldownUntil，无法同时满足 >= cooldownUntil
+    if (cooldownUntil > 0 && Date.now() >= cooldownUntil) {
+      console.log('[LLM] 冷却期结束，重置状态并重检');
       cooldownUntil = 0; failureCount = 0;
       setStatus('LLM离线'); check();
     }
@@ -45,46 +80,81 @@ window.LLM = (() => {
     exitCooldown();
     const maxConcurrent = getMaxConcurrent();
     while (pendingQueue.length > 0 && activeRequests < maxConcurrent) {
-      if (isInCooldown()) { const item = pendingQueue.shift(); item.resolve(null); continue; }
+      if (isInCooldown()) {
+        // 冷却期内不丢弃请求，延迟5秒后重试
+        const item = pendingQueue.shift();
+        setTimeout(() => { pendingQueue.unshift(item); processQueue(); }, 5000);
+        return;
+      }
       if (!available) { const item = pendingQueue.shift(); item.resolve(null); continue; }
       const item = pendingQueue.shift(); activeRequests++;
-      _doGenerate(item.prompt, item.temp)
+      _doGenerate(item.prompt, item.temp, 0, item.system)
         .then(result => item.resolve(result))
         .catch(() => item.resolve(null))
         .finally(() => { activeRequests--; processQueue(); });
     }
   }
 
-  // ========== 实际执行 generate ==========
-  async function _doGenerate(prompt, temperature) {
+  // ========== 实际执行 generate（含网络错误重试1次） ==========
+  async function _doGenerate(prompt, temperature, _retryCount, system) {
+    if (_retryCount === undefined) _retryCount = 0;
     if (temperature === undefined) temperature = getTemp();
     setLoading();
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), getGenerateTimeout());
-      const r = await fetch(`${getBase()}/api/generate`, {
+      var finalPrompt = prompt;
+      var modelName = getModel() || '';
+      // qwen3.5 等模型对 system 参数支持不稳定，将 system 指令嵌入 prompt 开头双保险
+      if (system && modelName.toLowerCase().includes('qwen')) {
+        finalPrompt = system + '\n\n---\n' + prompt;
+      }
+      var bodyObj = {
+        model: modelName,
+        prompt: finalPrompt,
+        stream: false,
+        options: { temperature, num_predict: getMaxTokens(), think: false },
+      };
+      if (system) bodyObj.system = system;
+      const r = await fetch(ollamaUrl('/api/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: getModel(),
-          prompt,
-          stream: false,
-          options: { temperature, num_predict: getMaxTokens() },
-        }),
+        body: JSON.stringify(bodyObj),
         signal: ctrl.signal,
       });
       clearTimeout(timer);
       if (!r.ok) throw new Error('llm fail ' + r.status);
       const data = await r.json();
-      if (data.response && data.response.trim()) {
+      // Qwen3.5 可能返回 thinking 模式：response 为空但有 thinking 字段
+      const responseText = (data.response || '').trim();
+      if (responseText) {
+        // 成功后同步修复 available 标志（check 不能是唯一的 true 来源）
+        if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
         failureCount = 0;
-        return data.response.trim();
+        return responseText;
+      }
+      // 如果 response 为空但有 thinking，提取 thinking 末尾作为回退输出
+      if (data.thinking) {
+        console.warn('[LLM] response 为空，从 thinking 提取回退输出');
+        var fallback = extractFromThinking(data.thinking);
+        if (fallback) {
+          if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
+          failureCount = 0;
+          return fallback;
+        }
       }
       throw new Error('empty response');
     } catch(e) {
+      // Network error: retry once
+      const isNetworkErr = e.name === 'TypeError' || String(e.message || '').includes('fetch');
+      if (isNetworkErr && _retryCount < 1) {
+        console.warn('[LLM] 网络错误，1秒后重试 (' + (_retryCount+1) + '/1):', e.message);
+        await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+        return _doGenerate(prompt, temperature, _retryCount + 1, system);
+      }
       failureCount++;
       console.warn('[LLM] 生成失败 (' + failureCount + '/' + getMaxFailures() + '):', e.message);
-      if (e.name === 'TypeError' || e.message.includes('fetch')) {
+      if (isNetworkErr) {
         available = false; setDot(''); setStatus('LLM离线');
         setTimeout(() => check(), 10000);
       }
@@ -95,24 +165,30 @@ window.LLM = (() => {
 
   // ========== 检测状态 ==========
   async function check() {
-    if (checking) return;
-    if (isInCooldown()) return;
+    // 允许检测绕过冷却期：冷却期只应限制生成请求，不应阻止 LLM 可用性检测
+    if (checking) { console.log('[LLM][check] 跳过：上一轮检测仍在进行中'); return; }
     checking = true;
     setDot('loading'); setStatus('LLM检测中...');
+    const url = ollamaUrl('/api/tags');
+    console.log('[LLM][check] 请求 URL:', url);
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), getCheckTimeout());
-      const r = await fetch(`${getBase()}/api/tags`, { signal: ctrl.signal });
+      const r = await fetch(url, { signal: ctrl.signal });
       clearTimeout(timer);
+      console.log('[LLM][check] 响应状态:', r.status, r.statusText);
       if (r.ok) {
+        const data = await r.json();
+        const modelCount = (data.models && data.models.length) || 0;
+        console.log('[LLM][check] 检测到 ' + modelCount + ' 个模型，当前配置模型：' + getModel());
         available = true; failureCount = 0; cooldownUntil = 0;
         setDot('active'); setStatus('LLM在线(' + getModel() + ')');
       } else throw new Error('HTTP ' + r.status);
     } catch(e) {
       available = false; setDot('');
-      const msg = e.name === 'AbortError' ? '超时' : (e.message || '');
+      const msg = e.name === 'AbortError' ? '超时(' + (getCheckTimeout()/1000) + 's)' : (e.message || '');
       setStatus('LLM离线');
-      console.warn('[LLM] 检测失败(' + msg + '): Ollama是否已启动并用HTTP服务器打开游戏？');
+      console.warn('[LLM][check] 检测失败:', msg, '| URL:', url, e.name !== 'AbortError' ? ('| 详情: ' + (e.message || e)) : '');
     }
     checking = false;
   }
@@ -122,19 +198,19 @@ window.LLM = (() => {
   function setLoading() { setDot('loading'); setStatus('LLM生成中...'); }
 
   // ========== 带队列的 generate（公开入口） ==========
-  function generate(prompt, temperature) {
+  function generate(prompt, temperature, system) {
     exitCooldown();
     if (isInCooldown()) return Promise.resolve(null);
     if (!available) return Promise.resolve(null);
     return new Promise((resolve) => {
       if (activeRequests < getMaxConcurrent()) {
         activeRequests++;
-        _doGenerate(prompt, temperature)
+        _doGenerate(prompt, temperature, 0, system)
           .then(result => resolve(result))
           .catch(() => resolve(null))
           .finally(() => { activeRequests--; processQueue(); });
       } else {
-        pendingQueue.push({ prompt, temp: temperature, resolve });
+        pendingQueue.push({ prompt, temp: temperature, system, resolve });
       }
     });
   }
@@ -149,20 +225,24 @@ window.LLM = (() => {
   // 上下文构建器（统一注入游戏状态）
   // ===================================================================
 
-  function getQualityBonus() {
+  // 统一的游戏状态访问器（替换所有分散的 typeof SGame !== 'undefined' 守卫）
+  function getG() {
     try {
-      if (typeof SGame !== 'undefined' && SGame.G && SGame.G.unlockedSkills) {
-        if (SGame.G.unlockedSkills.includes('ai_empower')) return 1.3;
-      }
-    } catch(e) {}
+      if (typeof SGame !== 'undefined' && SGame.G) return SGame.G;
+    } catch(e) {
+      console.warn('[LLM] SGame.G not accessible:', e.message || e);
+    }
+    return null;
+  }
+
+  function getQualityBonus() {
+    var G = getG();
+    if (G && G.unlockedSkills && G.unlockedSkills.includes('ai_empower')) return 1.3;
     return 1.0;
   }
 
   function buildGameContext() {
-    var G;
-    try {
-      if (typeof SGame !== 'undefined' && SGame.G) G = SGame.G;
-    } catch(e) { return ''; }
+    var G = getG();
     if (!G) return '';
 
     var parts = [];
@@ -172,7 +252,7 @@ window.LLM = (() => {
       parts.push('玩家资产：' + SGame.formatMoney(G.money || 0));
     }
     parts.push('第' + (G.act || 1) + '幕，已达成' + (G.milestone || 0) + '个里程碑');
-    parts.push('声誉：' + (G.reputation || 0) + '/100，压力：' + (G.stress || 0) + '/100');
+    parts.push('声誉：' + ((G.reputation || 0).toFixed(1)) + '/100，压力：' + ((G.stress || 0).toFixed(1)) + '/100');
 
     // 员工
     if (G.employees && G.employees.length > 0) {
@@ -220,8 +300,7 @@ window.LLM = (() => {
 
   // 获取最近事件摘要（用于叙事连续性）
   function getRecentEventContext() {
-    var G;
-    try { if (typeof SGame !== 'undefined' && SGame.G) G = SGame.G; } catch(e) { return ''; }
+    var G = getG();
     if (!G || !G.narrativeContext || !G.narrativeContext.length) return '';
 
     var recent = G.narrativeContext.slice(-3);
@@ -229,15 +308,41 @@ window.LLM = (() => {
   }
 
   function addToNarrativeContext(text) {
-    try {
-      if (typeof SGame !== 'undefined' && SGame.G) {
-        if (!SGame.G.narrativeContext) SGame.G.narrativeContext = [];
-        // 压缩：超过100字的部分截断
-        var short = text.length > 80 ? text.substring(0, 80) + '...' : text;
-        SGame.G.narrativeContext.push(short);
-        if (SGame.G.narrativeContext.length > 10) SGame.G.narrativeContext = SGame.G.narrativeContext.slice(-5);
+    var G = getG();
+    if (!G) return;
+    if (!G.narrativeContext) G.narrativeContext = [];
+    // 压缩：超过100字的部分截断
+    var short = text.length > 80 ? text.substring(0, 80) + '...' : text;
+    G.narrativeContext.push(short);
+    if (G.narrativeContext.length > 10) G.narrativeContext = G.narrativeContext.slice(-5);
+  }
+
+  // ===================================================================
+  // 统一 prompt 拼接 + 调用模式
+  // ===================================================================
+  async function _generateWithDefault(systemHint, promptParts, fallback, temperature, qualityGate) {
+    var prompt = systemHint + '\n' + promptParts.join('\n');
+    var result = await generate(prompt, temperature || 0.7);
+    if (!result) return fallback;
+    // 质量门控：启用时自评并重试
+    if (qualityGate && qualityGate.enabled && available) {
+      var qPrompt = '请对以下生成内容进行质量评分（仅输出JSON）：\n生成内容：' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。请严格返回JSON格式：{"drama":N,"coherence":N,"info":N}';
+      var qResult = await generate(qPrompt, 0.3);
+      if (qResult) {
+        try {
+          var qJson = JSON.parse(qResult.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
+          var total = (qJson.drama||0) + (qJson.coherence||0) + (qJson.info||0);
+          var threshold = qualityGate.threshold || 18;
+          if (total < threshold) {
+            console.warn('[LLM] 质量门控未通过 (得分:' + total + '/' + threshold + ')，重写一次');
+            var retryPrompt = prompt + '\n[注意：前次生成质量得分不足（' + total + '/' + threshold + '），请提升戏剧性和信息量后重新生成]';
+            var retryResult = await generate(retryPrompt, temperature || 0.7);
+            if (retryResult) return retryResult;
+          }
+        } catch(e) { console.warn('[LLM] 质量自评解析失败:', e.message); }
       }
-    } catch(e) {}
+    }
+    return result;
   }
 
   // ===================================================================
@@ -258,6 +363,21 @@ window.LLM = (() => {
     prompt += '\n' + qualityHint + '\n要求：简短有力，有画面感，第三人称叙述。';
 
     var result = await generate(prompt, 0.7);
+    // 质量门控：自评+重试
+    if (result && available) {
+      var qPromptN = '请对以下叙事进行质量评分（仅输出JSON）：\n' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。严格返回{"drama":N,"coherence":N,"info":N}';
+      var qR = await generate(qPromptN, 0.3);
+      if (qR) {
+        try {
+          var qJ = JSON.parse(qR.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
+          var tN = (qJ.drama||0)+(qJ.coherence||0)+(qJ.info||0);
+          if (tN < 18) {
+            console.warn('[LLM] 叙事质量门控未通过('+tN+'/18)，重写');
+            result = await generate(prompt + '\n[前次质量不足，请提升戏剧性和画面感]', 0.7);
+          }
+        } catch(e) { console.warn('[LLM] 叙事质量自评失败:', e.message); }
+      }
+    }
     var final = result || fallbackDesc;
     if (result) addToNarrativeContext(result);
     return final;
@@ -315,12 +435,11 @@ window.LLM = (() => {
 
     // 获取最近事件，注入对话上下文
     var eventCtx = '';
-    try {
-      if (typeof SGame !== 'undefined' && SGame.G && SGame.G.narrativeContext && SGame.G.narrativeContext.length) {
-        var lastEvt = SGame.G.narrativeContext[SGame.G.narrativeContext.length - 1];
-        if (lastEvt) eventCtx = '\n最近发生的事：' + lastEvt + '\n请在对话中自然地提及或回应这件事。';
-      }
-    } catch(e) {}
+    var G = getG();
+    if (G && G.narrativeContext && G.narrativeContext.length) {
+      var lastEvt = G.narrativeContext[G.narrativeContext.length - 1];
+      if (lastEvt) eventCtx = '\n最近发生的事：' + lastEvt + '\n请在对话中自然地提及或回应这件事。';
+    }
 
     var prompt = '你是"' + npc.name + '"（' + npc.title + '），性格：' + npc.desc + '\n当前与玩家的关系：' + (levelMap[favorLevel] || '中立') + '（好感度' + favorLevel + '）\n对话类型：' + dialogType + eventCtx + '\n' + qualityHint + '\n请生成一段20-40字的对话内容。语气要符合人物性格和当前关系亲疏。';
 
@@ -342,15 +461,14 @@ window.LLM = (() => {
   // ---------- 竞争对手情报报告 (#7) ----------
   async function generateRivalReport() {
     if (!available) return null;
-    var G;
-    try { if (typeof SGame !== 'undefined' && SGame.G) G = SGame.G; } catch(e) { return null; }
+    var G = getG();
     if (!G || !G.rivals || !G.rivals.length) return null;
 
     var rivalInfo = G.rivals.slice(0, 3).map(function(r, i) {
-      return (i+1) + '. ' + r.name + '（资产估值约' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(r.wealth || 0) : (r.wealth || 0)) + '）';
+      return (i+1) + '. ' + r.name + '（资产估值约' + (typeof SGame !== 'undefined' && SGame.formatMoney ? SGame.formatMoney(r.wealth || 0) : (r.wealth || 0)) + '）';
     }).join('\n');
 
-    var prompt = '你是商业情报分析师。以下是当前商场上的竞争对手概况：\n' + rivalInfo + '\n玩家当前资产：' + (typeof SGame.formatMoney === 'function' ? SGame.formatMoney(G.money) : '') + '\n请用2-3句话分析竞争态势，给出一个简短建议。语气专业自信。';
+    var prompt = '你是商业情报分析师。以下是当前商场上的竞争对手概况：\n' + rivalInfo + '\n玩家当前资产：' + (typeof SGame !== 'undefined' && SGame.formatMoney ? SGame.formatMoney(G.money) : '') + '\n请用2-3句话分析竞争态势，给出一个简短建议。语气专业自信。';
 
     var result = await generate(prompt, 0.5);
     return result || null;
@@ -384,7 +502,59 @@ window.LLM = (() => {
     var prompt = '你是一个商业传奇故事的讲述者。玩家刚刚达成了里程碑：「' + msName + '」——' + msDesc + '\n' + (context ? '当前状态：' + context : '') + '\n' + qualityHint + '\n请用2-3句话撰写一段里程碑叙事，风格类似《财富》杂志封面故事引言，要有仪式感和成就感。';
 
     var result = await generate(prompt, 0.65);
+    // 质量门控
+    if (result && available) {
+      var qPM = '请对以下里程碑叙事进行质量评分（仅输出JSON）：\n' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。严格返回{"drama":N,"coherence":N,"info":N}';
+      var qRM = await generate(qPM, 0.3);
+      if (qRM) {
+        try {
+          var qJM = JSON.parse(qRM.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
+          var tM = (qJM.drama||0)+(qJM.coherence||0)+(qJM.info||0);
+          if (tM < 18) {
+            console.warn('[LLM] 里程碑质量门控未通过('+tM+'/18)，重写');
+            result = await generate(prompt + '\n[前次质量不足，请提升仪式感和宏大叙事]', 0.65);
+          }
+        } catch(e) { console.warn('[LLM] 里程碑质量自评失败:', e.message); }
+      }
+    }
     return result || null;
+  }
+
+  // ---------- 动态难度调节：分析玩家状态 ----------
+  async function analyzePlayerState(summary) {
+    if (!available) return null;
+    var prompt = '你是一个游戏平衡性分析师。请评估玩家状态是否需要调整难度，严格返回JSON：\n' + summary + '\n\nJSON格式：{"easeEventFreq":0.8-1.2,"boostIncome":0.8-1.2,"reason":"简短理由"}。若无需调整则所有值=1.0。';
+    var result = await generate(prompt, 0.3);
+    if (!result) return null;
+    try {
+      var jsonStr = result.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      var data = JSON.parse(jsonStr);
+      data.easeEventFreq = Math.max(0.8, Math.min(1.2, parseFloat(data.easeEventFreq) || 1.0));
+      data.boostIncome = Math.max(0.8, Math.min(1.2, parseFloat(data.boostIncome) || 1.0));
+      data.reason = data.reason || '无';
+      return data;
+    } catch(e) {
+      console.warn('[LLM] analyzePlayerState JSON解析失败:', e.message);
+      return null;
+    }
+  }
+
+  // ---------- 平衡性自检：数值调优建议 ----------
+  async function suggestBalanceTuning(data) {
+    if (!available) return null;
+    var system = '你是一位游戏数值策划师。全程使用简体中文回复。';
+    var prompt = '分析以下游戏数据给出平衡建议。严格返回JSON（不要包含任何其他文字，不要markdown代码块，所有文字内容必须用中文）：\n' + JSON.stringify(data, null, 2) + '\n\n格式：{"suggestions":[{"priority":"p0或p1或p2","target":"调整项名称","current":"当前值","suggested":"建议值","reason":"修改理由"}],"summary":"一句话总体评价"}';
+    var result = await generate(prompt, 0.4, system);
+    if (!result) return null;
+    // 清理响应：去除可能的 markdown 标记和前后空白
+    var cleaned = result.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch(e) {
+      console.warn('[LLM] suggestBalanceTuning JSON解析失败:', e.message);
+      // 回退：如果无法解析JSON，将原始文本作为 summary 返回
+      return { suggestions: [], summary: cleaned.substring(0, 200) };
+    }
   }
 
   // ---------- LLM驱动动态事件 (#8) ----------
@@ -416,6 +586,7 @@ window.LLM = (() => {
   // ========== 公开API ==========
   return {
     get available() { return available; },
+    get checking() { return checking; },
     check, forceRecheck, setLoading,
     generate,
     generateNarrative,
@@ -427,6 +598,9 @@ window.LLM = (() => {
     analyzeMarketSentiment,
     generateMilestoneNarrative,
     generateDynamicEvent,
+    analyzePlayerState,
+    suggestBalanceTuning,
+    _generateWithDefault,
     addToNarrativeContext,
   };
 })();

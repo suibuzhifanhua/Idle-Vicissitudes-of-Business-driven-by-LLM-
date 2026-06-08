@@ -23,7 +23,7 @@ window.AudioFX = (() => {
 
   function toggle() {
     enabled = !enabled;
-    try { Storage.set('shfc_audio_enabled', String(enabled)); } catch(e) {}
+    try { Storage.set('shfc_audio_enabled', String(enabled)); } catch(e) { console.warn('[Audio] Storage.set failed:', e.message || e); }
     return enabled;
   }
 
@@ -106,6 +106,19 @@ window.AudioFX = (() => {
     playTone(440, 0.1, 'sine', 0.1, true);
     setTimeout(() => playTone(660, 0.15, 'sine', 0.1, true), 100);
   }
+
+  // 首次用户交互时一次性恢复 AudioContext
+  let _ctxResumed = false;
+  function _onFirstInteraction() {
+    if (!_ctxResumed) {
+      _ctxResumed = true;
+      resumeCtx();
+      document.removeEventListener('click', _onFirstInteraction);
+      document.removeEventListener('keydown', _onFirstInteraction);
+    }
+  }
+  document.addEventListener('click', _onFirstInteraction);
+  document.addEventListener('keydown', _onFirstInteraction);
 
   // 初始化
   init();

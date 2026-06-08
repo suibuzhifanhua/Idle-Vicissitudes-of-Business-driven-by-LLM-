@@ -7,10 +7,10 @@ window.Settings = (() => {
 
   // 默认值
   const defaults = {
-    llmBase: 'http://localhost:11434',
+    llmBase: '',  // Ollama 代理路径（留空走 /api/ollama 代理）
     llmModel: 'qwen3.5:4b',
     temperature: 0.7,
-    maxTokens: 300,
+    maxTokens: 1024,
     eventNarrative: true,   // 事件叙事LLM
     employeeBg: true,       // 员工背景LLM
     npcDialog: true,        // NPC对话LLM
@@ -49,6 +49,11 @@ window.Settings = (() => {
       const raw = Storage.get(STORAGE_KEY);
       if (raw) {
         current = { ...defaults, ...JSON.parse(raw) };
+        // 迁移旧版直连模式 → 代理 Ollama
+        if (current.llmBase === 'http://localhost:11434') {
+          current.llmBase = '';
+          save({ llmBase: '' });
+        }
       } else {
         current = { ...defaults };
         // 尝试从CONFIG同步初始值
@@ -61,34 +66,18 @@ window.Settings = (() => {
       current = { ...defaults };
     }
 
-    // 同步托管配置到游戏状态（从localStorage恢复）
+    // 同步托管配置到游戏状态（从localStorage恢复，动态遍历默认值key）
     try {
-      if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
+      if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode && current.autoMode) {
         const savedAm = current.autoMode;
-        if (savedAm) {
-          SGame.G.autoMode.eventDecide = savedAm.eventDecide ?? true;
-          SGame.G.autoMode.eventPreference = savedAm.eventPreference ?? 'balanced';
-          SGame.G.autoMode.autoOpenBusiness = savedAm.autoOpenBusiness ?? true;
-          SGame.G.autoMode.autoUpgradeBusiness = savedAm.autoUpgradeBusiness ?? true;
-          SGame.G.autoMode.upgradeThreshold = upgradeThresholdMap(savedAm.upgradeThreshold || 'normal');
-          SGame.G.autoMode.autoHire = savedAm.autoHire ?? true;
-          SGame.G.autoMode.autoFire = savedAm.autoFire ?? false;
-          SGame.G.autoMode.fireThreshold = savedAm.fireThreshold ?? 20;
-          SGame.G.autoMode.maxEmployees = savedAm.maxEmployees ?? 8;
-          SGame.G.autoMode.autoUnlockRegion = savedAm.autoUnlockRegion ?? true;
-          SGame.G.autoMode.autoResearch = savedAm.autoResearch ?? true;
-          SGame.G.autoMode.autoInvest = savedAm.autoInvest ?? false;
-          SGame.G.autoMode.investBudget = savedAm.investBudget ?? 0.1;
-          SGame.G.autoMode.autoLoan = savedAm.autoLoan ?? false;
-          SGame.G.autoMode.autoRepay = savedAm.autoRepay ?? true;
-          SGame.G.autoMode.autoGift = savedAm.autoGift ?? false;
-          SGame.G.autoMode.giftBudget = savedAm.giftBudget ?? 50000;
-          SGame.G.autoMode.autoManualWork = savedAm.autoManualWork ?? true;
-          SGame.G.autoMode.autoRest = savedAm.autoRest ?? true;
-          SGame.G.autoMode.autoNegotiate = savedAm.autoNegotiate ?? true;
-          SGame.G.autoMode.autoAssetBuy = savedAm.autoAssetBuy ?? true;
-          SGame.G.autoMode.autoAssetPawn = savedAm.autoAssetPawn ?? true;
-        }
+        const defAm = defaults.autoMode;
+        Object.keys(defAm).forEach(function(key) {
+          if (key === 'upgradeThreshold') {
+            SGame.G.autoMode.upgradeThreshold = upgradeThresholdMap(savedAm.upgradeThreshold || defAm.upgradeThreshold);
+          } else if (key in savedAm) {
+            SGame.G.autoMode[key] = savedAm[key] ?? defAm[key];
+          }
+        });
       }
     } catch(e2) { /* ignore */ }
 
@@ -504,7 +493,7 @@ window.Settings = (() => {
       if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
         return !!SGame.G.autoMode.enabled;
       }
-    } catch(e) {}
+    } catch(e) { console.warn('[Settings] getAutoMasterEnabled failed:', e.message || e); }
     return false;
   }
 
@@ -525,7 +514,7 @@ window.Settings = (() => {
         }
         return SGame.G.autoMode[key] ?? defVal;
       }
-    } catch(e) {}
+    } catch(e) { console.warn('[Settings] getAuto failed for key "' + key + '":', e.message || e); }
     return defVal;
   }
 
@@ -564,7 +553,7 @@ window.Settings = (() => {
         }
         if (typeof SGame.save === 'function') SGame.save();
       }
-    } catch(e) {}
+    } catch(e) { console.warn('[Settings] onAutoSettingChange failed:', e.message || e); }
   }
 
   function onAutoToggleChange(key, checked) {
@@ -573,7 +562,7 @@ window.Settings = (() => {
         SGame.G.autoMode[key] = checked;
         if (typeof SGame.save === 'function') SGame.save();
       }
-    } catch(e) {}
+    } catch(e) { console.warn('[Settings] onAutoToggleChange failed:', e.message || e); }
   }
 
   // ========== 应用设置并关闭 ==========
@@ -720,28 +709,13 @@ window.Settings = (() => {
     try {
       if (typeof SGame !== 'undefined' && SGame.G && SGame.G.autoMode) {
         var d = defaults.autoMode;
-        SGame.G.autoMode.eventDecide = d.eventDecide;
-        SGame.G.autoMode.eventPreference = d.eventPreference;
-        SGame.G.autoMode.autoOpenBusiness = d.autoOpenBusiness;
-        SGame.G.autoMode.autoUpgradeBusiness = d.autoUpgradeBusiness;
-        SGame.G.autoMode.upgradeThreshold = upgradeThresholdMap(d.upgradeThreshold);
-        SGame.G.autoMode.autoHire = d.autoHire;
-        SGame.G.autoMode.autoFire = d.autoFire;
-        SGame.G.autoMode.fireThreshold = d.fireThreshold;
-        SGame.G.autoMode.maxEmployees = d.maxEmployees;
-        SGame.G.autoMode.autoUnlockRegion = d.autoUnlockRegion;
-        SGame.G.autoMode.autoResearch = d.autoResearch;
-        SGame.G.autoMode.autoInvest = d.autoInvest;
-        SGame.G.autoMode.investBudget = d.investBudget;
-        SGame.G.autoMode.autoLoan = d.autoLoan;
-        SGame.G.autoMode.autoRepay = d.autoRepay;
-        SGame.G.autoMode.autoGift = d.autoGift;
-        SGame.G.autoMode.giftBudget = d.giftBudget;
-        SGame.G.autoMode.autoManualWork = d.autoManualWork;
-        SGame.G.autoMode.autoRest = d.autoRest;
-        SGame.G.autoMode.autoNegotiate = d.autoNegotiate;
-        SGame.G.autoMode.autoAssetBuy = d.autoAssetBuy;
-        SGame.G.autoMode.autoAssetPawn = d.autoAssetPawn;
+        Object.keys(d).forEach(function(key) {
+          if (key === 'upgradeThreshold') {
+            SGame.G.autoMode.upgradeThreshold = upgradeThresholdMap(d.upgradeThreshold);
+          } else {
+            SGame.G.autoMode[key] = d[key];
+          }
+        });
         if (typeof SGame.save === 'function') SGame.save();
       }
     } catch(e2) {}

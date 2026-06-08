@@ -27,8 +27,6 @@
       console.log('[商海浮沉] save loaded, G.money:', SGame.G ? SGame.G.money : 'null');
       // 有存档，直接进入游戏
       document.getElementById('origin-screen').style.display = 'none';
-      // 存档加载时 SGame.load() 内部已调用 checkAndShowOfflineIncome() 处理离线收益
-      // 此处不再重复处理，避免双重计算
       console.log('[商海浮沉] calling UI.renderAll()...');
       UI.renderAll();
       console.log('[商海浮沉] UI.renderAll() done');
@@ -40,8 +38,51 @@
       }
       return true;
     } else {
+      // 检查是否有加载错误（存档损坏）
+      if (SGame.G && SGame.G._loadError) {
+        console.error('[商海浮沉] load error:', SGame.G._loadError);
+        // 清除损坏的存档，显示出生选择
+        setTimeout(() => {
+          if (typeof UI !== 'undefined' && UI.showToast) {
+            UI.showToast('⚠️', '存档加载失败', '存档数据异常，请重新开始游戏。错误：' + SGame.G._loadError);
+          }
+        }, 500);
+      }
       console.log('[商海浮沉] no save found in this checkSave() call');
       return false;
+    }
+  }
+
+  // ========== 渲染难度选择器 ==========
+  function renderDiffSelector() {
+    const screen = document.getElementById('origin-screen');
+    if (!screen) return;
+    // 避免重复插入
+    if (document.getElementById('diff-selector')) return;
+
+    const presets = typeof DIFFICULTY_PRESETS !== 'undefined' ? DIFFICULTY_PRESETS : {};
+    if (!Object.keys(presets).length) return;
+
+    const keys = ['fast', 'standard', 'slow', 'sandbox'];
+    const diffHtml = keys.filter(k => presets[k]).map(k => {
+      const p = presets[k];
+      const isDefault = k === 'standard';
+      return '<div class="diff-card' + (isDefault ? ' active' : '') + '" data-diff="' + k + '" onclick="document.querySelectorAll(\'.diff-card\').forEach(function(c){c.classList.remove(\'active\')});this.classList.add(\'active\')">' +
+        '<div style="font-size:14px;font-weight:700;margin-bottom:2px">' + p.name + '</div>' +
+        '<div style="font-size:10px;color:var(--text-secondary)">' + p.desc + '</div>' +
+        '</div>';
+    }).join('');
+
+    const section = document.createElement('div');
+    section.id = 'diff-selector';
+    section.style.cssText = 'margin-top:16px;';
+    section.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--accent-gold);margin-bottom:8px;">🎚 选择难度</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">' + diffHtml + '</div>';
+
+    // 插入到 start-btn 前面
+    const btn = document.getElementById('start-btn');
+    if (btn) {
+      btn.parentNode.insertBefore(section, btn);
     }
   }
 
@@ -50,6 +91,7 @@
     if (checkSave()) return;
     // 没找到存档，显示出身选择界面
     renderOriginCards();
+    renderDiffSelector();
     const btn = document.getElementById('start-btn');
     if (btn) {
       btn.addEventListener('click', function() {
@@ -58,7 +100,9 @@
         const nameInput = document.getElementById('player-name-input');
         const playerName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : null;
         if (!confirm('⚠️ 一旦踏上商海征途，便再无回头之路。\n\n每一个决策都将改写命运，确定要开始吗？')) return;
-        SGame.startGame(selected.dataset.origin, playerName);
+        const activeDiff = document.querySelector('.diff-card.active');
+        const diffKey = activeDiff ? activeDiff.dataset.diff : 'standard';
+        SGame.startGame(selected.dataset.origin, playerName, { difficulty: diffKey });
       });
     }
   }
@@ -112,10 +156,18 @@
     // 检查存档：等待 Storage 异步预加载完成后再检查（不再用 3 秒重试）
     console.log('[商海浮沉] waiting for Storage.ready()... typeof Storage:', typeof Storage);
     if (typeof Storage !== 'undefined' && Storage.ready) {
-      Storage.ready().then(() => {
-        console.log('[商海浮沉] Storage ready, checking save...');
-        checkSaveOrShowOrigin();
-      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Storage ready timeout')), 15000)
+      );
+      Promise.race([Storage.ready(), timeoutPromise])
+        .then(() => {
+          console.log('[商海浮沉] Storage ready, checking save...');
+          checkSaveOrShowOrigin();
+        })
+        .catch((err) => {
+          console.warn('[商海浮沉] Storage ready failed/timed out:', err.message || err);
+          checkSaveOrShowOrigin();
+        });
     } else {
       // 兜底：Storage 不可用时直接检查
       checkSaveOrShowOrigin();

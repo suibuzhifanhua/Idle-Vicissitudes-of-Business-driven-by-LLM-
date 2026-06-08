@@ -43,9 +43,31 @@ window.NPCSystem = (() => {
       EventSystem.addLog(`${npc.name}的好感度变为${npc.favorLevels[newLv]}。`);
     }
 
-    // NPC联动传播：根据npcLinks比例影响关联NPC好感度
+    // NPC联动传播：优先使用relations字段（类型+强度），回退到npcLinks（简单比例）
     const npc = NPCS[npcId];
-    if (npc && npc.npcLinks) {
+    if (npc && npc.relations && npc.relations.length > 0) {
+      // 新关系网：根据类型和强度计算传播量
+      for (const rel of npc.relations) {
+        if (!NPCS[rel.npcId]) continue;
+        let propagateDelta = 0;
+        if (rel.type === 'ally') {
+          // 盟友：正向30% × 强度
+          propagateDelta = delta > 0 ? Math.round(delta * 0.3 * rel.intensity) : Math.round(delta * 0.1 * rel.intensity);
+        } else if (rel.type === 'rival') {
+          // 对手：反向 -20% × 强度
+          propagateDelta = delta > 0 ? Math.round(-delta * 0.2 * rel.intensity) : Math.round(delta * 0.05 * rel.intensity);
+        }
+        // neutral类型不传播
+        if (propagateDelta !== 0) {
+          const linkedOld = getFavor(rel.npcId);
+          SGame.G.npcFavor[rel.npcId] = Math.max(-50, Math.min(100, linkedOld + propagateDelta));
+          if (Math.abs(propagateDelta) >= 3) {
+            EventSystem.addLog(`${NPCS[rel.npcId].name}也受到了影响（好感${propagateDelta > 0 ? '+' : ''}${propagateDelta}）。`);
+          }
+        }
+      }
+    } else if (npc && npc.npcLinks) {
+      // 旧版兼容：简单比例联动
       const linkDelta = delta > 0 ? Math.max(1, Math.floor(delta * 0.3)) : Math.min(-1, Math.ceil(delta * 0.2));
       for (const [linkedId, ratio] of Object.entries(npc.npcLinks)) {
         if (NPCS[linkedId]) {
@@ -53,7 +75,6 @@ window.NPCSystem = (() => {
           if (propagateDelta !== 0) {
             const linkedOld = getFavor(linkedId);
             SGame.G.npcFavor[linkedId] = Math.max(-50, Math.min(100, linkedOld + propagateDelta));
-            // 联动变化不重复触发挥发提示，但记录到日志
             if (Math.abs(propagateDelta) >= 3) {
               EventSystem.addLog(`${NPCS[linkedId].name}也受到了影响（好感${propagateDelta > 0 ? '+' : ''}${propagateDelta}）。`);
             }
@@ -290,6 +311,8 @@ window.NPCSystem = (() => {
 
     // 存储到模块变量供 doAction 引用
     currentActions = actions;
+    console.log('[NPCSystem.renderNPCActions] npcId=' + npcId + ' actions count=' + actions.length);
+    actions.forEach(function(a, i) { console.log('  action[' + i + ']: ' + a.text + ' idxInArray=' + actions.indexOf(a)); });
 
     container.innerHTML = actions.map(a =>
       `<button class="event-choice" onclick="NPCSystem.doAction(${actions.indexOf(a)})">${a.text}</button>`
@@ -298,13 +321,19 @@ window.NPCSystem = (() => {
 
   function doAction(idx) {
     const npcId = currentNPC;
-    if (!npcId) return;
+    console.log('[NPCSystem.doAction] idx=' + idx + ' npcId=' + npcId + ' actionsLen=' + (currentActions ? currentActions.length : 'null'));
+    if (currentActions && currentActions[idx]) {
+      console.log('[NPCSystem.doAction] action[' + idx + '] text=' + currentActions[idx].text + ' hasFn=' + (typeof currentActions[idx].fn));
+    }
+    if (!npcId) { console.log('[NPCSystem.doAction] currentNPC is null, returning'); return; }
 
     // 优先使用闭包回调（支持动态索引，兼容任务线动态插入）
     if (currentActions[idx] && typeof currentActions[idx].fn === 'function') {
+      console.log('[NPCSystem.doAction] executing fn for idx=' + idx);
       currentActions[idx].fn();
       return;
     }
+    console.log('[NPCSystem.doAction] primary path failed, falling back');
 
     // 兜底：兼容旧版硬编码逻辑（仅原有 8 位 NPC）
     // idx 0 总是送礼菜单
@@ -486,14 +515,15 @@ window.NPCSystem = (() => {
     if (!npc || !npc.questLines) return [];
     const favor = getFavor(npcId);
     const completed = (SGame.G.questCompleted && SGame.G.questCompleted[npcId]) || [];
+    const inProgress = (SGame.G.questProgress && SGame.G.questProgress[npcId]) || {};
 
     return npc.questLines.filter(q => {
-      // 已完成的不显示
       if (completed.includes(q.id)) return false;
-      // 好感度不足
+      if (inProgress[q.id]) return false;
       if (favor < q.reqFavor) return false;
-      // 检查前置任务（如果有 prerequisite 字段）
       if (q.prerequisite && !completed.includes(q.prerequisite)) return false;
+      if (q.reqDays && SGame.G.tickCount < q.reqDays) return false;
+      if (q.reqAssetLevel && SGame.G.money < q.reqAssetLevel) return false;
       return true;
     });
   }
@@ -523,7 +553,7 @@ window.NPCSystem = (() => {
     if (!SGame.G.questProgress) SGame.G.questProgress = {};
     if (!SGame.G.questProgress[npcId]) SGame.G.questProgress[npcId] = {};
 
-    SGame.G.questProgress[npcId][questId] = { stepIndex: 0, started: true };
+    SGame.G.questProgress[npcId][questId] = { stepIndex: 0, started: true, startedAt: SGame.G.tickCount };
 
     // 执行第一步
     const step = quest.steps[0];
@@ -717,6 +747,32 @@ window.NPCSystem = (() => {
     }
   }
 
+  // ========== Tick任务检查（由core.js的tickEvents调用） ==========
+  function checkNPCQuests() {
+    const G = SGame.G;
+    if (!G || !G.questProgress) return;
+    for (const [npcId, quests] of Object.entries(G.questProgress)) {
+      const npc = NPCS[npcId];
+      if (!npc) continue;
+      for (const [questId, prog] of Object.entries(quests)) {
+        if (!prog || !prog.started || prog.autoAdvanced) continue;
+        const quest = npc.questLines.find(q => q.id === questId);
+        if (!quest) continue;
+        const step = quest.steps[prog.stepIndex];
+        if (!step || !step.autoAdvance) continue;
+        const cond = step.autoAdvance;
+        let canAdvance = true;
+        if (cond.tickDelay && (G.tickCount - prog.startedAt) < cond.tickDelay) canAdvance = false;
+        if (cond.minMoney && G.money < cond.minMoney) canAdvance = false;
+        if (cond.minFavor && getFavor(npcId) < cond.minFavor) canAdvance = false;
+        if (canAdvance) {
+          prog.autoAdvanced = true;
+          advanceQuest(npcId, questId);
+        }
+      }
+    }
+  }
+
   // ========== 关闭对话 ==========
   function closeDialog() {
     document.getElementById('modal-npc').classList.remove('active');
@@ -732,7 +788,7 @@ window.NPCSystem = (() => {
     renderNPCActions,
     // 任务线系统
     getAvailableQuests, getQuestProgress, startQuest, advanceQuest,
-    completeQuest, applyQuestReward, getAllQuestStatus,
+    completeQuest, applyQuestReward, getAllQuestStatus, checkNPCQuests,
     // 商业并购
     showMAOffer,
   };

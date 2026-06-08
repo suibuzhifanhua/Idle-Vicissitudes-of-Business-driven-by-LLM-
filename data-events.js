@@ -1,741 +1,11 @@
 // ==================================================
-// data.js — 事件数据库 (80+事件) + NPC对话模板
+// data-events.js — 事件数据库
 // ==================================================
 
-// ---- NPC 数据 ----
-const NPCS = {
-  zhaolei: {
-    id:'zhaolei', name:'赵磊', title:'星辰科技创始人',
-    actUnlock:0, initFavor:30,
-    desc:'35岁，技术理想主义+逐渐现实，前同事',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','request','cooperation','betray','final'],
-    giftPreferences: { love:['tech','book'], like:['art'], neutral:['wine','luxury'] },
-    giftQuote: '老赵对科技产品和新书总是爱不释手。',
-    questLines: [
-      {
-        id: 'zhaolei_q1', name: '旧同事的重逢', desc: '赵磊想拉你一起做项目',
-        reqFavor: 20,
-        steps: [
-          { text: '赵磊找到你，说有个技术合作的机会', reward: { money: 50000 } },
-          { text: '项目进展顺利，赵磊对你刮目相看', reward: { npcFavor: { zhaolei: 10 } } },
-          { text: '合作完成，赵磊推荐你进入技术圈', reward: { connections: 5, npcFavor: { zhaolei: 15 } } },
-        ]
-      },
-      {
-        id: 'zhaolei_q2', name: '技术难题求助', desc: '赵磊遇到技术瓶颈，需要你的帮助',
-        reqFavor: 35,
-        steps: [
-          { text: '赵磊深夜打电话，说系统出了大问题', reward: { stress: 5 } },
-          { text: '你帮忙排查了三天，终于定位到bug', reward: { npcFavor: { zhaolei: 15 }, reputation: 3 } },
-          { text: '赵磊请你吃饭表示感谢，透露了行业内部消息', reward: { connections: 3, money: 20000 } },
-        ]
-      },
-      {
-        id: 'zhaolei_q3', name: '创业路演邀请', desc: '赵磊邀请你参加创业路演活动',
-        reqFavor: 50,
-        steps: [
-          { text: '赵磊发来路演邀请函，希望你去当评委', reward: { reputation: 5 } },
-          { text: '你在路演上认识了多位投资人', reward: { connections: 8, reputation: 5 } },
-          { text: '一个创业者对你的公司很感兴趣，想谈合作', reward: { money: 100000, connections: 5 } },
-        ]
-      },
-      {
-        id: 'zhaolei_q4', name: '星辰科技的危机', desc: '赵磊的公司遭遇竞争对手恶意攻击',
-        reqFavor: 65,
-        steps: [
-          { text: '赵磊告诉你有人在网上散布关于星辰科技的谣言', reward: { stress: 10 } },
-          { text: '你动用人脉帮他澄清了事实', reward: { npcFavor: { zhaolei: 20 }, reputation: 8 } },
-          { text: '赵磊表示欠你一个人情，承诺未来全力支持', reward: { connections: 10, npcFavor: { zhaolei: 10 } } },
-        ]
-      },
-    ],
-    npcLinks: { zhangye: 0.3, linjiaoshou: 0.2 },
-  },
-  lichu: {
-    id:'lichu', name:'李处', title:'商务局科长',
-    actUnlock:0, initFavor:0,
-    desc:'48岁，规则守护者、偶尔通融',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','approval','subsidy','inspect','info'],
-    giftPreferences: { love:['wine','book'], like:['art'], neutral:['tech','luxury'] },
-    giftQuote: '李处清廉半生，只对好酒和好书网开一面。',
-    questLines: [
-      {
-        id: 'lichu_q1', name: '初次登门拜访', desc: '你需要去商务局办理公司注册相关手续',
-        reqFavor: 10,
-        steps: [
-          { text: '来到商务局大厅，排队等待', reward: { stress: 5 } },
-          { text: '终于见到李处，他态度公事公办', reward: { npcFavor: { lichu: 5 } } },
-          { text: '手续顺利办完，李处暗示以后有事可以找他', reward: { connections: 2, npcFavor: { lichu: 8 } } },
-        ]
-      },
-      {
-        id: 'lichu_q2', name: '政策补贴申请', desc: '符合条件的企业可以申请创业补贴',
-        reqFavor: 30,
-        steps: [
-          { text: '李处告诉你最近有科技创新补贴名额', reward: {} },
-          { text: '你准备了大量材料提交申请', reward: { stress: 8 } },
-          { text: '审批通过！拿到补贴款', reward: { money: 200000, npcFavor: { lichu: 12 } } },
-        ]
-      },
-      {
-        id: 'lichu_q3', name: '合规检查风波', desc: '公司面临突击合规检查',
-        reqFavor: 45,
-        steps: [
-          { text: '接到通知，明天商务局要来检查', reward: { stress: 15 } },
-          { text: '你连夜整理材料，确保一切规范', reward: { stress: 5 } },
-          { text: '检查顺利通过，李处私下给你提了些建议', reward: { reputation: 5, npcFavor: { lichu: 15 } } },
-        ]
-      },
-      {
-        id: 'lichu_q4', name: '招商引资推介会', desc: '李处邀请你参加市里招商活动',
-        reqFavor: 60,
-        steps: [
-          { text: '收到正式邀请函，参加市招商引资大会', reward: { reputation: 8 } },
-          { text: '会上你做了简短发言，获得关注', reward: { connections: 6, reputation: 5 } },
-          { text: '会后多位领导对你表示认可，李处引荐了关键人物', reward: { connections: 10, money: 50000 } },
-        ]
-      },
-    ],
-    npcLinks: { chenzong: 0.2, wanglvshi: 0.25 },
-  },
-  zhangye: {
-    id:'zhangye', name:'张野', title:'永安传媒创始人',
-    actUnlock:1, initFavor:10,
-    desc:'40岁，八面玲珑、信息贩子，唯一可花钱买好感',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','dealing','hype','buyInfo'],
-    giftPreferences: { love:['luxury','art'], like:['wine'], neutral:['tech','book'] },
-    giftQuote: '张野这人，奢侈品和艺术品送到心坎上，什么都好谈。',
-    questLines: [
-      {
-        id: 'zhangye_q1', name: '信息贩子的第一笔交易', desc: '张野说有独家消息想卖给你',
-        reqFavor: 15,
-        steps: [
-          { text: '张野神神秘秘地找到你："有个人想买你的公司信息"', reward: { stress: 5 } },
-          { text: '你花了一笔钱买了下来，发现是陈总在暗中调查你', reward: { money: -30000, npcFavor: { zhangye: 8 } } },
-          { text: '有了准备，你成功化解了陈总的第一次试探', reward: { reputation: 5, npcFavor: { chenzong: 3 } } },
-        ]
-      },
-      {
-        id: 'zhangye_q2', name: '媒体曝光危机公关', desc: '有人要爆你公司的黑料，张野可以帮忙压下去',
-        reqFavor: 30,
-        steps: [
-          { text: '张野告诉你有人在收集你公司的负面材料', reward: { stress: 10 } },
-          { text: '他开价帮你处理这件事', reward: { money: -50000 } },
-          { text: '事情摆平了，张野表示以后这类事找他打八折', reward: { reputation: 5, npcFavor: { zhangye: 12 } } },
-        ]
-      },
-      {
-        id: 'zhangye_q3', name: '商业情报网络', desc: '张野想拉你进入他的信息共享圈子',
-        reqFavor: 50,
-        steps: [
-          { text: '张野邀请你加入一个私密商业信息群', reward: {} },
-          { text: '群里经常分享有价值的行业动态', reward: { connections: 5, reputation: 3 } },
-          { text: '你在群里获得了一条关键投资信息', reward: { money: 150000, connections: 8 } },
-        ]
-      },
-      {
-        id: 'zhangye_q4', name: '永安传媒的合作提案', desc: '张野提出用他的媒体资源为你做推广',
-        reqFavor: 70,
-        steps: [
-          { text: '张野提出一个互惠互利的媒体合作方案', reward: {} },
-          { text: '你投入了推广费用', reward: { money: -80000 } },
-          { text: '效果显著，公司知名度大幅提升', reward: { reputation: 15, connections: 10, money: 200000 } },
-        ]
-      },
-    ],
-    npcLinks: { zhaolei: 0.2, majizhe: 0.4, chenzong: 0.15 },
-  },
-  chenzong: {
-    id:'chenzong', name:'陈总', title:'海天集团董事长',
-    actUnlock:1, initFavor:0,
-    desc:'58岁，城府极深、利益导向、表面和善',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','threat','oliveBranch','cooperation','secret','heir'],
-    giftPreferences: { love:['art','luxury'], like:['wine'], neutral:['tech','book'] },
-    giftQuote: '陈总阅尽千帆，只有顶级艺术品和奢侈品能入他法眼。',
-    questLines: [
-      {
-        id: 'chenzong_q1', name: '橄榄枝', desc: '陈总主动约你见面，表面客气',
-        reqFavor: 15,
-        steps: [
-          { text: '收到海天集团的正式邀请函', reward: { stress: 8 } },
-          { text: '在豪华会客室见到陈总，他笑容可掬', reward: { npcFavor: { chenzong: 5 } } },
-          { text: '陈总提出收购意向，你委婉拒绝但保持联系', reward: { reputation: 5, connections: 3 } },
-        ]
-      },
-      {
-        id: 'chenzong_q2', name: '暗流涌动', desc: '发现陈总在背后搞小动作',
-        reqFavor: 30,
-        steps: [
-          { text: '你的一个关键供应商突然断供，线索指向海天集团', reward: { stress: 15, money: -50000 } },
-          { text: '你收集证据准备应对', reward: { stress: 5 } },
-          { text: '你直接找陈总摊牌，他否认但你展示了证据', reward: { npcFavor: { chenzong: -10 }, reputation: 5 } },
-          { text: '陈总暂时收手，但你们的关系彻底变了', reward: {} },
-        ]
-      },
-      {
-        id: 'chenzong_q3', name: '利益交换', desc: '在某些项目上与陈总既竞争又合作',
-        reqFavor: 50,
-        steps: [
-          { text: '市政府招标一个大项目，你和海天都在竞标', reward: { stress: 10 } },
-          { text: '陈总私下找到你提议各退一步，分区合作', reward: {} },
-          { text: '谈判成功，双方各得一块业务', reward: { money: 300000, connections: 5 } },
-        ]
-      },
-      {
-        id: 'chenzong_q4', name: '继承人之谜', desc: '关于陈总继承人的传闻引发行业震动',
-        reqFavor: 70,
-        steps: [
-          { text: '张野告诉你陈总身体出了问题，正在选继承人', reward: {} },
-          { text: '各方势力开始蠢蠢欲动', reward: { stress: 10, connections: 5 } },
-          { text: '陈总公开宣布继承人决定，结果出人意料', reward: { reputation: 10, npcFavor: { chenzong: 15 } } },
-        ]
-      },
-    ],
-    npcLinks: { zhangye: 0.2, lichu: 0.15, xiaoc: 0.25 },
-  },
-  xiaoc: {
-    id:'xiaoc', name:'小C', title:'神秘投资人代表',
-    actUnlock:2, initFavor:0,
-    desc:'28岁，冷静、神秘、专业，好感只能通过正确决策提升',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','offer','condition','final'],
-    giftPreferences: { love:['book','tech'], like:['art'], neutral:['wine','luxury'] },
-    giftQuote: '小C欣赏聪明人，好书和前沿科技比钱更能打动TA。',
-    questLines: [
-      {
-        id: 'xiaoc_q1', name: '神秘来电', desc: '一个自称小C的人联系了你',
-        reqFavor: 10,
-        steps: [
-          { text: '收到一封匿名邮件，约你在咖啡厅见面', reward: { stress: 5 } },
-          { text: '见到小C，TA开门见山说代表一个投资基金', reward: { npcFavor: { xiaoc: 5 } } },
-          { text: '小C表示会持续关注你的表现', reward: { connections: 3, reputation: 5 } },
-        ]
-      },
-      {
-        id: 'xiaoc_q2', name: '投资条款谈判', desc: '小C提出正式的投资意向',
-        reqFavor: 30,
-        steps: [
-          { text: '小C发来一份投资意向书，条件很苛刻', reward: { stress: 10 } },
-          { text: '你逐条研究，准备了反提案', reward: {} },
-          { text: '多轮谈判后达成一致', reward: { money: 500000, connections: 8 } },
-        ]
-      },
-      {
-        id: 'xiaoc_q3', name: '尽职调查', desc: '投资方要对你的公司做全面调查',
-        reqFavor: 50,
-        steps: [
-          { text: '小C通知你尽职调查团队即将进驻', reward: { stress: 15 } },
-          { text: '一周的审查，每个细节都被翻了个遍', reward: { stress: 10 } },
-          { text: '调查通过！投资款到账', reward: { money: 1000000, reputation: 10, connections: 10 } },
-        ]
-      },
-      {
-        id: 'xiaoc_q4', name: '董事会的暗战', desc: '作为被投企业，你需要应对投资人层面的博弈',
-        reqFavor: 70,
-        steps: [
-          { text: '小C告诉你基金内部对公司方向有分歧', reward: { stress: 10 } },
-          { text: '你需要站队表态，这会影响后续资源分配', reward: {} },
-          { text: '你的选择获得了更多支持，公司获得追加投资', reward: { money: 800000, reputation: 15 } },
-        ]
-      },
-    ],
-    npcLinks: { chenzong: 0.2, linjiaoshou: 0.15, zhangye: 0.1 },
-  },
-  wanglvshi: {
-    id:'wanglvshi', name:'王律师', title:'正和法律事务所合伙人',
-    actUnlock:1, initFavor:5,
-    desc:'42岁，精明务实的商业律师，好感度高可减少负面事件法律影响',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','consult','warn','defend'],
-    giftPreferences: { love:['book','wine'], like:['tech'], neutral:['art','luxury'] },
-    giftQuote: '王律师是文化人，精装典籍和年份好酒最合他心意。',
-    dialogs:{
-      greeting:['王律师推了推眼镜："林总，最近商场上不太平啊，有什么需要我帮忙的吗？"','王律师正在翻阅文件，抬头看到你："来得正好，有几份合同需要你过目。"'],
-      consult:['"从法律角度看，这个条款对你不利。建议修改第3条和第7条。"','"这个案子我有七成把握，但需要你提供更多证据材料。"'],
-      warn:['"我收到风声，有人在背后搞小动作。林总你得小心了。"','"合规问题不能拖，越拖越麻烦。现在处理还来得及。"'],
-    },
-    questLines: [
-      {
-        id: 'wanglvshi_q1', name: '第一份合同', desc: '公司成立初期需要法律咨询',
-        reqFavor: 10,
-        steps: [
-          { text: '通过朋友介绍认识了王律师', reward: { connections: 2 } },
-          { text: '王律师帮你审阅了公司章程和首份合同', reward: { npcFavor: { wanglvshi: 8 } } },
-          { text: '王律师发现合同里的几个隐患条款，帮你规避了风险', reward: { reputation: 3, npcFavor: { wanglvshi: 10 } } },
-        ]
-      },
-      {
-        id: 'wanglvshi_q2', name: '劳动纠纷', desc: '前员工提起劳动仲裁',
-        reqFavor: 30,
-        steps: [
-          { text: '收到仲裁通知书，一个离职员工告公司违法辞退', reward: { stress: 15, money: -20000 } },
-          { text: '王律师帮你整理证据准备应诉', reward: {} },
-          { text: '调解成功，以较小代价解决', reward: { money: -30000, npcFavor: { wanglvshi: 12 } } },
-        ]
-      },
-      {
-        id: 'wanglvshi_q3', name: '知识产权保卫战', desc: '竞争对手抄袭你的核心技术',
-        reqFavor: 50,
-        steps: [
-          { text: '发现市面上一款产品高度疑似抄袭你的技术', reward: { stress: 10 } },
-          { text: '王律师建议先发律师函，同时收集证据', reward: {} },
-          { text: '对方主动求和，达成授权协议', reward: { money: 200000, reputation: 8, npcFavor: { wanglvshi: 15 } } },
-        ]
-      },
-      {
-        id: 'wanglvshi_q4', name: '并购法律顾问', desc: '公司进入并购谈判阶段，需要顶级法律支持',
-        reqFavor: 70,
-        steps: [
-          { text: '有公司提出收购要约，你请王律师担任首席法律顾问', reward: {} },
-          { text: '复杂的尽职调查和条款博弈持续了一个月', reward: { stress: 15 } },
-          { text: '交易完成，王律师的团队功不可没', reward: { money: 500000, reputation: 15, connections: 8 } },
-        ]
-      },
-    ],
-    npcLinks: { lichu: 0.3, chenzong: 0.15, zhangye: 0.1 },
-  },
-  linjiaoshou: {
-    id:'linjiaoshou', name:'林教授', title:'新海商学院副院长',
-    actUnlock:2, initFavor:15,
-    desc:'55岁，桃李满天下，好感度高可获得技能点加成指导',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','lecture','mentor','recommend'],
-    giftPreferences: { love:['book','art'], like:['wine'], neutral:['tech','luxury'] },
-    giftQuote: '林教授书房里全是书和字画，送这些准没错。',
-    dialogs:{
-      greeting:['林教授在办公室看书，见你来微微一笑："小林啊，最近在商场上摸爬滚打，有什么感悟？"','"来来来，坐。我刚好在研究新海市最新的商业案例，你的公司也在其中。"'],
-      lecture:['"经商和做人一样，急不得。你看那些做得久的，都是稳扎稳打。"','"我给你讲个案例：十年前有个年轻人，和你现在一模一样……"'],
-      recommend:['"我有个学生在做风投，我觉得你们可以聊聊。对你有帮助。"','"新海市最近有个政策动向，我觉得你该关注一下。要不要我帮你引荐几个人？"'],
-    },
-    questLines: [
-      {
-        id: 'linjiaoshou_q1', name: '师门渊源', desc: '林教授听说你也姓林，对你另眼相看',
-        reqFavor: 15,
-        steps: [
-          { text: '在一次商业论坛上偶遇林教授，他对你很感兴趣', reward: { npcFavor: { linjiaoshou: 8 } } },
-          { text: '林教授邀请你去他办公室喝茶聊天', reward: { connections: 3 } },
-          { text: '林教授表示愿意做你的商业导师', reward: { reputation: 5, npcFavor: { linjiaoshou: 12 } } },
-        ]
-      },
-      {
-        id: 'linjiaoshou_q2', name: 'EMBA课程推荐', desc: '林教授推荐你参加商学院高级研修班',
-        reqFavor: 35,
-        steps: [
-          { text: '林教授建议你去读EMBA，扩展人脉圈', reward: {} },
-          { text: '你在班上认识了各行各业的精英', reward: { connections: 10, reputation: 5 } },
-          { text: '毕业项目获得优秀评价，林教授亲自颁奖', reward: { connections: 5, reputation: 8, npcFavor: { linjiaoshou: 15 } } },
-        ]
-      },
-      {
-        id: 'linjiaoshou_q3', name: '学术讲座邀请', desc: '林教授请你去商学院给学员做分享',
-        reqFavor: 55,
-        steps: [
-          { text: '林教授邀请你作为创业代表在商学院做演讲', reward: { stress: 8, reputation: 5 } },
-          { text: '演讲反响热烈，多位学员想和你深入交流', reward: { connections: 8, reputation: 8 } },
-          { text: '有企业家听了你的分享后提出合作意向', reward: { money: 150000, connections: 5 } },
-        ]
-      },
-      {
-        id: 'linjiaoshou_q4', name: '智库顾问聘书', desc: '林教授推荐你成为市政府智库成员',
-        reqFavor: 75,
-        steps: [
-          { text: '林教授告诉你市政府正在组建企业咨询智库', reward: {} },
-          { text: '经过层层筛选，你成功入选', reward: { reputation: 15, connections: 12 } },
-          { text: '你的建议被写入政策文件，影响力大增', reward: { reputation: 20, money: 100000, npcFavor: { linjiaoshou: 20 } } },
-        ]
-      },
-    ],
-    npcLinks: { zhaolei: 0.2, xiaoc: 0.15, lichu: 0.1 },
-  },
-  majizhe: {
-    id:'majizhe', name:'马记者', title:'新海财经周刊首席记者',
-    actUnlock:1, initFavor:10,
-    desc:'33岁，笔锋犀利，好感度影响声誉获取效率',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','interview','tip','expose'],
-    giftPreferences: { love:['tech','book'], like:['art'], neutral:['wine','luxury'] },
-    giftQuote: '马记者对新科技产品和独家资料没有抵抗力。',
-    dialogs:{
-      greeting:['马记者拿着录音笔走过来："林总，方便聊几句吗？最近你的公司在业内口碑不错。"','"嗨，又见面了。我今天不是来采访的，就是想跟你随便聊聊。"'],
-      interview:['"读者想知道：你的公司凭什么在新海市站稳脚跟？"','"有传闻说你和陈总有些摩擦？方便回应一下吗？"'],
-      tip:['"有个消息提前告诉你：下期我们要做一个行业专题，如果你愿意配合，我可以把你放在正面案例里。"','"最近有人在媒体上黑你，我听到了风声。要不要我帮你查查是谁？"'],
-    },
-    questLines: [
-      {
-        id: 'majizhe_q1', name: '首次采访', desc: '马记者想采访你这个新兴创业者',
-        reqFavor: 15,
-        steps: [
-          { text: '马记者发来采访邀约，想做一期创业者专题', reward: { stress: 5 } },
-          { text: '你准备了采访提纲和公司材料', reward: {} },
-          { text: '文章刊出后反响不错，更多人知道了你的公司', reward: { reputation: 8, connections: 3, npcFavor: { majizhe: 10 } } },
-        ]
-      },
-      {
-        id: 'majizhe_q2', name: '负面新闻危机', desc: '网上出现关于你公司的负面帖文',
-        reqFavor: 30,
-        steps: [
-          { text: '一篇匿名文章在网上疯传，指控你的产品质量有问题', reward: { stress: 15, reputation: -5, money: -30000 } },
-          { text: '马记者主动联系你，表示可以帮你调查来源', reward: {} },
-          { text: '查清是有竞争对手在背后操作，马记者帮你发了澄清报道', reward: { reputation: 10, npcFavor: { majizhe: 15 } } },
-        ]
-      },
-      {
-        id: 'majizhe_q3', name: '行业年度人物评选', desc: '新海财经周刊举办年度商业人物评选',
-        reqFavor: 50,
-        steps: [
-          { text: '马记者通知你入选年度商业人物候选名单', reward: { reputation: 5 } },
-          { text: '你需要准备参选材料和公众展示', reward: { stress: 8 } },
-          { text: '最终获奖！颁奖典礼上发表了感言', reward: { reputation: 20, money: 50000, connections: 8, npcFavor: { majizhe: 12 } } },
-        ]
-      },
-      {
-        id: 'majizhe_q4', name: '深度报道合作', desc: '马记者想做一个关于创业生态的深度系列',
-        reqFavor: 70,
-        steps: [
-          { text: '马记者提出以你为主角做一组深度报道', reward: { stress: 5 } },
-          { text: '持续两周的跟踪采访，深入公司每个角落', reward: { stress: 10 } },
-          { text: '系列文章引发广泛关注，投资人和客户主动找上门', reward: { reputation: 25, money: 200000, connections: 15 } },
-        ]
-      },
-    ],
-    npcLinks: { zhangye: 0.35, chenzong: 0.1, xiaoc: 0.1 },
-  },
 
-  // ===== 第二轮新增 NPC（6位）=====
-  sujie: {
-    id:'sujie', name:'苏姐', title:'锐思猎头合伙人',
-    actUnlock:0, initFavor:10,
-    desc:'45岁，新海最顶尖的猎头，人脉极广，能用三句话判断一个人值不值',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','headhunt','talent','recommend'],
-    giftPreferences: { love:['luxury','art'], like:['book'], neutral:['wine','tech'] },
-    giftQuote: '苏姐阅人无数，奢侈品和艺术品味是你唯一能让她正眼相看的东西。',
-    dialogs:{
-      greeting:['苏姐一边翻简历一边抬头："小林啊，你公司缺人吗？我手上正好有几个好苗子。"','"来得正好，最近市场上有几个大厂高管在找工作，你要不要先看看？"'],
-      headhunt:['"这个人的简历我看了三遍，如果是我自己开公司，第一个挖他。"','"我不卖人，我介绍缘分。但缘分也是有价格的。"'],
-      talent:['"你公司现在缺的是技术还是管理？思路不一样，人选也不一样。"','"这批候选人底子都不错，但有一个特别适合你现在的发展阶段。"'],
-    },
-    questLines: [
-      {
-        id: 'sujie_q1', name: '初次委托', desc: '苏姐想帮你物色第一批员工',
-        reqFavor: 10,
-        steps: [
-          { text: '苏姐约你在咖啡厅见面，聊了聊公司的人才需求', reward: { npcFavor: { sujie: 8 } } },
-          { text: '她推荐了一份精心筛选的候选人名单', reward: { connections: 3 } },
-          { text: '你面试了其中几位，录用了两个不错的人才', reward: { money: 30000, npcFavor: { sujie: 10 } } },
-        ]
-      },
-      {
-        id: 'sujie_q2', name: '高管挖角', desc: '帮你从竞争对手那里挖来一位核心高管',
-        reqFavor: 30,
-        steps: [
-          { text: '苏姐神神秘秘地告诉你，XX公司的CTO有跳槽意向', reward: { stress: 8 } },
-          { text: '她安排了秘密会面，过程惊心动魄', reward: { money: -80000 } },
-          { text: '挖角成功！新CTO给公司带来了技术突破', reward: { reputation: 8, connections: 5, money: 150000 } },
-        ]
-      },
-      {
-        id: 'sujie_q3', name: '人才储备计划', desc: '苏姐提议帮你建立长期人才储备库',
-        reqFavor: 50,
-        steps: [
-          { text: '苏姐建议你趁现在提前储备未来可能需要的人才', reward: {} },
-          { text: '她帮你建立了人才数据库和评估体系', reward: { connections: 8 } },
-          { text: '几个月后，当公司急需扩张时，你的人才库派上了大用场', reward: { money: 200000, reputation: 10, connections: 5 } },
-        ]
-      },
-      {
-        id: 'sujie_q4', name: '行业猎头联盟', desc: '苏姐邀请你加入她的人脉联盟',
-        reqFavor: 70,
-        steps: [
-          { text: '苏姐透露她正在组建一个跨行业的猎头联盟', reward: { reputation: 5 } },
-          { text: '作为首批合作企业，你获得了优先选人权', reward: { connections: 10 } },
-          { text: '你的公司在人才市场打出了口碑，求职者主动投递', reward: { reputation: 15, connections: 12, money: 100000 } },
-        ]
-      },
-    ],
-    npcLinks: { zhaolei: 0.15, zhangye: 0.2, chenzong: 0.1, wujiaolian: 0.25 },
-  },
-
-  jinhangzhang: {
-    id:'jinhangzhang', name:'金行长', title:'新海商业银行行长',
-    actUnlock:1, initFavor:0,
-    desc:'52岁，谨慎而精明的银行家，对数字极其敏感，好感度高可享受贷款优惠',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','loan','invest','warn'],
-    giftPreferences: { love:['art','book'], like:['wine'], neutral:['tech','luxury'] },
-    giftQuote: '金行长是收藏家，古籍善本和名家字画最能打动他。',
-    dialogs:{
-      greeting:['金行长从一堆财务报表中抬起头："小林啊，最近资金周转怎么样？"','"来坐。我刚看了你公司上个季度的报表，增长不错。"'],
-      loan:['"利率的事好商量。关键是你得让我看到清晰的还款计划。"','"基于你的信用记录，我可以给你一个比市场低1个点的利率。"'],
-      invest:['"我不只是贷款给你，我看好你的企业。要不要考虑让我以个人身份参一股？"','"银行的资金是冰冷的，但我对你这家公司是有信心的。"'],
-    },
-    questLines: [
-      {
-        id: 'jinhangzhang_q1', name: '第一笔贷款', desc: '公司扩张需要资金，金行长愿意给你机会',
-        reqFavor: 15,
-        steps: [
-          { text: '你带着商业计划书敲开了金行长的办公室', reward: { stress: 5 } },
-          { text: '金行长认真看完计划书，问了几个尖锐的问题', reward: { npcFavor: { jinhangzhang: 8 } } },
-          { text: '贷款获批！金行长说："好好干，我相信你的判断。"', reward: { money: 200000, npcFavor: { jinhangzhang: 10 } } },
-        ]
-      },
-      {
-        id: 'jinhangzhang_q2', name: '信用评级提升', desc: '金行长帮你提高企业信用等级',
-        reqFavor: 35,
-        steps: [
-          { text: '金行长通知你行里的信用评级系统即将更新', reward: { stress: 5 } },
-          { text: '你按照他的建议整理了财务报表和经营数据', reward: {} },
-          { text: '信用评级提升至AA级！未来贷款额度翻倍', reward: { reputation: 8, connections: 3, money: 50000 } },
-        ]
-      },
-      {
-        id: 'jinhangzhang_q3', name: '供应链金融', desc: '金行长提议帮你做供应链金融',
-        reqFavor: 55,
-        steps: [
-          { text: '金行长介绍了银行的供应链金融方案', reward: {} },
-          { text: '你的供应商和客户都接入了这套系统', reward: { connections: 8, money: 100000 } },
-          { text: '现金流得到极大改善，运营效率大幅提升', reward: { money: 300000, reputation: 10 } },
-        ]
-      },
-      {
-        id: 'jinhangzhang_q4', name: '银企战略合作', desc: '与银行建立深度战略合作关系',
-        reqFavor: 75,
-        steps: [
-          { text: '金行长亲自带队来公司做战略调研', reward: { stress: 10, reputation: 5 } },
-          { text: '双方签署了战略合作协议，你获得了专属金融服务', reward: { connections: 12 } },
-          { text: '银行成为你最坚实的后盾，资金不再是瓶颈', reward: { money: 500000, reputation: 15, connections: 10 } },
-        ]
-      },
-    ],
-    npcLinks: { lichu: 0.3, chenzong: 0.2, wanglvshi: 0.15, liukuaiji: 0.2 },
-  },
-
-  qianlaoban: {
-    id:'qianlaoban', name:'钱老板', title:'新海拍卖行董事长',
-    actUnlock:1, initFavor:5,
-    desc:'60岁，古董鉴赏家+精明商人，掌握着新海最顶级的资产交易渠道',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','auction','appraisal','collect'],
-    giftPreferences: { love:['art','wine'], like:['luxury'], neutral:['tech','book'] },
-    giftQuote: '钱老板是玩家，好酒配好画，人生才完整。',
-    dialogs:{
-      greeting:['钱老板正用放大镜看一件瓷器："小林来看看，这件东西妙不妙？"','"拍卖行最近收了批好东西，我想着你可能有兴趣。"'],
-      auction:['"这件资产底价两百万，但我估计成交价能到三百万。你要不要入场？"','"拍卖这东西，三分看眼力，七分看运气。"'],
-      appraisal:['"你这件资产我帮你估个价。保守估计能翻三倍，但得等市场热起来。"','"好东西不急着出手。放在手里捂一捂，价格自然就上去了。"'],
-    },
-    questLines: [
-      {
-        id: 'qianlaoban_q1', name: '初入拍场', desc: '钱老板邀请你参加首次拍卖会',
-        reqFavor: 15,
-        steps: [
-          { text: '收到一张烫金请柬：新海秋季艺术品拍卖会', reward: { stress: 5 } },
-          { text: '在拍卖会上你见识了真正的资本游戏', reward: { connections: 5 } },
-          { text: '你以低于市场价拍到了一件不错的资产', reward: { money: 50000, npcFavor: { qianlaoban: 10 } } },
-        ]
-      },
-      {
-        id: 'qianlaoban_q2', name: '捡漏高手', desc: '钱老板教你辨别资产价值',
-        reqFavor: 30,
-        steps: [
-          { text: '钱老板私下告诉你一件被低估的资产即将上拍', reward: { npcFavor: { qianlaoban: 8 } } },
-          { text: '你按照他的指点做了研究，确认了价值', reward: {} },
-          { text: '成功以低价拿到，转手翻了五倍', reward: { money: 250000, reputation: 5, npcFavor: { qianlaoban: 12 } } },
-        ]
-      },
-      {
-        id: 'qianlaoban_q3', name: 'VIP俱乐部', desc: '钱老板邀请你进入顶级藏家圈子',
-        reqFavor: 50,
-        steps: [
-          { text: '钱老板告诉你有一个私人拍卖俱乐部，只有少数人能进', reward: { stress: 8 } },
-          { text: '你缴纳了会费，获得了进入圈子的资格', reward: { money: -100000 } },
-          { text: '在俱乐部里你接触到了顶级资产和人脉', reward: { connections: 15, reputation: 10, money: 200000 } },
-        ]
-      },
-      {
-        id: 'qianlaoban_q4', name: '专属拍卖会', desc: '钱老板为你举办专场资产推介会',
-        reqFavor: 70,
-        steps: [
-          { text: '钱老板提议为你办一场个人资产专场推介会', reward: { reputation: 10 } },
-          { text: '你精心挑选了手中的优质资产进行展示', reward: { stress: 10 } },
-          { text: '推介会大获成功，资产估值翻了几倍', reward: { money: 500000, reputation: 20, connections: 15 } },
-        ]
-      },
-    ],
-    npcLinks: { chenzong: 0.25, jinhangzhang: 0.2, xiaoc: 0.15, zhangye: 0.1 },
-  },
-
-  sunmishu: {
-    id:'sunmishu', name:'孙秘书', title:'新海市府办副主任',
-    actUnlock:1, initFavor:0,
-    desc:'35岁，年轻有为的体制内精英，掌握着城市规划和政策的第一手信息',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','policy','region','tip'],
-    giftPreferences: { love:['book','tech'], like:['art'], neutral:['wine','luxury'] },
-    giftQuote: '孙秘书是读书人出身，好书和前沿科技报告最能打开话题。',
-    dialogs:{
-      greeting:['孙秘书从公文堆中抬起头："林总，最近市里有几个新规划，你可能感兴趣。"','"你那个片区的规划调整方案已经批下来了，我提前跟你说一声。"'],
-      policy:['"这个政策文件下个月才公开，但我可以给你看一个摘要版。"','"市里在考虑调整高新区的税收优惠，你们企业符合条件的话要抓紧申请。"'],
-      region:['"永宁区那边的配套马上要升级了，现在入场时机正好。"','"蛇口港区要扩建保税仓，你的物流业务可以考虑往那边布局。"'],
-    },
-    questLines: [
-      {
-        id: 'sunmishu_q1', name: '政策咨询', desc: '孙秘书帮你解读最新的招商政策',
-        reqFavor: 15,
-        steps: [
-          { text: '你约孙秘书在茶馆见面，了解最新的优惠政策', reward: { npcFavor: { sunmishu: 8 } } },
-          { text: '他详细介绍了几个你可能符合条件的补贴项目', reward: { connections: 2 } },
-          { text: '你按照他的建议提交了申请，获批了一笔补贴', reward: { money: 80000, npcFavor: { sunmishu: 10 } } },
-        ]
-      },
-      {
-        id: 'sunmishu_q2', name: '区域拓展情报', desc: '孙秘书透露了几个优质区域的发展规划',
-        reqFavor: 30,
-        steps: [
-          { text: '孙秘书私下告诉你，某片区即将被划为自贸区', reward: { stress: 5 } },
-          { text: '你提前去考察了一圈，发现确实很有潜力', reward: {} },
-          { text: '你抢在规划公布前低价拿下了几个优质铺位', reward: { money: 150000, connections: 3, npcFavor: { sunmishu: 12 } } },
-        ]
-      },
-      {
-        id: 'sunmishu_q3', name: '招商引资推荐', desc: '孙秘书推荐你参加市政府招商团',
-        reqFavor: 50,
-        steps: [
-          { text: '市里要组织一个企业家代表团去外地招商，孙秘书推荐了你', reward: { reputation: 8 } },
-          { text: '考察期间你结识了多位外地企业家和政府官员', reward: { connections: 12 } },
-          { text: '你谈成了几个跨区域合作项目', reward: { money: 200000, reputation: 10, connections: 8 } },
-        ]
-      },
-      {
-        id: 'sunmishu_q4', name: '市企合作顾问', desc: '孙秘书邀请你加入市政府企业顾问团',
-        reqFavor: 70,
-        steps: [
-          { text: '市政府要组建企业顾问团，孙秘书提名了你', reward: { reputation: 15 } },
-          { text: '你在顾问团中为中小企业发声，获得广泛认可', reward: { connections: 15, reputation: 10 } },
-          { text: '你的建议被采纳写入了招商政策文件', reward: { reputation: 25, money: 100000, connections: 10 } },
-        ]
-      },
-    ],
-    npcLinks: { lichu: 0.35, linjiaoshou: 0.15, jinhangzhang: 0.1 },
-  },
-
-  wujiaolian: {
-    id:'wujiaolian', name:'吴教练', title:'卓越企管培训创始人',
-    actUnlock:1, initFavor:15,
-    desc:'42岁，前500强HR总监转型创业培训师，擅长把平庸团队打造成王牌之师',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','train','coach','team'],
-    giftPreferences: { love:['book','tech'], like:['art'], neutral:['wine','luxury'] },
-    giftQuote: '吴教练是方法论狂人，专业书籍和效率工具是他的精神食粮。',
-    dialogs:{
-      greeting:['吴教练正在白板上画组织架构图："小林，你公司最近士气怎么样？"','"我刚从一家上市公司做完团队培训回来，感触很深。要不要聊聊？"'],
-      train:['"你的团队我看了一圈，潜力很大，但方法论需要升级。"','"不是员工不行，是培训没到位。给我两周，我帮你扭转局面。"'],
-      coach:['"企业家和经理人的区别，就是后者只会管，前者懂得激发。"','"你的管理风格偏温和，这对初创期是优势，但从长期看需要适当调整。"'],
-    },
-    questLines: [
-      {
-        id: 'wujiaolian_q1', name: '团队诊断', desc: '吴教练给你的团队做一次全面评估',
-        reqFavor: 15,
-        steps: [
-          { text: '吴教练花了一天时间观察你的团队工作状态', reward: { stress: 5 } },
-          { text: '他给每个人写了一份能力评估报告', reward: { npcFavor: { wujiaolian: 10 } } },
-          { text: '根据评估结果，他给出了几条价值很高的建议', reward: { connections: 3, npcFavor: { wujiaolian: 8 } } },
-        ]
-      },
-      {
-        id: 'wujiaolian_q2', name: '集中培训营', desc: '吴教练带你的核心团队做封闭培训',
-        reqFavor: 30,
-        steps: [
-          { text: '吴教练设计了一套两周的强化培训方案', reward: { money: -50000 } },
-          { text: '培训期间团队高强度磨合，虽然累但脱胎换骨', reward: { stress: 15 } },
-          { text: '培训结束后，团队战斗力明显提升', reward: { reputation: 8, connections: 5, money: 100000 } },
-        ]
-      },
-      {
-        id: 'wujiaolian_q3', name: '领导力教练', desc: '吴教练做你的私人领导力教练',
-        reqFavor: 50,
-        steps: [
-          { text: '吴教练说："作为创始人，你的天花板就是公司的天花板"', reward: { npcFavor: { wujiaolian: 10 } } },
-          { text: '每周一次的一对一辅导持续了三个月', reward: { stress: 8 } },
-          { text: '你的管理能力得到质的飞跃，员工对你的评价大幅上升', reward: { reputation: 15, connections: 8 } },
-        ]
-      },
-      {
-        id: 'wujiaolian_q4', name: '王牌之师', desc: '吴教练帮你打造行业顶尖团队',
-        reqFavor: 70,
-        steps: [
-          { text: '吴教练提出一个雄心勃勃的计划：帮你打造行业最强团队', reward: { reputation: 5 } },
-          { text: '他亲自驻场三个月，重新设计了整个组织架构和激励体系', reward: { money: -200000, stress: 15 } },
-          { text: '你的公司被评选为"最佳雇主"，团队成为行业标杆', reward: { reputation: 25, money: 300000, connections: 15 } },
-        ]
-      },
-    ],
-    npcLinks: { sujie: 0.25, zhaolei: 0.15, linjiaoshou: 0.1 },
-  },
-
-  liukuaiji: {
-    id:'liukuaiji', name:'刘会计', title:'诚达会计师事务所合伙人',
-    actUnlock:1, initFavor:5,
-    desc:'50岁，老派财务专家，一辈子跟数字打交道，能帮你合法省下大笔税费',
-    favorLevels:['敌对','冷淡','中立','友好','亲密'],
-    dialogTypes:['greeting','tax','audit','save'],
-    giftPreferences: { love:['wine','book'], like:['tech'], neutral:['art','luxury'] },
-    giftQuote: '刘会计只认两样东西：好酒和精准的账本。酒到位了，账就好谈。',
-    dialogs:{
-      greeting:['刘会计放下老花镜："小林啊，你这季度的报表我看了，有几个地方可以优化。"','"来得正好，我刚研究了一个新的税务筹划方案，能帮你省不少。"'],
-      tax:['"合理避税和逃税是两回事。我教你的是前者，完全合法。"','"这个抵扣项很多人不知道，但你们公司完全符合条件。"'],
-      audit:['"我帮你看看上个月的账……嗯，这里有个合规风险，建议立刻整改。"','"审计不是来找你麻烦的，是帮你提前发现问题的。"'],
-    },
-    questLines: [
-      {
-        id: 'liukuaiji_q1', name: '财务体检', desc: '刘会计免费帮你做一次财务体检',
-        reqFavor: 10,
-        steps: [
-          { text: '刘会计说新客户都有一次免费财务体检', reward: { npcFavor: { liukuaiji: 8 } } },
-          { text: '他发现了几个账务处理上的小问题', reward: { stress: 5 } },
-          { text: '修正之后，你的财务管理规范了很多', reward: { npcFavor: { liukuaiji: 10 }, money: 30000 } },
-        ]
-      },
-      {
-        id: 'liukuaiji_q2', name: '税务筹划', desc: '刘会计帮你制定年度税务优化方案',
-        reqFavor: 30,
-        steps: [
-          { text: '刘会计拿出了一份详细的分析报告', reward: { npcFavor: { liukuaiji: 8 } } },
-          { text: '他指出了几个可以合法优化的税务节点', reward: {} },
-          { text: '按照方案执行后，当年税费降低了三成', reward: { money: 150000, reputation: 5, npcFavor: { liukuaiji: 12 } } },
-        ]
-      },
-      {
-        id: 'liukuaiji_q3', name: '上市辅导', desc: '刘会计建议你开始做上市前的财务规范',
-        reqFavor: 50,
-        steps: [
-          { text: '刘会计说："如果你想上市，现在就得开始规范财务了。"', reward: { stress: 10 } },
-          { text: '他带领团队花了两个月帮你梳理财务体系', reward: { money: -100000, stress: 8 } },
-          { text: '财务体系焕然一新，为未来融资和上市扫清障碍', reward: { reputation: 12, connections: 10, money: 200000 } },
-        ]
-      },
-      {
-        id: 'liukuaiji_q4', name: '财务战略顾问', desc: '刘会计成为你的长期财务战略顾问',
-        reqFavor: 70,
-        steps: [
-          { text: '刘会计正式接受担任你公司独立财务顾问的邀请', reward: { reputation: 8 } },
-          { text: '他从战略高度帮你重新设计了财务架构和成本体系', reward: {} },
-          { text: '公司运营成本持续下降，利润率大幅提升', reward: { money: 400000, reputation: 15, connections: 8 } },
-        ]
-      },
-    ],
-    npcLinks: { jinhangzhang: 0.25, wanglvshi: 0.2, chenzong: 0.1, lichu: 0.1 },
-  },
-
-};
-
-// ---- 事件数据库 ----
 // 每个事件：id, type, category, acts(允许幕次), cooldown, weight,
 // title, getDesc(), effects, choices[], fallbacks[], milestone?, isEnding?
-const EVENTS = [
+var EVENTS = [
 
   // ===== 市场类 (12) =====
   {
@@ -3155,117 +2425,301 @@ const EVENTS = [
     fallbacks:['公益翻车比商业失误更伤声誉。','做好事却做成了坏事，这是一种特别的讽刺。'],
   },
 
-];
 
-// ---- 事件总览 ----
-// 市场12 + 员工10 + 政策8 + 运营8 + 个人6 + NPC10 + 里程碑5 + 竞争对手事件5 + 人脉危机7 + 声誉危机4 = 75个
-// 决策型事件占比约 45%
+  // ===== 行业风口类 (5) =====
+  {
+    id:'ind_boom_01', type:'market', category:'decision',
+    acts:[1,2,3,4,5], cooldown:80, weight:8,
+    conditionTags:{ industryLimit:['retail','media'] },
+    title:'直播电商爆发',
+    getDesc:()=>`短视频平台的直播带货突然爆发式增长，一时间「直播间秒杀」成了全民话题。你的零售和媒体业务正撞在风口上——现在入局还来得及，但需要大量投入。`,
+    effects:{ money:[1.1,1.5], reputation:[5,15], stress:[10,25], connections:[3,8] },
+    choices:[
+      { text:'成立直播事业部，重金投入', effect:{ money:1.5, reputation:15, stress:25, connections:8, expense:200000 }, label:'全力投入' },
+      { text:'与头部主播签约合作', effect:{ money:1.3, reputation:10, stress:15, expense:80000 }, label:'签约合作' },
+      { text:'观望为主，小范围试水', effect:{ money:1.1, reputation:5, stress:10, expense:20000 }, label:'谨慎观察' },
+    ],
+    fallbacks:['直播电商的浪潮席卷而来，你的业务线正处于风口。','直播间里的吆喝声，正在改写零售的规则。'],
+  },
+  {
+    id:'ind_boom_02', type:'market', category:'decision',
+    acts:[2,3,4,5], cooldown:100, weight:7,
+    conditionTags:{ industryLimit:['tech','new_energy'] },
+    title:'AI大模型赛道爆发',
+    getDesc:()=>`ChatGPT之后，国内AI大模型赛道彻底引爆。投资人抢着砸钱，技术人才被疯抢，月薪开到天价。你的科技业务——是迎头赶上，还是被时代甩下？`,
+    effects:{ money:[0.9,1.6], reputation:[-5,20], stress:[20,40], connections:[5,15] },
+    choices:[
+      { text:'组建AI团队，自研大模型', effect:{ money:1.6, reputation:20, stress:40, connections:15, expense:500000 }, label:'自研突破' },
+      { text:'接入开源模型，做应用层', effect:{ money:1.3, reputation:10, stress:25, expense:150000 }, label:'应用优先' },
+      { text:'投资AI初创公司，间接入局', effect:{ money:1.1, reputation:8, stress:20, connections:10, expense:300000 }, label:'投资布局' },
+    ],
+    fallbacks:['AI大模型的浪潮正在重塑整个科技行业。','时代变了。不拥抱AI，就会被AI取代。'],
+  },
+  {
+    id:'ind_boom_03', type:'market', category:'decision',
+    acts:[1,2,3,4,5], cooldown:90, weight:7,
+    conditionTags:{ industryLimit:['food_chain','retail'] },
+    title:'国潮消费兴起',
+    getDesc:()=>`年轻人突然对国货疯狂上头。从美妆到食品，从服饰到家电，国产品牌被抢到断货。社交媒体上#国货之光#话题阅读量破百亿。你的餐饮和零售业务正赶上了这波红利。`,
+    effects:{ money:[1.05,1.4], reputation:[5,15], connections:[2,8] },
+    choices:[
+      { text:'推出国潮联名产品线', effect:{ money:1.4, reputation:15, connections:8, expense:120000 }, label:'品牌联名' },
+      { text:'加大传统产品线研发', effect:{ money:1.2, reputation:10, connections:3, expense:60000 }, label:'深耕品质' },
+      { text:'借机提价，赚快钱', effect:{ money:1.35, reputation:-5, connections:-2, expense:0 }, label:'收割红利' },
+    ],
+    fallbacks:['年轻人不再迷信洋品牌，你的国货终于等来了春天。','国潮，是风潮也是机遇。'],
+  },
+  {
+    id:'ind_boom_04', type:'market', category:'decision',
+    acts:[2,3,4,5], cooldown:110, weight:6,
+    conditionTags:{ assetThreshold:5000000 },
+    title:'跨境电商蓝海',
+    getDesc:()=>`海外电商平台对中国商品的需求暴涨。你的同行已经开始在东南亚和非洲建海外仓了。他们有先发优势——但从另一个角度看，他们也是在帮你验证市场。`,
+    effects:{ money:[0.95,1.5], reputation:[5,15], connections:[5,12], stress:[15,30] },
+    choices:[
+      { text:'成立跨境电商公司', effect:{ money:1.5, reputation:15, connections:12, stress:30, expense:300000 }, label:'出海布局' },
+      { text:'与跨境物流公司合作', effect:{ money:1.2, reputation:8, connections:5, stress:15, expense:100000 }, label:'轻资产出海' },
+      { text:'专注国内市场', effect:{ money:0.95, reputation:5, stress:0, connections:2 }, label:'深耕本土' },
+    ],
+    fallbacks:['跨境电商的蓝海正在被快速填充。','当别人开始建海外仓，你就该意识到风向已变。'],
+  },
+  {
+    id:'ind_boom_05', type:'market', category:'decision',
+    acts:[2,3,4,5], cooldown:95, weight:6,
+    conditionTags:{ industryLimit:['new_energy','tech'] },
+    title:'ESG绿色经济',
+    getDesc:()=>`全球碳中和浪潮下，ESG评级成为企业融资的门槛。银行开始给绿色企业更低的贷款利息，资本市场的ESG基金规模突破万亿。你的新能源和科技业务站在了风口中心。`,
+    effects:{ money:[1.05,1.35], reputation:[10,25], connections:[5,10] },
+    choices:[
+      { text:'发布ESG报告，全面绿色转型', effect:{ money:1.35, reputation:25, connections:10, expense:180000 }, label:'绿色引领' },
+      { text:'申请绿色认证，享受政策优惠', effect:{ money:1.2, reputation:15, connections:5, expense:50000 }, label:'合规达标' },
+      { text:'仅做表面绿色包装', effect:{ money:1.05, reputation:10, connections:0, expense:10000 }, label:'应付了事' },
+    ],
+    fallbacks:['绿色经济不再是道德选择，而是商业必须。','ESG不是加分项，是生存底线。'],
+  },
 
-// ---- 热搜榜初始 ----
+  // ===== 政策监管类 (4) =====
+  {
+    id:'policy_01', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:70, weight:8,
+    conditionTags:{ regionLimit:['xinhai','jingdu'] },
+    title:'反垄断调查',
+    getDesc:()=>`市监局突然对你所在的行业发起反垄断调查。虽然你的公司不算巨头，但在地方市场已经形成了较强的话语权。如果被认定垄断，罚款可能高达年营收的10%。`,
+    effects:{ money:[0.85,1.0], reputation:[-10,5], stress:[25,50], connections:[-5,5] },
+    choices:[
+      { text:'主动配合调查，上报经营数据', effect:{ money:0.95, reputation:5, stress:35, connections:5 }, label:'积极配合' },
+      { text:'聘请顶尖律所应对', effect:{ money:0.85, reputation:0, stress:25, connections:-5, expense:200000 }, label:'法律应对' },
+      { text:'通过关系疏通', effect:{ money:1.0, reputation:-10, stress:50, connections:-3, expense:100000 }, label:'公关路线' },
+    ],
+    fallbacks:['反垄断的达摩克利斯之剑悬在市场头上。','时代变了，大不再是优势，而是风险。'],
+  },
+  {
+    id:'policy_02', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:65, weight:7,
+    conditionTags:{ regionLimit:['xinhai','rongcheng'] },
+    title:'税收优惠政策调整',
+    getDesc:()=>`地方政府出台了新一轮企业税收优惠政策——高新技术企业减免15%的所得税，还追加了研发费用加计扣除。但申请窗口只开一个月，错过要等明年。`,
+    effects:{ money:[0.9,1.2], reputation:[0,8], stress:[10,25] },
+    choices:[
+      { text:'立即准备全套材料，全力申报', effect:{ money:1.2, reputation:8, stress:25, expense:50000 }, label:'全力申报' },
+      { text:'找代理机构代办', effect:{ money:1.1, reputation:2, stress:10, expense:30000 }, label:'委托代办' },
+      { text:'今年太忙，明年再说', effect:{ money:0.9, reputation:0, stress:0 }, label:'放弃今年' },
+    ],
+    fallbacks:['税收优惠不会等你准备好了再来。','省钱的最好方式，就是抓住每一个政策窗口。'],
+  },
+  {
+    id:'policy_03', type:'social', category:'decision',
+    acts:[2,3,4,5], cooldown:85, weight:6,
+    conditionTags:{ assetThreshold:10000000 },
+    title:'数据安全新规',
+    getDesc:()=>`《数据安全法》实施细则突然出台，要求所有企业三个月内完成用户数据合规整改。不合规的企业将被处以最高5000万元的罚款。IT部门连夜评估——你公司的合规改造需要至少80万。`,
+    effects:{ money:[0.88,1.05], reputation:[-15,10], stress:[30,50], connections:[0,5] },
+    choices:[
+      { text:'成立专项组，全面合规', effect:{ money:1.05, reputation:10, stress:50, connections:5, expense:120000 }, label:'彻底合规' },
+      { text:'最小化改造，先过检查', effect:{ money:0.95, reputation:0, stress:30, expense:80000 }, label:'应付检查' },
+      { text:'观望同行做法，晚点跟进', effect:{ money:0.88, reputation:-15, stress:20, connections:0 }, label:'拖延观望' },
+    ],
+    fallbacks:['数据合规不是成本，是未来的门票。','新规出台，不合规的公司被逐出市场。'],
+  },
+  {
+    id:'policy_04', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:75, weight:7,
+    conditionTags:{ industryLimit:['tech','media'] },
+    title:'平台经济监管',
+    getDesc:()=>`监管部门约谈了主要平台企业，要求规范算法推荐、数据收集和商家抽成。作为科技和媒体领域的玩家，你首当其冲。合规成本虽高，但也是建立行业标准话语权的机会。`,
+    effects:{ money:[0.9,1.15], reputation:[-5,15], stress:[15,35], connections:[-3,8] },
+    choices:[
+      { text:'主动发布合规白皮书', effect:{ money:1.15, reputation:15, stress:35, connections:8, expense:80000 }, label:'引领合规' },
+      { text:'按最低标准整改', effect:{ money:0.95, reputation:0, stress:15, expense:30000 }, label:'最低达标' },
+      { text:'降低算法依赖，回归传统', effect:{ money:0.9, reputation:-5, stress:15, connections:-3 }, label:'降维规避' },
+    ],
+    fallbacks:['监管靴子落地，平台经济的草莽时代结束了。','合规不是约束，是品牌护城河。'],
+  },
 
-// ========== 竞争对手定义 ==========
-const RIVALS = [
-  { id:'rival_1', name:'鼎盛集团', boss:'刘建国', startMoney:80, growthRate:1.05, style:'激进', color:'#ff6b6b', desc:'老牌地产巨头，作风强硬，擅长资本运作' },
-  { id:'rival_2', name:'恒通控股', boss:'陈明远', startMoney:100, growthRate:1.04, style:'稳健', color:'#4ecdc4', desc:'综合型控股集团，业务多元，现金流充裕' },
-  { id:'rival_3', name:'新世纪资本', boss:'赵雪琴', startMoney:60, growthRate:1.07, style:'投机', color:'#ffe66d', desc:'PE/VC背景，擅长风口投资，收益波动大' },
-  { id:'rival_4', name:'蓝天科技', boss:'孙浩然', startMoney:50, growthRate:1.08, style:'科技', color:'#a29bfe', desc:'AI独角兽出身，技术驱动，年轻化团队' },
-  { id:'rival_5', name:'远洋国际', boss:'周海燕', startMoney:120, growthRate:1.03, style:'国际化', color:'#fd79a8', desc:'跨国贸易起家，海外资源丰富，正在转型' },
-];
+  // ===== 自然灾害类 (3) =====
+  {
+    id:'disaster_01', type:'crisis', category:'decision',
+    acts:[1,2,3,4,5], cooldown:120, weight:5,
+    conditionTags:{ regionLimit:['rongcheng','hangjiang','shengang'] },
+    title:'台风灾害',
+    getDesc:()=>{
+      const cities=['荣城','杭江','深港'];
+      const c=cities[Math.floor(Math.random()*cities.length)];
+      return `超强台风登陆${c}沿海，你的仓库和物流中转站受到严重冲击。初步估计直接损失超${20+Math.floor(Math.random()*30)}万元。供应链中断，客户订单无法交付。`;
+    },
+    effects:{ money:[0.75,0.95], reputation:[-10,5], stress:[30,60] },
+    choices:[
+      { text:'启动应急预案+保险理赔', effect:{ money:0.95, reputation:5, stress:30, expense:50000 }, label:'应急响应' },
+      { text:'临时调整物流线路', effect:{ money:0.85, reputation:0, stress:45, expense:80000 }, label:'绕行方案' },
+      { text:'让员工先处理灾后个人事务', effect:{ money:0.75, reputation:10, stress:60 }, label:'人文关怀' },
+    ],
+    fallbacks:['天灾面前，再精密的商业计划也无力。','台风过后，你的仓库一片狼藉。'],
+    nextEvent:'disaster_01_chain',
+  },
+  {
+    id:'disaster_01_chain', type:'crisis', category:'narrative',
+    acts:[1,2,3,4,5], cooldown:0, weight:0,
+    title:'灾后重建',
+    getDesc:()=>`台风过去一周了。当地政府推出了企业灾后补贴政策，保险公司也开始理赔。但真正的重建才刚刚开始——你意识到，这不仅是修复仓库，更是加固整个供应链的机会。`,
+    effects:{ money:[0.9,1.1], reputation:[5,15], connections:[3,8] },
+    fallbacks:['灾后重建是检验一个企业韧性的时候。','风停了，但你的恢复才刚刚开始。'],
+  },
+  {
+    id:'disaster_02', type:'crisis', category:'decision',
+    acts:[1,2,3,4,5], cooldown:130, weight:5,
+    conditionTags:{ industryLimit:['food_chain','retail'] },
+    title:'供应链断裂',
+    getDesc:()=>{
+      const causes=['东南亚洪水导致榴莲绝收','非洲猪瘟影响猪肉供应','国际航运价格暴涨200%','芯片短缺波及智能设备制造'];
+      const c=causes[Math.floor(Math.random()*causes.length)];
+      return `${c}。你的核心供应链突然断裂，供应商通知「无法保证交付」。客户已经在催单了——每一小时的延误都在消耗你的信用。`;
+    },
+    effects:{ money:[0.7,0.95], reputation:[-15,5], stress:[35,60] },
+    choices:[
+      { text:'高价从现货市场采购', effect:{ money:0.95, reputation:5, stress:60, expense:300000 }, label:'高价抢货' },
+      { text:'与客户协商延期，降价补偿', effect:{ money:0.8, reputation:-5, stress:35, expense:50000 }, label:'协商延期' },
+      { text:'寻找国产替代品', effect:{ money:0.7, reputation:-15, stress:50, expense:100000 }, label:'替代方案' },
+    ],
+    fallbacks:['供应链断了，你的企业正在失血。','一根链条的最薄弱环节，决定了整条链的强度。'],
+  },
+  {
+    id:'disaster_03', type:'crisis', category:'decision',
+    acts:[1,2,3,4,5], cooldown:140, weight:4,
+    conditionTags:{ },
+    title:'办公场所火灾',
+    getDesc:()=>`凌晨三点，保安打来电话——你公司的办公室发生了电气火灾。虽然没有人员伤亡，但办公设备和部分文件损毁。IT说备份在云端，但近一周的本地工作成果没了。`,
+    effects:{ money:[0.85,1.0], stress:[25,45], connections:[2,8] },
+    choices:[
+      { text:'远程办公+临时场地恢复', effect:{ money:1.0, stress:45, connections:8, expense:60000 }, label:'远程过渡' },
+      { text:'立即租赁新办公室', effect:{ money:0.85, stress:25, connections:2, expense:150000 }, label:'快速搬迁' },
+      { text:'让员工带薪休假三天', effect:{ money:0.9, stress:20, connections:5, expense:30000 }, label:'休整恢复' },
+    ],
+    fallbacks:['一场火，烧掉了文件，也烧出了团队的凝聚力。','火灾让我们意识到，数据备份有多重要。'],
+  },
 
-// ========== 新闻系统 ==========
-const NEWS_CATEGORIES = ['财经', '科技', '社会', '国际', '八卦'];
-const NEWS_TEMPLATES = [
-  { category:'财经', templates:[
-    '沪深两市今日大涨，{company}领涨板块',
-    '{sector}板块异动，资金流入{amount}亿',
-    '{company}发布Q{quarter}财报，营收同比增长{growth}%',
-    '央行宣布降准{rate}个百分点，释放流动性{amount}亿',
-    '{company}宣布回购计划，金额不超过{amount}亿元',
-  ]},
-  { category:'科技', templates:[
-    '{company}发布新一代AI芯片，算力提升{num}倍',
-    '{company}完成{amount}亿美元{round}轮融资',
-    '工信部发放{num}张{technology}牌照',
-    '{company}开源{project}项目，GitHub星标破{num}万',
-    '苹果/谷歌/微软齐聚{event}，讨论{technology}未来',
-  ]},
-  { category:'社会', templates:[
-    '全国高考报名人数达{num}万，再创历史新高',
-    '{city}发布人才新政，购房补贴最高{amount}万',
-    '国务院发布{policy}，影响{sector}等{num}个行业',
-    '{event}引发热议，{platform}话题阅读量破{num}亿',
-    '全国居民消费价格同比上涨{cpi}%，环比{change}',
-  ]},
-  { category:'国际', templates:[
-    '美联储{action}利率{num}个基点，全球市场震荡',
-    '{country}宣布对华{action}{sector}产品关税{rate}%',
-    '{company}在{country}投资{amount}亿建厂，创造就业{num}人',
-    'IMF上调全球经济增长预期至{growth}%，中国经济贡献{rate}%',
-    '{country}大选结果出炉，{policy}政策或影响中企',
-  ]},
-  { category:'八卦', templates:[
-    '{celebrity}官宣成为{brand}代言人，代言费{amount}万',
-    '{celebrity}与{company}老板传出绯闻，双方辟谣',
-    '{event}红毯造型引热议，{brand}礼服搜索量暴增',
-    '{celebrity}投资{company}，持股{rate}%，称看好{sector}',
-    '{company}冠名{event}，{celebrity}作为嘉宾出席',
-  ]},
-];
+  // ===== 人事危机类 (3) =====
+  {
+    id:'crisis_hr_01', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:60, weight:7,
+    conditionTags:{ },
+    title:'核心员工集体跳槽',
+    getDesc:()=>{
+      const departments=['技术部','销售部','市场部','运营部'];
+      const d=departments[Math.floor(Math.random()*departments.length)];
+      return `今天早上，${d}的三位核心骨干同时递交了辞职信。他们准备集体跳槽到竞争对手那里。猎头透露对方开出了双倍薪资。你的团队人心惶惶——下一个会是谁？`;
+    },
+    effects:{ money:[0.85,1.0], reputation:[-10,0], stress:[30,55], connections:[-5,0] },
+    choices:[
+      { text:'召开全员会+加薪挽留+竞业协议', effect:{ money:1.0, reputation:0, stress:55, connections:-5, expense:200000 }, label:'加薪硬留' },
+      { text:'尊重选择+快速招聘补位', effect:{ money:0.85, reputation:-10, stress:30, expense:50000 }, label:'尊重选择' },
+      { text:'提高剩余员工福利，留住士气', effect:{ money:0.9, reputation:5, stress:40, expense:100000 }, label:'稳定军心' },
+    ],
+    fallbacks:['人才是公司最大的资产，也是最容易流失的。','核心员工走了，带走的不仅是能力，更是信心。'],
+  },
+  {
+    id:'crisis_hr_02', type:'social', category:'decision',
+    acts:[2,3,4,5], cooldown:75, weight:6,
+    conditionTags:{ },
+    title:'高管丑闻',
+    getDesc:()=>`你的COO被媒体曝出在职期间私下创办竞品公司，并利用公司资源为自己输送利益。消息传出后，投资人电话打爆了你的手机。董事会要求立即处理。`,
+    effects:{ money:[0.85,1.0], reputation:[-25,5], stress:[35,60], connections:[-10,5] },
+    choices:[
+      { text:'立即解雇+发声明切割+法律追诉', effect:{ money:1.0, reputation:5, stress:60, connections:5, expense:100000 }, label:'铁腕处理' },
+      { text:'内部调查后低调处理', effect:{ money:0.9, reputation:-10, stress:45, connections:-3 }, label:'低调处理' },
+      { text:'让该COO主动辞职', effect:{ money:0.85, reputation:-25, stress:35, connections:-10 }, label:'息事宁人' },
+    ],
+    fallbacks:['高管丑闻是最难处理的危机——因为信任一旦破裂就难以修复。','背叛来自身边最信任的人，伤害最深。'],
+  },
+  {
+    id:'crisis_hr_03', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:55, weight:8,
+    conditionTags:{ },
+    title:'职场争议事件',
+    getDesc:()=>`一位离职员工在社交媒体上发布长文，控诉你公司存在加班文化、PUA管理和不公平的绩效考核。帖子转发过万，评论区炸了。HR说公司招聘网站的浏览量和投递量已经跌了60%。`,
+    effects:{ money:[0.9,1.05], reputation:[-20,10], stress:[25,45], connections:[-5,5] },
+    choices:[
+      { text:'公开回应+启动内部调查+改善制度', effect:{ money:1.05, reputation:10, stress:45, connections:5, expense:80000 }, label:'真诚改进' },
+      { text:'发律师函警告+私下和解', effect:{ money:0.95, reputation:-5, stress:35, connections:-5, expense:50000 }, label:'法律应对' },
+      { text:'不回应，等热度过去', effect:{ money:0.9, reputation:-20, stress:25, connections:-3 }, label:'冷处理' },
+    ],
+    fallbacks:['社交媒体的子弹，比传统媒体的炮弹更难防御。','一个离职员工的帖子，把公司推到了风口浪尖。'],
+  },
 
-// 新闻对业务的影响映射
-const NEWS_BIZ_EFFECTS = {
-  '财经': { fund:[-0.05, 0.08], tech:[0, 0.03] },
-  '科技': { tech:[-0.03, 0.06], media:[0, 0.02] },
-  '社会': { retail:[-0.02, 0.04], office:[-0.01, 0.03] },
-  '国际': { trade:[-0.06, 0.05], fund:[-0.04, 0.04] },
-  '八卦': { media:[-0.01, 0.05], retail:[0, 0.03] },
-};
+  // ===== 商业丑闻类 (3) =====
+  {
+    id:'scandal_01', type:'crisis', category:'decision',
+    acts:[2,3,4,5], cooldown:90, weight:6,
+    conditionTags:{ assetThreshold:3000000 },
+    title:'财务造假嫌疑',
+    getDesc:()=>`做空机构发布报告，指控你的公司通过关联交易虚增营收。报告里列出了详尽的证据——供应商的注册地址、工商变更记录、甚至银行流水截图。股价开盘跌了15%。`,
+    effects:{ money:[0.7,1.0], reputation:[-30,5], stress:[40,70], connections:[-15,5] },
+    choices:[
+      { text:'请四大审计+公开所有财务数据', effect:{ money:1.0, reputation:5, stress:70, connections:5, expense:300000 }, label:'全面审计' },
+      { text:'发公告驳斥+起诉做空机构', effect:{ money:0.85, reputation:-5, stress:55, connections:-5, expense:150000 }, label:'正面硬刚' },
+      { text:'停牌+内部自查后再回应', effect:{ money:0.7, reputation:-30, stress:40, connections:-15, expense:50000 }, label:'避而不战' },
+    ],
+    fallbacks:['做空机构的报告，把一个企业家的信誉放在了解剖台上。','面对做空，沉默是最糟糕的应对。'],
+    nextEvent:'scandal_01_chain',
+  },
+  {
+    id:'scandal_01_chain', type:'crisis', category:'narrative',
+    acts:[2,3,4,5], cooldown:0, weight:0,
+    title:'做空风波后续',
+    getDesc:()=>`做空风波过了一周。不管真相如何，市场已经做出了反应——你的供应商开始要求缩短账期，银行审批贷款时更加谨慎。信任重建需要时间，但你必须迈出第一步。`,
+    effects:{ money:[0.85,1.1], reputation:[0,10], connections:[0,5] },
+    fallbacks:['信任一旦受损，修复需要双倍的努力。','风波的余震往往比地震本身更持久。'],
+  },
+  {
+    id:'scandal_02', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:80, weight:7,
+    conditionTags:{ },
+    title:'产品质量问题曝光',
+    getDesc:()=>{
+      const products=['食品添加剂超标','电子设备电池鼓包','服装甲醛超标','儿童玩具含小零件安全隐患'];
+      const p=products[Math.floor(Math.random()*products.length)];
+      return `${p}——消费者协会发布了检测报告，你的产品被点名。微博上#XX品牌翻车#的话题冲上了热搜。客服电话被打爆，退货申请堆积如山。`;
+    },
+    effects:{ money:[0.75,0.95], reputation:[-20,5], stress:[30,50], connections:[-8,3] },
+    choices:[
+      { text:'全面召回+公开道歉+赔偿', effect:{ money:0.95, reputation:5, stress:50, connections:3, expense:250000 }, label:'彻底召回' },
+      { text:'解释为「标准差异」+部分下架', effect:{ money:0.85, reputation:-5, stress:35, connections:-3, expense:80000 }, label:'减损处理' },
+      { text:'质疑检测标准+法律维权', effect:{ money:0.75, reputation:-20, stress:30, connections:-8, expense:120000 }, label:'对抗到底' },
+    ],
+    fallbacks:['产品质量问题被曝光，品牌信任在燃烧。','消费者只给你一次犯错的机会。'],
+  },
+  {
+    id:'scandal_03', type:'crisis', category:'decision',
+    acts:[2,3,4,5], cooldown:85, weight:5,
+    conditionTags:{ industryLimit:['media','office'] },
+    title:'信息泄露事件',
+    getDesc:()=>`黑客攻破了你的用户数据库，数十万用户信息被挂在暗网上出售。包括姓名、手机号、身份证号和消费记录。网信办打来了电话。你的CTO说——「以前觉得被黑是别人家的事」。`,
+    effects:{ money:[0.8,1.0], reputation:[-25,5], stress:[35,60], connections:[-10,5] },
+    choices:[
+      { text:'按事件+通知所有受影响用户+补偿', effect:{ money:1.0, reputation:5, stress:60, connections:5, expense:200000 }, label:'全面善后' },
+      { text:'技术修复+低调通知核心用户', effect:{ money:0.85, reputation:-10, stress:40, connections:-5, expense:80000 }, label:'部分通知' },
+      { text:'先堵漏洞，暂不公开', effect:{ money:0.8, reputation:-25, stress:35, connections:-10, expense:30000 }, label:'保密处理' },
+    ],
+    fallbacks:['黑客攻破的不是服务器，是用户对你的信任。','数据泄露，是所有互联网企业的梦魇。'],
+  },
 
-// 初始新闻（热搜榜）
-const INITIAL_HOT_SEARCH = [
-  { rank:1, text:'新海市GDP突破1.8万亿', heat:9999, category:'财经' },
-  { rank:2, text:'星辰科技完成新一轮融资', heat:8765, category:'科技' },
-  { rank:3, text:'新海人才政策升级', heat:7654, category:'社会' },
-  { rank:4, text:'海天集团宣布战略调整', heat:6543, category:'财经' },
-  { rank:5, text:'某创业者辞职创业', heat:5432, category:'社会' },
-];
-
-// ===================================================
-//  资产模板 — ASSET_TEMPLATES
-//  用于市场随机生成可购买的资产标的
-// ===================================================
-const ASSET_TEMPLATES = [
-  // ---- 房产 (estate) ----
-  { id:'apt_dt', name:'市中心公寓', type:'estate', basePrice:80, volatility:0.03, trend:0.005, rarity:'common', desc:'新海市中心精装公寓一套，地段优越' },
-  { id:'villa_sub', name:'郊区别墅', type:'estate', basePrice:250, volatility:0.04, trend:0.006, rarity:'uncommon', desc:'带花园的独栋别墅，潜力区域' },
-  { id:'office_bld', name:'写字楼整层', type:'estate', basePrice:500, volatility:0.05, trend:0.007, rarity:'rare', desc:'CBD核心地段甲级写字楼' },
-  { id:'shop_lot', name:'商业旺铺', type:'estate', basePrice:150, volatility:0.04, trend:0.004, rarity:'uncommon', desc:'商圈内的临街商铺' },
-  { id:'land_plot', name:'开发地块', type:'estate', basePrice:350, volatility:0.08, trend:0.01, rarity:'rare', desc:'待开发的建设用地，升值空间大' },
-  { id:'penthouse', name:'顶层复式', type:'estate', basePrice:800, volatility:0.06, trend:0.008, rarity:'epic', desc:'270°海景复式公寓' },
-  // ---- 艺术品 (art) ----
-  { id:'oil_painting', name:'当代油画', type:'art', basePrice:30, volatility:0.12, trend:0.003, rarity:'common', desc:'新锐画家的作品，有升值潜力' },
-  { id:'sculpture', name:'现代雕塑', type:'art', basePrice:60, volatility:0.10, trend:0.002, rarity:'uncommon', desc:'知名艺术家的限量雕塑' },
-  { id:'ink_painting', name:'名家水墨', type:'art', basePrice:200, volatility:0.08, trend:0.008, rarity:'rare', desc:'已故名家的真迹水墨画' },
-  { id:'calligraphy', name:'书法珍品', type:'art', basePrice:120, volatility:0.09, trend:0.006, rarity:'rare', desc:'书法大师的传世之作' },
-  { id:'digital_art', name:'数字藏品', type:'art', basePrice:15, volatility:0.20, trend:0.001, rarity:'common', desc:'NFT数字艺术品，波动极大' },
-  { id:'masterpiece', name:'油画巨作', type:'art', basePrice:600, volatility:0.06, trend:0.01, rarity:'epic', desc:'国际拍卖行认证的大师级油画' },
-  // ---- 珠宝 (jewelry) ----
-  { id:'gold_watch', name:'限量腕表', type:'jewelry', basePrice:40, volatility:0.05, trend:0.004, rarity:'common', desc:'瑞士限量机械腕表' },
-  { id:'diamond_ring', name:'钻戒', type:'jewelry', basePrice:90, volatility:0.06, trend:0.003, rarity:'uncommon', desc:'3克拉D色钻戒' },
-  { id:'jade_bracelet', name:'翡翠手镯', type:'jewelry', basePrice:180, volatility:0.07, trend:0.006, rarity:'rare', desc:'老坑冰种翡翠手镯' },
-  { id:'pearl_necklace', name:'珍珠项链', type:'jewelry', basePrice:55, volatility:0.04, trend:0.002, rarity:'uncommon', desc:'南海珍珠项链，光泽润美' },
-  { id:'crown_jewel', name:'传世皇冠', type:'jewelry', basePrice:450, volatility:0.08, trend:0.009, rarity:'epic', desc:'欧洲皇室流传下来的珠宝皇冠' },
-  // ---- 古董 (antique) ----
-  { id:'porcelain', name:'青花瓷瓶', type:'antique', basePrice:100, volatility:0.06, trend:0.007, rarity:'rare', desc:'明清时期的青花瓷精品' },
-  { id:'bronze', name:'青铜器', type:'antique', basePrice:300, volatility:0.05, trend:0.008, rarity:'epic', desc:'战国时期青铜礼器' },
-  { id:'wood_furniture', name:'紫檀家具', type:'antique', basePrice:160, volatility:0.05, trend:0.005, rarity:'rare', desc:'清代紫檀木家具套件' },
-  { id:'ancient_coin', name:'古钱币套装', type:'antique', basePrice:25, volatility:0.08, trend:0.003, rarity:'uncommon', desc:'历代古钱币收藏套装' },
-  { id:'tea_set', name:'紫砂壶', type:'antique', basePrice:50, volatility:0.07, trend:0.004, rarity:'uncommon', desc:'名家制作的紫砂茶壶' },
-  // ---- 股权 (equity) ----
-  { id:'startup_share', name:'创业公司股权', type:'equity', basePrice:20, volatility:0.18, trend:0.002, rarity:'common', desc:'初创科技公司的原始股，高风险高回报' },
-  { id:'fund_lp', name:'私募LP份额', type:'equity', basePrice:200, volatility:0.10, trend:0.006, rarity:'rare', desc:'顶级私募基金的LP份额' },
-  { id:'branch_share', name:'连锁品牌股份', type:'equity', basePrice:120, volatility:0.08, trend:0.005, rarity:'uncommon', desc:'区域性连锁品牌的少数股权' },
-  { id:'mine_right', name:'矿产开采权', type:'equity', basePrice:350, volatility:0.12, trend:0.007, rarity:'epic', desc:'稀有矿产的独家开采权' },
-];
-
-
+]

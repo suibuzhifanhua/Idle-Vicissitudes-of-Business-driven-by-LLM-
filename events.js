@@ -5,9 +5,73 @@
 window.EventSystem = (() => {
   let currentEvent = null;
   let eventQueue = [];  // 事件队列
+  let pendingChainEvents = [];  // 连锁事件延迟队列
 
   // ========== 触发事件 ==========
+  const _firedEventIds = new Set();
+
+  // 条件过滤：检查事件是否满足触发条件
+  function _checkConditionTags(event) {
+    if (!event.conditionTags) return true;
+    const G = SGame.G;
+    const tags = event.conditionTags;
+
+    // 地区限定：当前已解锁城市中是否包含需求地区
+    if (tags.regionLimit && tags.regionLimit.length > 0) {
+      let hasRegion = false;
+      if (G.cities) {
+        for (const rid of tags.regionLimit) {
+          if (G.cities[rid] && G.cities[rid].unlocked) { hasRegion = true; break; }
+        }
+      }
+      if (!hasRegion) return false;
+    }
+
+    // 行业限定：是否拥有指定行业的业务
+    if (tags.industryLimit && tags.industryLimit.length > 0) {
+      let hasIndustry = false;
+      if (G.businesses) {
+        for (const bid of tags.industryLimit) {
+          const biz = G.businesses[bid];
+          if (biz && biz.unlocked && biz.level > 0) { hasIndustry = true; break; }
+        }
+      }
+      // 也检查多城业务
+      if (!hasIndustry && G.cities) {
+        Object.values(G.cities).forEach(city => {
+          if (!city || !city.unlocked || !city.businesses) return;
+          for (const bid of tags.industryLimit) {
+            const b = city.businesses[bid];
+            if (b && b.level > 0) { hasIndustry = true; }
+          }
+        });
+      }
+      if (!hasIndustry) return false;
+    }
+
+    // 资产门槛
+    if (tags.assetThreshold && G.money < tags.assetThreshold) return false;
+
+    return true;
+  }
+
   function fireEvent(event) {
+    // Resolve event from EVENTS by id if string passed
+    if (typeof event === 'string') {
+      const found = EVENTS.find(e => e.id === event);
+      if (!found) return;
+      event = found;
+    }
+
+    // 条件过滤：不满足则跳过
+    if (!_checkConditionTags(event)) return;
+
+    // Dedup: skip if same event ID already fired this tick
+    if (_firedEventIds.has(event.id)) return;
+    _firedEventIds.add(event.id);
+    // Auto-cleanup on next tick
+    if (_firedEventIds.size > 50) _firedEventIds.clear();
+
     currentEvent = event;
     SGame.G.eventCooldowns[event.id] = SGame.G.tickCount;
     SGame.G.eventHistory.push(event.id);
@@ -144,6 +208,16 @@ window.EventSystem = (() => {
     // 从延迟队列中移除已处理事件
     eventQueue = eventQueue.filter(qe => qe.id !== eventId);
 
+    // 连锁事件：如果事件有 nextEvent，加入延迟队列
+    if (event.nextEvent) {
+      const delay = 2 + Math.floor(Math.random() * 4); // 2-5 tick 延迟
+      pendingChainEvents.push({
+        eventId: event.nextEvent,
+        triggerTick: SGame.G.tickCount + delay,
+      });
+      addLog(`🔗 连锁事件将在 ${delay} Tick 后触发...`);
+    }
+
     // 重新渲染UI
     if (typeof UI !== 'undefined') UI.renderAll();
   }
@@ -240,6 +314,27 @@ window.EventSystem = (() => {
     setTimeout(() => { if (SGame.G) SGame.G._currentHoliday = null; }, 24 * (CONFIG.TICK_MS / 1000) * 1000);
   }
 
+  // ========== 处理连锁事件队列（由core.js的tickEvents调用） ==========
+  function processChainEvents() {
+    if (!pendingChainEvents.length) return;
+    const G = SGame.G;
+    const toFire = [];
+    pendingChainEvents = pendingChainEvents.filter(ce => {
+      if (G.tickCount >= ce.triggerTick) {
+        toFire.push(ce.eventId);
+        return false; // 移除
+      }
+      return true;
+    });
+    toFire.forEach(eid => {
+      const event = EVENTS.find(e => e.id === eid);
+      if (event) {
+        addLog(`🔗 连锁事件触发：${event.title}`);
+        fireEvent(event);
+      }
+    });
+  }
+
   // ========== 公开API ==========
   return {
     fireEvent,
@@ -250,5 +345,7 @@ window.EventSystem = (() => {
     showDeferredEvents,
     fireHolidayEvent,
     getEventQueue: () => eventQueue,
+    processChainEvents,
+    _checkConditionTags,
   };
 })();
