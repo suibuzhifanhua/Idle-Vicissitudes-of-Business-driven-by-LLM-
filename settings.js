@@ -445,8 +445,9 @@ window.Settings = (() => {
     listEl.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">获取中...</span>';
     try {
       const ctrl = new AbortController();
-      setTimeout(() => ctrl.abort(), 5000);
+      const timeoutId = setTimeout(() => ctrl.abort(), 15000);
       const r = await fetch(`${base}/api/tags`, { signal: ctrl.signal });
+      clearTimeout(timeoutId);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       const models = (data.models || []).map(m => m.name);
@@ -458,7 +459,8 @@ window.Settings = (() => {
         }).join('');
       }
     } catch(e) {
-      listEl.innerHTML = `<span style="font-size:11px;color:var(--red-up);">获取失败: ${escHtml(e.message)}</span>`;
+      var errMsg = e.name === 'AbortError' ? '请求超时(15s)，Ollama服务响应过慢或未运行' : e.message;
+      listEl.innerHTML = `<span style="font-size:11px;color:var(--red-up);">获取失败: ${escHtml(errMsg)}</span>`;
     }
   }
 
@@ -491,8 +493,9 @@ window.Settings = (() => {
     try {
       // 1. 测试API连通
       const ctrl = new AbortController();
-      setTimeout(() => ctrl.abort(), 5000);
+      const timeoutId1 = setTimeout(() => ctrl.abort(), 15000);
       const r1 = await fetch(`${base}/api/tags`, { signal: ctrl.signal });
+      clearTimeout(timeoutId1);
       if (!r1.ok) throw new Error('API不可达 (HTTP ' + r1.status + ')');
       const data = await r1.json();
       const models = (data.models || []).map(m => m.name);
@@ -505,18 +508,20 @@ window.Settings = (() => {
 
       // 2. 测试模型生成
       const ctrl2 = new AbortController();
-      setTimeout(() => ctrl2.abort(), 10000);
+      const timeoutId2 = setTimeout(() => ctrl2.abort(), 20000);
       const r2 = await fetch(`${base}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, prompt: '回复"OK"', stream: false, options: { num_predict: 5 } }),
         signal: ctrl2.signal,
       });
+      clearTimeout(timeoutId2);
       if (!r2.ok) throw new Error('模型生成失败');
       statusEl.textContent = '✅ 连接成功！模型正常工作';
       statusEl.style.color = 'var(--green-down)';
     } catch(e) {
-      statusEl.textContent = `❌ ${e.message}`;
+      var connErrMsg = e.name === 'AbortError' ? '连接超时，Ollama服务响应过慢或未启动' : e.message;
+      statusEl.textContent = `❌ ${connErrMsg}`;
       statusEl.style.color = 'var(--red-up)';
     }
   }

@@ -99,7 +99,6 @@
         if (!selected) return;
         const nameInput = document.getElementById('player-name-input');
         const playerName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : null;
-        if (!confirm('⚠️ 一旦踏上商海征途，便再无回头之路。\n\n每一个决策都将改写命运，确定要开始吗？')) return;
         const activeDiff = document.querySelector('.diff-card.active');
         const diffKey = activeDiff ? activeDiff.dataset.diff : 'standard';
         SGame.startGame(selected.dataset.origin, playerName, { difficulty: diffKey });
@@ -141,18 +140,13 @@
     console.log('[商海浮沉] init() starting...');
     checkProtocol();
 
-    // 检测LLM（失败后每10秒重试一次）
-    async function checkLLMWithRetry() {
-      if (typeof LLM !== 'undefined') {
-        await LLM.check();
-        if (!LLM.available) {
-          setTimeout(checkLLMWithRetry, 10000);
-        }
-      }
+    // 检测LLM：立即检查一次，之后每20秒重试直到上线
+    if (typeof LLM !== 'undefined') {
+      LLM.check();
+      var llmRetryTimer = setInterval(() => {
+        if (typeof LLM !== 'undefined' && !LLM.available) LLM.check();
+      }, 20000);
     }
-    checkLLMWithRetry();
-    // 每30秒重检
-    setInterval(() => { if (typeof LLM !== 'undefined' && !LLM.available) LLM.check(); }, 30000);
     // 检查存档：等待 Storage 异步预加载完成后再检查（不再用 3 秒重试）
     console.log('[商海浮沉] waiting for Storage.ready()... typeof Storage:', typeof Storage);
     if (typeof Storage !== 'undefined' && Storage.ready) {

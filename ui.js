@@ -529,8 +529,12 @@ window.UI = (() => {
             let condHint = '';
             if (nextDef.reqCond) {
               if (nextDef.reqCond.techLv) {
-                const maxTL = Math.max(0, ...Object.values(G.completedResearch || {}));
-                if (maxTL < nextDef.reqCond.techLv) { condMet = false; condHint = `需科技Lv${nextDef.reqCond.techLv}`; }
+                const treeId = bDef && bDef.techTree ? bDef.techTree : 'digital';
+                const curTechLv = (G.completedResearch && G.completedResearch[treeId]) || 0;
+                if (curTechLv < nextDef.reqCond.techLv) {
+                  const treeNames = { digital:'数字化', ai:'智能运营', blockchain:'金融科技' };
+                  condMet = false; condHint = `需${treeNames[treeId]||treeId}Lv${nextDef.reqCond.techLv}`;
+                }
               }
               if (nextDef.reqCond.rep && G.reputation < nextDef.reqCond.rep) { condMet = false; condHint = condHint || `需声誉${nextDef.reqCond.rep}`; }
               if (nextDef.reqCond.npcFavor) {
@@ -636,9 +640,11 @@ window.UI = (() => {
     // 前置条件检查（与 upgradeBusinessMax 一致）
     if (next.reqCond) {
       if (next.reqCond.techLv) {
-        const maxTechLv = Math.max(0, ...Object.values(G.completedResearch || {}));
-        if (maxTechLv < next.reqCond.techLv) {
-          EventSystem.addLog(`升级需要科技等级 ${next.reqCond.techLv}，当前最高 ${maxTechLv}。`);
+        const treeId = bDef && bDef.techTree ? bDef.techTree : 'digital';
+        const curTechLv = (G.completedResearch && G.completedResearch[treeId]) || 0;
+        const treeNames = { digital:'数字化', ai:'智能运营', blockchain:'金融科技' };
+        if (curTechLv < next.reqCond.techLv) {
+          EventSystem.addLog(`升级需要${treeNames[treeId]||treeId}等级 ${next.reqCond.techLv}，当前 ${curTechLv}。`);
           return;
         }
       }
@@ -689,6 +695,14 @@ window.UI = (() => {
     const G = SGame.G;
     G.businesses[bizId].level = 0;
     G.businesses[bizId].region = null;
+    // 同步到当前城市（防止 getEmpMax() 读取 stale 数据）
+    if (G.cities && G.currentCityId) {
+      var cityData = G.cities[G.currentCityId];
+      if (cityData && cityData.businesses && cityData.businesses[bizId]) {
+        cityData.businesses[bizId].level = 0;
+        cityData.businesses[bizId].region = null;
+      }
+    }
     renderAll();
   }
 
@@ -759,7 +773,7 @@ window.UI = (() => {
       </div>
       <div class="dash-card">
         <div class="dash-label">员工数</div>
-        <div class="dash-value" style="color:var(--accent-blue)">${(G.employees || []).length}</div>
+        <div class="dash-value" style="color:${(G.employees || []).length > SGame.getEmpMax() ? 'var(--red-up)' : 'var(--accent-blue)'}" title="员工上限由管理能力、运营业务数、已解锁区域和资产规模共同决定">${(G.employees || []).length}</div>
         <div class="dash-sub">上限 ${SGame.getEmpMax()}</div>
       </div>
       <div class="dash-card">
@@ -846,8 +860,8 @@ window.UI = (() => {
   function renderDashboardResearchCard(G) {
     const routes = [
       { id:'digital', name:'数字化', icon:'💻' },
-      { id:'ai', name:'AI自动化', icon:'🤖' },
-      { id:'blockchain', name:'区块链', icon:'🔗' }
+      { id:'ai', name:'智能运营', icon:'🤖' },
+      { id:'blockchain', name:'金融科技', icon:'💰' }
     ];
     let researchTotal = 0, researchCompleted = 0;
     let activeResearchName = '';
@@ -1240,17 +1254,30 @@ window.UI = (() => {
     const btn = document.getElementById('btn-hire');
     const count = document.getElementById('emp-count');
     const max = document.getElementById('emp-max');
-    if (count) count.textContent = SGame.G.employees.length;
-    if (max) max.textContent = SGame.getEmpMax();
+    const empLen = SGame.G.employees.length;
+    const empMax = SGame.getEmpMax();
+    const overMax = empLen > empMax;
+    if (count) {
+      count.textContent = empLen;
+      count.style.color = overMax ? 'var(--red-up)' : '';
+    }
+    if (max) {
+      max.textContent = empMax;
+      max.style.color = overMax ? 'var(--red-up)' : '';
+      max.title = '上限 = 3 + 管理/2 + 业务×2 + 区域×2 + 资产里程碑 + 技能加成';
+    }
     if (btn) {
-      const can = SGame.G.employees.length < SGame.getEmpMax();
+      const can = empLen < empMax;
       btn.disabled = !can;
       const isManaged = typeof SGame.isHRManaged === 'function' && SGame.isHRManaged();
-      if (isManaged) {
-        btn.textContent = can ? '+ 扩招部门（HR统管）' : `编制已满 (${SGame.G.employees.length}/${SGame.getEmpMax()})`;
+      if (overMax) {
+        btn.textContent = `⚠️ 超编 (${empLen}/${empMax})`;
+        btn.style.background = 'linear-gradient(135deg, var(--red-up), #b91c1c)';
+      } else if (isManaged) {
+        btn.textContent = can ? '+ 扩招部门（HR统管）' : `编制已满 (${empLen}/${empMax})`;
         btn.style.background = 'linear-gradient(135deg, var(--accent-cyan), #0891b2)';
       } else {
-        btn.textContent = can ? '+ 招聘新员工' : `人手已满 (${SGame.G.employees.length}/${SGame.getEmpMax()})`;
+        btn.textContent = can ? '+ 招聘新员工' : `人手已满 (${empLen}/${empMax})`;
         btn.style.background = '';
       }
     }
@@ -2288,7 +2315,7 @@ window.UI = (() => {
         html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);opacity:${unlocked ? 0.6 : (isBlocked ? 0.4 : 1)};position:relative;${sk.exclusive ? 'border-left:3px solid var(--accent-gold);padding-left:7px;' : ''}">
           <div style="flex:1;">
             <div style="font-size:12px;font-weight:600;${unlocked?'color:var(--accent-gold);':(isBlocked?'color:var(--text-muted);':'')}">${sk.name} ${unlocked?'✓':''} ${sk.exclusive ? '<span style="font-size:9px;color:var(--accent-gold);background:rgba(245,158,11,0.12);padding:1px 5px;border-radius:3px;">⚡互斥</span>' : ''}</div>
-            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${sk.desc}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${sk.desc || '无描述'}</div>
             ${isBlocked ? `<div style="font-size:9px;color:var(--red-up);margin-top:2px;">🚫 已被「${SKILL_TREES[sk.exclusive].find(s=>s.id===exclusive.lockedBy)?.name||exclusive.lockedBy}」锁定</div>` : ''}
           </div>
           ${canUnlock ? `<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="UI.buySkill('${sk.id}')">升级 (${effectiveCost}点)</button>` : (unlocked ? '<span style="font-size:10px;color:var(--green-down);">已解锁</span>' : (isBlocked ? '<span style="font-size:10px;color:var(--text-muted);">不可用</span>' : `<span style="font-size:10px;color:var(--text-muted);">需${effectiveCost}点</span>`))}
@@ -3037,14 +3064,15 @@ window.UI = (() => {
     if (!container) return;
     const G = SGame.G;
     if (!G) return;
+    const currentAct = G.currentAct || 1;
 
     let html = '<div style="font-size:16px;font-weight:700;color:var(--accent-gold);margin-bottom:12px;">🔬 科技研发</div>' +
       '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">研发点数 (RPT): <b style="color:var(--accent-cyan)">' + (G.rpt||0) + '</b></div>';
 
     const routes = [
-      { id:'digital', name:'数字化转型', icon:'💻', desc:'每级 +8% 全业务收入' },
-      { id:'ai', name:'AI 自动化', icon:'🤖', desc:'每级 -5% 员工工资支出' },
-      { id:'blockchain', name:'区块链金融', icon:'🔗', desc:'每级 基金类业务 +12% 收益' },
+      { id:'digital', name:'数字化转型', icon:'💻', desc:'每级 +4% 全业务收入（共10级）' },
+      { id:'ai', name:'智能运营', icon:'🤖', desc:'每级 -3% 员工工资支出，Lv5解锁自动招聘' },
+      { id:'blockchain', name:'金融科技', icon:'💰', desc:'每级 +5% 金融业务收益（共10级）' },
     ];
 
     routes.forEach(route => {
@@ -3062,16 +3090,18 @@ window.UI = (() => {
       levels.forEach((tech, i) => {
         const isComplete = completed > i;
         const isActive = active && active.level === tech.level;
-        const canStart = !isComplete && !isActive && completed === i;
+        const isLocked = tech.unlockAct && currentAct < tech.unlockAct;
+        const canStart = !isComplete && !isActive && !isLocked && completed === i;
         let statusColor = 'var(--text-muted)', statusText = '未解锁';
         if (isComplete) { statusColor = 'var(--green-down)'; statusText = '✓ 已完成'; }
-        else if (isActive) { statusColor = 'var(--accent-gold)'; statusText = '研发中... 剩余 ' + active.ticksRemaining + ' Tick'; }
+        else if (isActive) { statusColor = 'var(--accent-gold)'; statusText = '研发中... 剩余 ' + active.remainingTicks + ' Tick'; }
+        else if (isLocked) { statusColor = 'var(--text-muted)'; statusText = '🔒 第' + tech.unlockAct + '幕解锁'; }
         else if (canStart) { statusColor = 'var(--accent-blue)'; statusText = '可研发'; }
 
-        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;">' +
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;opacity:' + (isLocked ? 0.45 : 1) + ';">' +
           '<span style="font-weight:600;min-width:80px;">Lv.' + (i+1) + ' ' + tech.name + '</span>' +
           '<span style="color:var(--text-muted);flex:1;">' + tech.desc + ' | ' + tech.rptCost + 'RPT + ' + SGame.formatMoney(tech.moneyCost) + '</span>' +
-          '<span style="color:' + statusColor + ';min-width:100px;font-size:10px;">' + statusText + '</span>' +
+          '<span style="color:' + statusColor + ';min-width:110px;font-size:10px;">' + statusText + '</span>' +
           (canStart ? '<button class="btn" style="font-size:10px;padding:2px 8px;" onclick="SGame.startResearch(\'' + route.id + '\');UI.renderAll();">研发</button>' : '') +
         '</div>';
       });

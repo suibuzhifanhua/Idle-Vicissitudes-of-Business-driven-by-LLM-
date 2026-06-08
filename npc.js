@@ -740,7 +740,9 @@ window.NPCSystem = (() => {
 
   function _doMAConfirm(npcId, cost) {
     const result = SGame.acquireBusiness(npcId);
-    alert(result.msg);
+    if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+      UI.showToast(result.ok ? '✅' : '❌', result.ok ? '并购成功' : '并购失败', result.msg, 4000);
+    }
     if (result.ok) {
       closeDialog();
       if (typeof UI !== 'undefined') UI.renderAll();

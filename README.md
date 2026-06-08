@@ -999,7 +999,9 @@ shanghaifc/
 ├── audio.js                ← Web Audio API 音效系统（程序化生成）
 ├── advisor.js              ← AI顾问系统（经营建议、LLM驱动的智能分析）
 ├── styles.css              ← 全局样式（464行，含响应式+暗色主题）
-├── server.py               ← Python本地服务器（静态文件 + 存档API）
+├── server.py               ← Python本地服务器（ThreadingHTTPServer多线程 + 存档API + Ollama代理）
+├── generate_bgm.py         ← BGM纯音乐生成器（numpy+scipy合成，87秒循环）
+├── bgm.wav                 ← 游戏背景音乐（7.3MB，44100Hz 16bit）
 ├── saves/                  ← 存档数据（JSON文件）
 ├── 启动游戏.bat             ← 一键启动（含chcp 65001 UTF-8编码）
 ├── 关闭游戏.bat             ← 一键关闭
@@ -1342,4 +1344,41 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 
 ---
 
-*文档版本：10.2 | 最后更新：2026-06-08*
+### 2026-06-08（第十一轮）
+
+**服务器稳定性优化：**
+
+- 修复服务器日志大量 `TimeoutError` / `ConnectionAbortedError` 崩溃堆栈
+  - `server.py` `handle_ollama_proxy` 所有 socket 写操作加 `try/except` 捕获 ConnectionAbortedError / ConnectionResetError / BrokenPipeError
+  - 新增 `TimeoutError → 504` 响应、`ConnectionRefusedError → 502` 响应分支
+  - 后端 Ollama 连接超时从 60s 提升到 120s
+  - `handle_ping` 加异常保护
+  - `handle_error` 扩展捕获 TimeoutError / BrokenPipeError / OSError
+
+- 修复"经常容易与服务器断开"问题
+  - 根因：`HTTPServer` 单线程同步，Ollama 代理请求阻塞时 ping 无法响应，前端 16s 内误判断线
+  - server.py：`HTTPServer` → `ThreadingHTTPServer`（多线程），Ollama 代理不再阻塞其他请求
+  - `daemon_threads = True` 确保 Ctrl+C 可正常退出
+
+- 前端断线检测容错优化
+  - `FAIL_THRESHOLD` 2→3，`CHECK_INTERVAL` 8s→12s，断线判定从 16s 放宽到 36s
+
+- 前端超时配置修复
+  - `config.js` `LLM_GENERATE_TIMEOUT` 从 15000ms 提升到 120000ms（qwen3.5:4b 本地推理慢）
+
+**BGM 背景音乐：**
+
+- 新增 `generate_bgm.py`：基于 numpy + scipy 纯 Python 合成 87 秒 BGM 纯音乐
+  - A段（0-43s）：Cm7 → Abmaj7 → Ebmaj7 → Bb7sus4 和弦进行，沉稳冷静
+  - B段（44-87s）：Fm7 → Gm7 → Abmaj7 → G7 和弦进行，紧张攀升
+  - 音色分层：底鼓/踩镲节奏 + 低音贝斯 + 和弦垫音 + 钢琴主旋律 + 钟声点缀
+  - 首尾淡入淡出，支持无缝循环播放
+- 输出 `bgm.wav`（7.3MB，44100Hz 16bit），浏览器直接播放无需转码
+- `index.html` 集成 BGM 播放器：
+  - 顶栏新增 🎵 按钮切换播放/暂停
+  - 首次点击或按键页面时自动播放（符合浏览器自动播放策略）
+  - 循环播放，默认音量 35%
+
+---
+
+*文档版本：11.0 | 最后更新：2026-06-08*

@@ -20,6 +20,9 @@
         case 'aggressive':
           fluctuation = 0.82 + Math.random() * 0.36; // 0.82-1.18
           break;
+        case 'speculative':
+          fluctuation = 0.70 + Math.random() * 0.60; // 0.70-1.30 高波动
+          break;
         case 'specialized':
           fluctuation = 0.90 + Math.random() * 0.20; // 0.90-1.10
           // 专精行业加成：检查玩家是否拥有该行业的业务

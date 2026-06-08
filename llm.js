@@ -31,22 +31,32 @@ window.LLM = (() => {
     return base;
   }
 
+  // 检测文本是否包含中文字符
+  function hasChinese(text) {
+    if (!text) return false;
+    return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
+  }
+
   // 从 thinking 内容中提取最终输出（qwen3.5 thinking 模式回退）
+  // 优先提取包含中文的句子，避免英文推理过程泄露到 UI
   function extractFromThinking(thinking) {
     if (!thinking) return '';
-    // 取最后 300 个字符，清理前缀数字/步骤标记
-    var tail = thinking.slice(-400);
-    // 尝试找最后一句完整的话（以句号/问号/感叹号结尾）
-    var sentences = tail.split(/(?<=[。\.\?\!])/);
-    if (sentences.length >= 2) {
-      // 取最后两句
-      var lastTwo = sentences.slice(-2).join('').trim();
-      if (lastTwo.length > 10) return lastTwo;
+    // 按段落拆分，优先找包含中文的段落
+    var paragraphs = thinking.split(/\n\n+/);
+    for (var p = paragraphs.length - 1; p >= 0; p--) {
+      if (hasChinese(paragraphs[p]) && paragraphs[p].trim().length > 10) {
+        return paragraphs[p].trim();
+      }
     }
-    // 回退：去掉行首编号和空格，返回最后一行
-    var lines = tail.split('\n').filter(function(l) { return l.trim().length > 5; });
-    if (lines.length) return lines[lines.length - 1].trim();
-    return tail.trim();
+    // 回退：逐句搜索中文
+    var tail = thinking.slice(-800);
+    var sentences = tail.split(/(?<=[。！？\.\?\!])/);
+    for (var s = sentences.length - 1; s >= 0; s--) {
+      var clean = sentences[s].trim();
+      if (hasChinese(clean) && clean.length > 10) return clean;
+    }
+    // 不返回纯英文内容
+    return '';
   }
 
   // 构建 Ollama API 请求 URL（通过 /api/ollama 代理转发）
@@ -126,25 +136,32 @@ window.LLM = (() => {
       clearTimeout(timer);
       if (!r.ok) throw new Error('llm fail ' + r.status);
       const data = await r.json();
-      // Qwen3.5 可能返回 thinking 模式：response 为空但有 thinking 字段
+      // Qwen3.5 可能返回 thinking 模式：response 为空或有英文推理泄露
       const responseText = (data.response || '').trim();
-      if (responseText) {
+      // 防御：检测 response 是否包含中文，防止英文推理泄露到游戏 UI
+      var responseOk = responseText && hasChinese(responseText);
+      if (responseOk) {
         // 成功后同步修复 available 标志（check 不能是唯一的 true 来源）
         if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
         failureCount = 0;
         return responseText;
       }
-      // 如果 response 为空但有 thinking，提取 thinking 末尾作为回退输出
+      if (responseText && !hasChinese(responseText)) {
+        console.warn('[LLM] response 为纯英文/无中文，疑似推理泄露，尝试从 thinking 提取中文');
+      }
+      // 如果 response 为空或为纯英文，尝试从 thinking 提取中文回退输出
       if (data.thinking) {
-        console.warn('[LLM] response 为空，从 thinking 提取回退输出');
+        if (!responseOk) console.warn('[LLM] response 无效，从 thinking 提取中文回退输出');
         var fallback = extractFromThinking(data.thinking);
-        if (fallback) {
+        if (fallback && hasChinese(fallback)) {
           if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
           failureCount = 0;
           return fallback;
         }
       }
-      throw new Error('empty response');
+      // 所有路径都无有效中文内容，返回 null 让调用方使用 fallback
+      if (responseText) console.warn('[LLM] 无法获取有效中文内容，返回空（将使用预设描述）');
+      throw new Error('no chinese content in response');
     } catch(e) {
       // Network error: retry once
       const isNetworkErr = e.name === 'TypeError' || String(e.message || '').includes('fetch');

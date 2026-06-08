@@ -45,8 +45,14 @@
     var tree = Object.values(TECH_TREE).find(function(t) { return t.id === techId; });
     if (!tree) return { ok: false, msg: '未知研发路线' };
     var curLevel = G.completedResearch[techId] || 0;
-    if (curLevel >= 5) return { ok: false, msg: '该路线已研发完成' };
+    if (curLevel >= tree.levels.length) return { ok: false, msg: '该路线已研发完成' };
     var nextLvl = tree.levels[curLevel];
+    if (!nextLvl) return { ok: false, msg: '该路线已研发完成' };
+    // 档位检查：按游戏幕次解锁
+    var currentAct = G.currentAct || 1;
+    if (nextLvl.unlockAct && currentAct < nextLvl.unlockAct) {
+      return { ok: false, msg: '第' + nextLvl.unlockAct + '幕才解锁该技术（当前第' + currentAct + '幕）' };
+    }
     if (G.activeResearch) return { ok: false, msg: '已有研发项目在进行中' };
     if (G.rpt < nextLvl.rptCost) return { ok: false, msg: '研发点数不足（需要' + nextLvl.rptCost + '，当前' + Math.round(G.rpt) + '）' };
     if (G.money < nextLvl.moneyCost) return { ok: false, msg: '资金不足（需要' + S.formatMoney(nextLvl.moneyCost) + '）' };
