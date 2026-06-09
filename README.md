@@ -1,5 +1,5 @@
 # 商海浮沉 — 使用说明
-![Uploading 预览图.gif…]()
+<img width="1280" height="636" alt="预览图" src="https://github.com/user-attachments/assets/ad44c755-4280-4970-889c-cf74577baae4" />
 
 > **Author:** Fisheep.L
 
