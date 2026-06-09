@@ -1,3 +1,4 @@
+# Author: Fisheep.L
 # server.py - 商海浮沉 游戏服务器（静态文件 + 存档文件读写 API）
 import http.server
 import json

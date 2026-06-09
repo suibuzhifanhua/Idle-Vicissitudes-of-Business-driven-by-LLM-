@@ -1,3 +1,4 @@
+// Author: Fisheep.L
 // storage.js - 文件存档适配层（仅通过 server.py API 读写游戏目录下的 saves/ 文件夹）
 window.Storage = (() => {
   // 缓存：从 __preloadPromise 异步初始化
