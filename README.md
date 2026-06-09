@@ -1,4 +1,5 @@
 # 商海浮沉 — 使用说明
+![Uploading 预览图.gif…]()
 
 > **Author:** Fisheep.L
 
