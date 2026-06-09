@@ -1385,10 +1385,16 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 ---
 
 *文档版本：11.0 | 最后更新：2026-06-08*
+
+<div align="center">
 喜欢这个游戏吗？喜欢可以请我一杯奶茶 全糖 正常冰
-<img width="320" height="320" alt="848873b2-f553-446d-a0d8-54a3a8cbf7d9" src="https://github.com/user-attachments/assets/0c91775b-d344-41b8-a101-b3fac098175c" />
 
-<img width="292" height="327" alt="image" src="https://github.com/user-attachments/assets/f29f5a9d-b93e-49b2-8ac3-5c2dfcf1224f" />
+  <table>
+    <tr>
+      <td align="center"><img width="220" alt="image" src="https://github.com/user-attachments/assets/f29f5a9d-b93e-49b2-8ac3-5c2dfcf1224f" /></td>
+      <td align="center"><img width="220" alt="image" src="https://github.com/user-attachments/assets/9e1f04f8-9b7e-42c6-a3f5-7dc23933fdb0" /></td>
+    </tr>
+  </table>
 
-<img width="300" height="322" alt="image" src="https://github.com/user-attachments/assets/9e1f04f8-9b7e-42c6-a3f5-7dc23933fdb0" />
+</div>
 
