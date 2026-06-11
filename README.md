@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: a9133b47afebc18a000cbb433c522a27_fdd6eceb655411f1aaba5254006c9bbf
-    ReservedCode1: neqFJ3TuLSc4R4zpoAjxgDqKgz9OaMGWfhj/Ni41igRMJB+GxCsPhM7h5891iR8Kdm0DzBUKwvE6ywTeL8kBMzP1YOJC7xSBgg1bPNkOobXIFX4p6cS8AkoZ6NphZRfkDdawcMTu2DwDlys6YK55hKFujvR354feDxzkQsMSWK8uNUnJdC3+H2pw2jc=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: a9133b47afebc18a000cbb433c522a27_fdd6eceb655411f1aaba5254006c9bbf
-    ReservedCode2: neqFJ3TuLSc4R4zpoAjxgDqKgz9OaMGWfhj/Ni41igRMJB+GxCsPhM7h5891iR8Kdm0DzBUKwvE6ywTeL8kBMzP1YOJC7xSBgg1bPNkOobXIFX4p6cS8AkoZ6NphZRfkDdawcMTu2DwDlys6YK55hKFujvR354feDxzkQsMSWK8uNUnJdC3+H2pw2jc=
----
-
 # 商海浮沉 — 使用说明
 
 > **Author:** Fisheep.L
@@ -24,6 +13,11 @@ A browser-based idle business simulation game powered by local LLM (Ollama). Sta
 **Play:** 运行 `启动游戏.bat` 或 `python server.py`，浏览器访问 `http://localhost:8765`
 
 ---
+<img width="1917" height="912" alt="97240273-529d-4aa6-86f7-0a093bfb7ca4" src="https://github.com/user-attachments/assets/e2c8fdf7-ee3b-425e-906d-0cf5a827a771" />
+<img width="1617" height="778" alt="QQ_1781156467836" src="https://github.com/user-attachments/assets/f8613f7d-5a6b-4fb5-8f28-7e03db948c47" />
+<img width="1914" height="911" alt="ee3aeebd-b596-4184-abda-c9d2a3b7b337" src="https://github.com/user-attachments/assets/5d21cb6a-d5c8-44c8-8b33-eb7e6625b75d" />
+<img width="1911" height="914" alt="b8ec6b49-97d7-4f25-804a-d42f6ed6c40b" src="https://github.com/user-attachments/assets/605b2e92-dbe9-4ffa-9d41-fe687ebd7296" />
+
 
 ## 目录
 
