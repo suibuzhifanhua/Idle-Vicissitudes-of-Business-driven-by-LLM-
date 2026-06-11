@@ -478,15 +478,16 @@ window.Settings = (() => {
 
   // ========== 测试连接 ==========
   async function testConnection() {
-    let base = document.getElementById('set-llmBase').value.trim();
     const model = document.getElementById('set-llmModel').value.trim();
-    // localhost/127.0.0.1:11434 直连会被浏览器 CORS 拦截，统一走 /api/ollama 代理
-    const baseLc = base.toLowerCase();
-    if (!base || baseLc === 'http://localhost:11434' || baseLc === 'http://localhost:11434/' ||
-        baseLc === 'http://127.0.0.1:11434' || baseLc === 'http://127.0.0.1:11434/') {
-      base = '/api/ollama';
+    const llmBase = document.getElementById('set-llmBase').value.trim();
+    // 统一使用与 llm.js 相同的 url 拼接逻辑
+    var apiUrl;
+    if (typeof LLM !== 'undefined' && LLM.ollamaUrl) {
+      apiUrl = LLM.ollamaUrl('/api/tags');
+    } else {
+      var base = llmBase || 'http://localhost:11434';
+      apiUrl = base.replace(/\/+$/, '') + '/api/tags';
     }
-    base = base.replace(/\/+$/, '');
     const statusEl = document.getElementById('set-status');
     statusEl.textContent = '测试中...';
     statusEl.style.color = 'var(--accent-gold)';
@@ -495,7 +496,7 @@ window.Settings = (() => {
       // 1. 测试API连通
       const ctrl = new AbortController();
       const timeoutId1 = setTimeout(() => ctrl.abort(), 15000);
-      const r1 = await fetch(`${base}/api/tags`, { signal: ctrl.signal });
+      const r1 = await fetch(apiUrl, { signal: ctrl.signal });
       clearTimeout(timeoutId1);
       if (!r1.ok) throw new Error('API不可达 (HTTP ' + r1.status + ')');
       const data = await r1.json();
@@ -508,9 +509,15 @@ window.Settings = (() => {
       }
 
       // 2. 测试模型生成
+      var generateUrl;
+      if (typeof LLM !== 'undefined' && LLM.ollamaUrl) {
+        generateUrl = LLM.ollamaUrl('/api/generate');
+      } else {
+        generateUrl = (llmBase || 'http://localhost:11434').replace(/\/+$/, '') + '/api/generate';
+      }
       const ctrl2 = new AbortController();
       const timeoutId2 = setTimeout(() => ctrl2.abort(), 20000);
-      const r2 = await fetch(`${base}/api/generate`, {
+      const r2 = await fetch(generateUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, prompt: '回复"OK"', stream: false, options: { num_predict: 5 } }),

@@ -326,63 +326,63 @@ const REGIONS = {
 // ---- 城市定义 ----
 const CITIES = {
   xinhai: {
-    id:'xinhai', name:'新海市', icon:'🏙️', isInternational:false,
+    id:'xinhai', name:'新海市', icon:'🏙️', desc:'新海市，你的起点。这座滨海城市充满了机遇与挑战，每一个街角都在讲述创业者的故事。', isInternational:false,
     unlockMoney:0, minAct:0,
-    cityBonus:{incomeMult:1.03 },
+    cityBonus:{desc:'全局收入+3%', incomeMult:1.03 },
     regionIds:['yongning','xinghai','jinwan','jinxiu','yunding','tiexi','guangming'],
     sortOrder:0},
   jingdu: {
-    id:'jingdu', name:'京都市', icon:'🏛️', isInternational:false,
+    id:'jingdu', name:'京都市', icon:'🏛️', desc:'京都市，千年古都的现代脉动。政策资源和总部经济在这里交汇，是通往全国市场的门户。', isInternational:false,
     unlockMoney:150000000, minAct:1,
-    cityBonus:{policyBonus:1.08 },
+    cityBonus:{desc:'政策红利+8%', policyBonus:1.08 },
     regionIds:['jd_cbd','jd_tech','jd_culture','jd_tongzhou'],
     sortOrder:1},
   shengang: {
-    id:'shengang', name:'深港市', icon:'🌉', isInternational:false,
+    id:'shengang', name:'深港市', icon:'🌉', desc:'深港市，大湾区引擎。金融、贸易、科技在这里撞出最炫目的火花。', isInternational:false,
     unlockMoney:500000000, minAct:2,
-    cityBonus:{financeBonus:1.05 },
+    cityBonus:{desc:'金融收益+5%', financeBonus:1.05 },
     regionIds:['sg_ftz','sg_finance','sg_shekou','sg_nanshan'],
     sortOrder:2},
   rongcheng: {
-    id:'rongcheng', name:'蓉城市', icon:'🐼', isInternational:false,
+    id:'rongcheng', name:'蓉城市', icon:'🐼', desc:'蓉城市，天府之国的商业新中心。悠闲外表下藏着最快的经济增速。', isInternational:false,
     unlockMoney:1200000000, minAct:2,
-    cityBonus:{opsCostReduction:0.95 },
+    cityBonus:{desc:'运营成本-5%', opsCostReduction:0.95 },
     regionIds:['rc_gaoxin','rc_chunxi','rc_tianfu'],
     sortOrder:3},
   hangjiang: {
-    id:'hangjiang', name:'杭江市', icon:'🏯', isInternational:false,
+    id:'hangjiang', name:'杭江市', icon:'🏯', desc:'杭江市，数字经济的潮头。互联网基因深入每一条街巷，新商业物种在这里诞生。', isInternational:false,
     unlockMoney:2500000000, minAct:3,
-    cityBonus:{techBonus:1.05 },
+    cityBonus:{desc:'科技收益+5%', techBonus:1.05 },
     regionIds:['hj_binjiang','hj_xihu','hj_xiaoshan'],
     sortOrder:4},
   xinjiapo: {
-    id:'xinjiapo', name:'新加坡', icon:'🇸🇬', isInternational:true,
+    id:'xinjiapo', name:'新加坡', icon:'🇸🇬', desc:'新加坡，东南亚金融枢纽。从这里出发，你的商业可以辐射整个亚太。', isInternational:true,
     unlockMoney:3000000000, minAct:4,
-    cityBonus:{financeBonus:1.08, opsCostReduction:0.97 },
+    cityBonus:{desc:'金融收益+8%·运营成本-3%', financeBonus:1.08, opsCostReduction:0.97 },
     regionIds:['xjp_marina','xjp_jurong','xjp_orchard'],
     sortOrder:5},
   dongjing: {
-    id:'dongjing', name:'东京', icon:'🇯🇵', isInternational:true,
+    id:'dongjing', name:'东京', icon:'🇯🇵', desc:'东京，科技与传统的极致融合。在这里站稳脚跟，意味着进入全球顶级商业俱乐部。', isInternational:true,
     unlockMoney:6000000000, minAct:4,
-    cityBonus:{techBonus:1.10 },
+    cityBonus:{desc:'科技收益+10%', techBonus:1.10 },
     regionIds:['dj_marunouchi','dj_shinjuku','dj_akihabara'],
     sortOrder:6},
   niuyue: {
-    id:'niuyue', name:'纽约', icon:'🇺🇸', isInternational:true,
+    id:'niuyue', name:'纽约', icon:'🇺🇸', desc:'纽约，世界资本的心脏。华尔街的钟声为每一个征服者而鸣。', isInternational:true,
     unlockMoney:12000000000, minAct:5,
-    cityBonus:{financeBonus:1.12 },
+    cityBonus:{desc:'金融收益+12%', financeBonus:1.12 },
     regionIds:['ny_wallstreet','ny_brooklyn','ny_silicon'],
     sortOrder:7},
   lundun: {
-    id:'lundun', name:'伦敦', icon:'🇬🇧', isInternational:true,
+    id:'lundun', name:'伦敦', icon:'🇬🇧', desc:'伦敦，老牌金融中心的底蕴。泰晤士河畔的办公室里，全球生意从未停歇。', isInternational:true,
     unlockMoney:18000000000, minAct:5,
-    cityBonus:{incomeMult:1.05 },
+    cityBonus:{desc:'全局收入+5%', incomeMult:1.05 },
     regionIds:['ld_city','ld_canary','ld_shoreditch'],
     sortOrder:8},
   dibai: {
-    id:'dibai', name:'迪拜', icon:'🇦🇪', isInternational:true,
+    id:'dibai', name:'迪拜', icon:'🇦🇪', desc:'迪拜，沙漠中崛起的奇迹之城。零税率、自由港、无限可能。', isInternational:true,
     unlockMoney:30000000000, minAct:5,
-    cityBonus:{opsCostReduction:0.85, tradeBonus:1.10 },
+    cityBonus:{desc:'运营成本-15%·贸易收益+10%', opsCostReduction:0.85, tradeBonus:1.10 },
     regionIds:['db_difc','db_marina','db_freezone'],
     sortOrder:9},
 };
@@ -503,96 +503,96 @@ const SKILL_EXCLUSIVE = {
 // ---- 结局文本（已禁用 — 这是一个长期放置游戏，没有结局） ----
 const ENDINGS_DISABLED = true;
 const ENDINGS = {
-  '商业帝国': { title:'商业帝国', icon:'👑' },
-  '隐退江湖': { title:'隐退江湖', icon:'🌅' },
-  '弄巧成拙': { title:'弄巧成拙', icon:'⚡' },
-  '回归平凡': { title:'回归平凡', icon:'🏠' },
-  '破产清算': { title:'破产清算', icon:'💸' },
-  '商界传奇': { title:'商界传奇', icon:'🏆' },
-  '全球霸主': { title:'全球霸主', icon:'🌏' },
-  '急流勇退': { title:'急流勇退', icon:'🕊️' },
-  '东山再起': { title:'东山再起', icon:'🔥' }};
+  '商业帝国': { title:'商业帝国', desc:'从零到万亿，你建立了一个横跨全球的商业帝国。无数人仰望你的名字。', icon:'👑' },
+  '隐退江湖': { title:'隐退江湖', desc:'功成名就之后，你选择了隐退。江湖上只留下你的传说。', icon:'🌅' },
+  '弄巧成拙': { title:'弄巧成拙', desc:'一步走错，满盘皆输。曾经的雄心壮志化为一地鸡毛。', icon:'⚡' },
+  '回归平凡': { title:'回归平凡', desc:'繁华散尽，你回到起点。但这不是失败，是另一种选择。', icon:'🏠' },
+  '破产清算': { title:'破产清算', desc:'资金链断裂，公司进入破产清算。', icon:'💸' },
+  '商界传奇': { title:'商界传奇', desc:'你的名字被写进了商业教科书，一代又一代创业者的偶像。', icon:'🏆' },
+  '全球霸主': { title:'全球霸主', desc:'你的商业版图覆盖全球，没有人敢忽视你的存在。', icon:'🌏' },
+  '急流勇退': { title:'急流勇退', desc:'在巅峰时刻选择退场，你比谁都清楚什么时候该放手。', icon:'🕊️' },
+  '东山再起': { title:'东山再起', desc:'跌倒过，但从未放弃。你的归来比所有人预想的都要耀眼。', icon:'🔥' }};
 
 // ---- 成就 ----
 const ACHIEVEMENTS = [
   // ---- 资产里程碑（更密集） ----
-  { id:'money_1w',    name:'小有积蓄',         icon:'💰', cond:{ type:'money',           value:10000 } },
-  { id:'money_10w',   name:'十万小老板',        icon:'💵', cond:{ type:'money',           value:100000 } },
-  { id:'first_income',  name:'第一桶金',  icon:'🪙', cond:{ type:'total_income_earned', value:10000 } },
-  { id:'money_1m',      name:'百万小老板',        icon:'💎', cond:{ type:'money',           value:1000000 } },
-  { id:'money_3m',      name:'三百万资产',        icon:'🏅', cond:{ type:'money',           value:3000000 } },
-  { id:'money_10m',     name:'千万富翁',      icon:'🌟', cond:{ type:'money',           value:10000000 } },
-  { id:'money_50m',     name:'五千万资产',      icon:'💎', cond:{ type:'money',           value:50000000 } },
-  { id:'money_100m',    name:'亿万富翁',         icon:'🔥', cond:{ type:'money',           value:100000000 } },
-  { id:'money_300m',    name:'亿万大佬',         icon:'👑', cond:{ type:'money',           value:300000000 } },
-  { id:'money_1b',      name:'商业大佬',         icon:'🏆', cond:{ type:'money',           value:1000000000 } },
-  { id:'money_10b',     name:'商界传奇',        icon:'🏆', cond:{ type:'money',           value:10000000000 } },
+  { id:'money_1w',    name:'小有积蓄',         icon:'💰', desc:'累计资产达到1万', cond:{ type:'money',           value:10000 } },
+  { id:'money_10w',   name:'十万小老板',        icon:'💵', desc:'累计资产达到10万', cond:{ type:'money',           value:100000 } },
+  { id:'first_income',  name:'第一桶金',  icon:'🪙', desc:'累计赚取第一笔收入突破万元', cond:{ type:'total_income_earned', value:10000 } },
+  { id:'money_1m',      name:'百万小老板',        icon:'💎', desc:'累计资产达到100万', cond:{ type:'money',           value:1000000 } },
+  { id:'money_3m',      name:'三百万资产',        icon:'🏅', desc:'累计资产达到300万', cond:{ type:'money',           value:3000000 } },
+  { id:'money_10m',     name:'千万富翁',      icon:'🌟', desc:'累计资产达到1000万', cond:{ type:'money',           value:10000000 } },
+  { id:'money_50m',     name:'五千万资产',      icon:'💎', desc:'累计资产达到5000万', cond:{ type:'money',           value:50000000 } },
+  { id:'money_100m',    name:'亿万富翁',         icon:'🔥', desc:'累计资产达到1亿', cond:{ type:'money',           value:100000000 } },
+  { id:'money_300m',    name:'亿万大佬',         icon:'👑', desc:'累计资产达到3亿', cond:{ type:'money',           value:300000000 } },
+  { id:'money_1b',      name:'商业大佬',         icon:'🏆', desc:'累计资产达到10亿', cond:{ type:'money',           value:1000000000 } },
+  { id:'money_10b',     name:'商界传奇',        icon:'🏆', desc:'累计资产达到100亿', cond:{ type:'money',           value:10000000000 } },
 
   // ---- 员工/团队 ----
-  { id:'first_employee', name:'创业伙伴',       icon:'👥', cond:{ type:'emp_count',       count:1 } },
-  { id:'emp_3',         name:'小团队',        icon:'👨👩👦', cond:{ type:'emp_count',       count:3 } },
-  { id:'emp_5',         name:'五人组',        icon:'🏢', cond:{ type:'emp_count',       count:5 } },
-  { id:'emp_10',        name:'管理大师',       icon:'🏭', cond:{ type:'emp_count',       count:10 } },
-  { id:'emp_15',        name:'中型公司',       icon:'🏗️', cond:{ type:'emp_count',       count:15 } },
-  { id:'emp_20',         name:'商业帝国',       icon:'🌐', cond:{ type:'emp_count',       count:20 } },
+  { id:'first_employee', name:'创业伙伴',       icon:'👥', desc:'拥有1名或以上员工', cond:{ type:'emp_count',       count:1 } },
+  { id:'emp_3',         name:'小团队',        icon:'👨👩👦', desc:'拥有3名或以上员工', cond:{ type:'emp_count',       count:3 } },
+  { id:'emp_5',         name:'五人组',        icon:'🏢', desc:'拥有5名或以上员工', cond:{ type:'emp_count',       count:5 } },
+  { id:'emp_10',        name:'管理大师',       icon:'🏭', desc:'拥有10名或以上员工', cond:{ type:'emp_count',       count:10 } },
+  { id:'emp_15',        name:'中型公司',       icon:'🏗️', desc:'拥有15名或以上员工', cond:{ type:'emp_count',       count:15 } },
+  { id:'emp_20',         name:'商业帝国',       icon:'🌐', desc:'拥有20名或以上员工', cond:{ type:'emp_count',       count:20 } },
 
   // ---- 业务/区域 ----
-  { id:'first_biz',      name:'初次创业',       icon:'🏪', cond:{ type:'biz_count',       count:1 } },
-  { id:'biz_2',         name:'业务扩展',       icon:'🏢', cond:{ type:'biz_count',       count:2 } },
-  { id:'biz_3',         name:'多元经营',         icon:'🎯', cond:{ type:'biz_count',       count:3 } },
-  { id:'biz_4',         name:'跨界大佬',         icon:'🎪', cond:{ type:'biz_count',       count:4 } },
-  { id:'biz_all',        name:'全能商人',      icon:'🎯', cond:{ type:'biz_count',       count:7 } },
-  { id:'region_2',       name:'走出永宁',       icon:'🗺️', cond:{ type:'region_count',    count:2 } },
-  { id:'region_4',       name:'区域大亨',         icon:'🏔️', cond:{ type:'region_count',    count:4 } },
-  { id:'region_all',     name:'新海之王',      icon:'👑', cond:{ type:'regions_all' } },
+  { id:'first_biz',      name:'初次创业',       icon:'🏪', desc:'拥有1个或以上业务', cond:{ type:'biz_count',       count:1 } },
+  { id:'biz_2',         name:'业务扩展',       icon:'🏢', desc:'拥有2个或以上业务', cond:{ type:'biz_count',       count:2 } },
+  { id:'biz_3',         name:'多元经营',         icon:'🎯', desc:'拥有3个或以上业务', cond:{ type:'biz_count',       count:3 } },
+  { id:'biz_4',         name:'跨界大佬',         icon:'🎪', desc:'拥有4个或以上业务', cond:{ type:'biz_count',       count:4 } },
+  { id:'biz_all',        name:'全能商人',      icon:'🎯', desc:'拥有7个或以上业务', cond:{ type:'biz_count',       count:7 } },
+  { id:'region_2',       name:'走出永宁',       icon:'🗺️', desc:'解锁2个或以上区域', cond:{ type:'region_count',    count:2 } },
+  { id:'region_4',       name:'区域大亨',         icon:'🏔️', desc:'解锁4个或以上区域', cond:{ type:'region_count',    count:4 } },
+  { id:'region_all',     name:'新海之王',      icon:'👑', desc:'解锁全部区域', cond:{ type:'regions_all' } },
 
   // ---- 声誉 ----
-  { id:'rep_20',         name:'小有名气',          icon:'⭐', cond:{ type:'reputation',      value:20 } },
-  { id:'rep_50',        name:'商界新星',          icon:'⭐', cond:{ type:'reputation',      value:50 } },
-  { id:'rep_70',         name:'知名商人',          icon:'🌠', cond:{ type:'reputation',      value:70 } },
-  { id:'rep_80',        name:'行业领袖',          icon:'🌠', cond:{ type:'reputation',      value:80 } },
-  { id:'rep_95',         name:'商界传说',          icon:'✨', cond:{ type:'reputation',      value:95 } },
+  { id:'rep_20',         name:'小有名气',          icon:'⭐', desc:'声誉值达到20', cond:{ type:'reputation',      value:20 } },
+  { id:'rep_50',        name:'商界新星',          icon:'⭐', desc:'声誉值达到50', cond:{ type:'reputation',      value:50 } },
+  { id:'rep_70',         name:'知名商人',          icon:'🌠', desc:'声誉值达到70', cond:{ type:'reputation',      value:70 } },
+  { id:'rep_80',        name:'行业领袖',          icon:'🌠', desc:'声誉值达到80', cond:{ type:'reputation',      value:80 } },
+  { id:'rep_95',         name:'商界传说',          icon:'✨', desc:'声誉值达到95', cond:{ type:'reputation',      value:95 } },
 
   // ---- 技能 ----
-  { id:'skill_1',       name:'技能入门',       icon:'📚', cond:{ type:'skill_count',      count:1 } },
-  { id:'skill_5',       name:'技能进阶',         icon:'📘', cond:{ type:'skill_count',      count:5 } },
-  { id:'skill_10',      name:'技能大师',        icon:'🎓', cond:{ type:'skill_count',      count:10 } },
-  { id:'skill_15',      name:'宗师境界',        icon:'🏅', cond:{ type:'skill_count',      count:15 } },
+  { id:'skill_1',       name:'技能入门',       icon:'📚', desc:'解锁1个或以上技能', cond:{ type:'skill_count',      count:1 } },
+  { id:'skill_5',       name:'技能进阶',         icon:'📘', desc:'解锁5个或以上技能', cond:{ type:'skill_count',      count:5 } },
+  { id:'skill_10',      name:'技能大师',        icon:'🎓', desc:'解锁10个或以上技能', cond:{ type:'skill_count',      count:10 } },
+  { id:'skill_15',      name:'宗师境界',        icon:'🏅', desc:'解锁15个或以上技能', cond:{ type:'skill_count',      count:15 } },
 
   // ---- 事件/决策 ----
-  { id:'event_10',      name:'初见世面',        icon:'📜', cond:{ type:'event_count',     count:10 } },
-  { id:'event_30',      name:'阅历丰富',        icon:'📖', cond:{ type:'event_count',     count:30 } },
-  { id:'event_50',      name:'见证历史',        icon:'📜', cond:{ type:'event_count',     count:50 } },
-  { id:'event_100',     name:'沧桑商人',       icon:'📚', cond:{ type:'event_count',     count:100 } },
-  { id:'decision_5',    name:'初学决策',         icon:'⚡', cond:{ type:'decision_count',  count:5 } },
-  { id:'decision_10',   name:'决策老手',        icon:'⚡', cond:{ type:'decision_count',  count:10 } },
-  { id:'decision_30',   name:'决策高手',        icon:'🎯', cond:{ type:'decision_count',  count:30 } },
+  { id:'event_10',      name:'初见世面',        icon:'📜', desc:'经历10个事件', cond:{ type:'event_count',     count:10 } },
+  { id:'event_30',      name:'阅历丰富',        icon:'📖', desc:'经历30个事件', cond:{ type:'event_count',     count:30 } },
+  { id:'event_50',      name:'见证历史',        icon:'📜', desc:'经历50个事件', cond:{ type:'event_count',     count:50 } },
+  { id:'event_100',     name:'沧桑商人',       icon:'📚', desc:'经历100个事件', cond:{ type:'event_count',     count:100 } },
+  { id:'decision_5',    name:'初学决策',         icon:'⚡', desc:'做出5次决策', cond:{ type:'decision_count',  count:5 } },
+  { id:'decision_10',   name:'决策老手',        icon:'⚡', desc:'做出10次决策', cond:{ type:'decision_count',  count:10 } },
+  { id:'decision_30',   name:'决策高手',        icon:'🎯', desc:'做出30次决策', cond:{ type:'decision_count',  count:30 } },
 
   // ---- NPC/人脉 ----
-  { id:'npc_1',         name:'初识贵人', icon:'💬', cond:{ type:'npc_favor',       value:20 } },
-  { id:'npc_3',         name:'人脉初成',  icon:'🤝', cond:{ type:'npc_favor_count', count:3, value:20 } },
-  { id:'npc_max',       name:'人脉巅峰', icon:'💎', cond:{ type:'npc_favor_max' } },
+  { id:'npc_1',         name:'初识贵人', icon:'💬', desc:'与任意NPC好感度达到20', cond:{ type:'npc_favor',       value:20 } },
+  { id:'npc_3',         name:'人脉初成',  icon:'🤝', desc:'与3位NPC好感度均达到20', cond:{ type:'npc_favor_count', count:3, value:20 } },
+  { id:'npc_max',       name:'人脉巅峰', icon:'💎', desc:'与所有NPC好感度达到最高', cond:{ type:'npc_favor_max' } },
 
   // ---- 压力/特殊 ----
-  { id:'stress_0',      name:'佛系老板',icon:'🧘', cond:{ type:'stress_low_long' } },
-  { id:'stress_never_high', name:'从容不迫',    icon:'😌', cond:{ type:'stress_never_high' } },
-  { id:'no_debt',       name:'现金为王', icon:'💵', cond:{ type:'money_never_low' } },
-  { id:'speed_run',     name:'极速传说',    icon:'⚡', cond:{ type:'speed_run',      value:1000000, time:3600 } },
-  { id:'play_24h',   name:'商海老手',      icon:'🎬', cond:{ type:'play_time', hours:24 } },
+  { id:'stress_0',      name:'佛系老板',icon:'🧘', desc:'连续保持低压力状态', cond:{ type:'stress_low_long' } },
+  { id:'stress_never_high', name:'从容不迫',    icon:'😌', desc:'从未让压力过高', cond:{ type:'stress_never_high' } },
+  { id:'no_debt',       name:'现金为王', icon:'💵', desc:'从未出现资金紧张', cond:{ type:'money_never_low' } },
+  { id:'speed_run',     name:'极速传说',    icon:'⚡', desc:'快速积累百万资产', cond:{ type:'speed_run',      value:1000000, time:3600 } },
+  { id:'play_24h',   name:'商海老手',      icon:'🎬', desc:'累计游戏时间超过24小时', cond:{ type:'play_time', hours:24 } },
 
   // ---- 新增成就 (10) ----
-  { id:'region_dominator',name:'区域霸主',     icon:'🏰', cond:{ type:'biz_in_region', count:3 } },
-  { id:'social_butterfly',name:'社交达人',   icon:'🦋', cond:{ type:'npc_favor_high', count:3, value:50 } },
-  { id:'crisis_survivor', name:'危机管理者',         icon:'🛡️', cond:{ type:'negative_events', count:5 } },
-  { id:'comeback_king',   name:'逆风翻盘',     icon:'🚀', cond:{ type:'grew_in_recession' } },
-  { id:'top_team',        name:'顶级团队',       icon:'👑', cond:{ type:'senior_emp_count', count:5 } },
-  { id:'invest_master',   name:'投资大师',          icon:'📈', cond:{ type:'biz_level', bizId:'fund', level:5 } },
-  { id:'real_estate_king',name:'地产大亨',        icon:'🏢', cond:{ type:'biz_level', bizId:'office', level:5 } },
-  { id:'tech_pioneer',    name:'科技先锋',        icon:'💻', cond:{ type:'biz_level', bizId:'tech', level:5 } },
-  { id:'stress_master',   name:'压力管理大师',             icon:'🧘', cond:{ type:'stress_never_above', value:40 } },
-  { id:'stock_trader',    name:'股市老手',           icon:'📊', cond:{ type:'stock_profit', value:500000 } },
-  { id:'debt_free',       name:'无债一身轻',             icon:'🏦', cond:{ type:'never_loan' } },
-  { id:'tech_leader',     name:'科技领袖',           icon:'🔬', cond:{ type:'all_tech_max' } },
+  { id:'region_dominator',name:'区域霸主',     icon:'🏰', desc:'在同一区域拥有3个业务', cond:{ type:'biz_in_region', count:3 } },
+  { id:'social_butterfly',name:'社交达人',   icon:'🦋', desc:'与3位NPC好感度达到50', cond:{ type:'npc_favor_high', count:3, value:50 } },
+  { id:'crisis_survivor', name:'危机管理者',         icon:'🛡️', desc:'成功应对5次负面事件', cond:{ type:'negative_events', count:5 } },
+  { id:'comeback_king',   name:'逆风翻盘',     icon:'🚀', desc:'在经济萧条期实现逆势增长', cond:{ type:'grew_in_recession' } },
+  { id:'top_team',        name:'顶级团队',       icon:'👑', desc:'拥有5名或以上高级员工', cond:{ type:'senior_emp_count', count:5 } },
+  { id:'invest_master',   name:'投资大师',          icon:'📈', desc:'量化基金达到5级', cond:{ type:'biz_level', bizId:'fund', level:5 } },
+  { id:'real_estate_king',name:'地产大亨',        icon:'🏢', desc:'写字楼租赁达到5级', cond:{ type:'biz_level', bizId:'office', level:5 } },
+  { id:'tech_pioneer',    name:'科技先锋',        icon:'💻', desc:'科技工作室达到5级', cond:{ type:'biz_level', bizId:'tech', level:5 } },
+  { id:'stress_master',   name:'压力管理大师',             icon:'🧘', desc:'压力从未超过40', cond:{ type:'stress_never_above', value:40 } },
+  { id:'stock_trader',    name:'股市老手',           icon:'📊', desc:'股票盈利超过50万', cond:{ type:'stock_profit', value:500000 } },
+  { id:'debt_free',       name:'无债一身轻',             icon:'🏦', desc:'从未申请过贷款', cond:{ type:'never_loan' } },
+  { id:'tech_leader',     name:'科技领袖',           icon:'🔬', desc:'所有科技研发达到满级', cond:{ type:'all_tech_max' } },
 ];
 
 
@@ -690,7 +690,7 @@ function calcAchievementRewards() {
     if (!r) return;
     for (const [k, v] of Object.entries(r)) {
       if (k === 'desc') continue;
-      if (typeof v === 'boolean') total[k] = v;
+      if (typeof v === 'boolean') total[k] = total[k] || v;
       // 乘法类奖励（<1.0表示减免/衰减，累乘更合理）
       else if (k === 'opCost' || k === 'loyaltyDecay') total[k] = (total[k] || 1) * v;
       else if (typeof v === 'number') total[k] = (total[k] || 0) + v;
@@ -699,6 +699,15 @@ function calcAchievementRewards() {
   return total;
 }
 
+
+// ========== 员工配置（从硬编码提取） ==========
+const EMPLOYEE = {
+  loyaltyLowThreshold: 30,
+  loyaltyMidThreshold: 50,
+  loyaltyPenaltyFactor: 0.5,
+  fatigueHighThreshold: 60,
+  fatigueImpactFactor: 0.005,
+};
 
 // ========== 配置安全访问辅助函数 ==========
 // 统一处理 typeof CONFIG !== 'undefined' 检查，避免 20+ 处重复模式
@@ -710,11 +719,11 @@ function cfg(key, defaultVal) {
 // ========== 里程碑数据（数据驱动） ==========
 const MILESTONES = [
   // money, repMin, bizSumMin（所有城市业务等级总和）, act, ...
-  { money: 1000000,      repMin: 15, bizSumMin: 3,  act: 1, name: '第一桶金',   eventId: 'milestone_1m'},
-  { money: 10000000,     repMin: 30, bizSumMin: 8,  act: 2, name: '小有成就',   eventId: 'milestone_10m'},
-  { money: 100000000,    repMin: 50, bizSumMin: 15, act: 3, name: '事业有成',   eventId: 'milestone_100m'},
-  { money: 1000000000,   repMin: 65, bizSumMin: 25, act: 4, name: '商业帝国',   eventId: 'milestone_1b'},
-  { money: 10000000000,  repMin: 80, bizSumMin: 40, act: 5, name: '传奇人物',   eventId: 'milestone_10b'},
+  { money: 1000000,      repMin: 15, bizSumMin: 3,  act: 1, name: '第一桶金',   icon:'💰', desc:'资产突破百万，你捞到了商海中的第一桶金。', eventId: 'milestone_1m'},
+  { money: 10000000,     repMin: 30, bizSumMin: 8,  act: 2, name: '小有成就',   icon:'📈', desc:'千万身家，你已经不是无名之辈。业界开始关注你的动作。', eventId: 'milestone_10m'},
+  { money: 100000000,    repMin: 50, bizSumMin: 15, act: 3, name: '事业有成',   icon:'🏢', desc:'亿万身家在手，但你深知这只是一个开始。更大的棋局还在后面。', eventId: 'milestone_100m'},
+  { money: 1000000000,   repMin: 65, bizSumMin: 25, act: 4, name: '商业帝国',   icon:'👑', desc:'十亿级企业集团已经成形。你的名字正在被写进本地商业史。', eventId: 'milestone_1b'},
+  { money: 10000000000,  repMin: 80, bizSumMin: 40, act: 5, name: '传奇人物',   icon:'🏆', desc:'百亿商业帝国，你已经成为一个时代的符号。', eventId: 'milestone_10b'},
 ];
 
 const GIFT_TYPES = {

@@ -275,33 +275,26 @@ window.Advisor = (function() {
     _lastAdviceTime = (typeof SGame !== 'undefined' && SGame.G) ? SGame.G.tickCount : 0;
 
     try {
-      // 检查LLM是否可用（如果检测进行中，等待最多5秒）
-      if (typeof LLM === 'undefined') {
-        var ruleAdvice = generateRuleBasedAdvice();
-        _lastResult = ruleAdvice;
+      // 检查LLM是否可用
+      if (typeof LLM === 'undefined') {  
+        _lastResult = null; 
         _requesting = false;
-        return { text: ruleAdvice, fromLLM: false, error: null };
+        return { text: "战略顾问暂时离线，请稍后再试。", fromLLM:false,error:"LLM 未初始化" };
       }
 
+      // check()正在执行中，轮询等待其完成（最多5秒），而非立即降级
       if (!LLM.available && LLM.checking) {
-        // check() 正在执行中，等待其完成而非立即降级
-        await new Promise(function(resolve) {
-          var start = Date.now();
-          function poll() {
-            if (!LLM.checking || LLM.available || Date.now() - start > 5000) {
-              resolve();
-            } else {
-              setTimeout(poll, 300);
-            }
-          }
-          poll();
-        });
+        let waited = 0;
+        while (LLM.checking && waited < 5000) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          waited += 300;
+        }
       }
 
       if (!LLM.available) {
+        _requesting = false;
         var ruleAdvice = generateRuleBasedAdvice();
         _lastResult = ruleAdvice;
-        _requesting = false;
         return { text: ruleAdvice, fromLLM: false, error: null };
       }
 

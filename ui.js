@@ -8,6 +8,32 @@ window.UI = (() => {
   let currentPanel = 'dashboard';
   let notificationsEnabled = true;
 
+  // ========== 增量更新：脏标记（标记需要重绘的模块） ==========
+  let _dirtyFlags = {
+    dashboard: true,
+    regions: true,
+    businesses: true,
+    employees: true,
+    npcs: true,
+    charts: true
+  };
+  let _chartDebounceTimer = null;
+
+  function markDirty(section) {
+    if (_dirtyFlags.hasOwnProperty(section)) {
+      _dirtyFlags[section] = true;
+    }
+  }
+
+  function _debouncedRenderCharts() {
+    if (_chartDebounceTimer) clearTimeout(_chartDebounceTimer);
+    _chartDebounceTimer = setTimeout(function() {
+      _chartDebounceTimer = null;
+      try { renderIncomeTrendChart(SGame.G); } catch(e) { console.error('[UI] chart income error:', e); }
+      try { renderBizPieChart(SGame.G); } catch(e) { console.error('[UI] chart pie error:', e); }
+    }, 200);
+  }
+
   // ========== 面板标签栏（一次性渲染，供 switchPanel 高亮用） ==========
   let _tabsBuilt = false;
   function buildPanelTabs() {
@@ -222,6 +248,9 @@ window.UI = (() => {
     if (_renderPending) return;
     _renderPending = true;
 
+    // 调度 Canvas 图表 debounce 重绘（200ms 内合并）
+    if (_dirtyFlags.charts) _debouncedRenderCharts();
+
     _renderRAFId = requestAnimationFrame(() => {
       _renderPending = false;
       _renderRAFId = null;
@@ -286,39 +315,54 @@ window.UI = (() => {
 
   function _doRenderAll() {
     const G = SGame.G;
-    const safeRender = (name, fn, skipFn) => { try { if (!skipFn || !skipFn()) fn(); } catch(e) { console.error('[商海浮沉] renderAll/' + name + ' error:', e); } };
+    var dirty = _dirtyFlags;
+
+    // 脏标记封装：仅当对应模块被标记脏时才执行渲染（含缓存比较）
+    var dirtyRender = function(name, fn, skipFn, flag) {
+      if (!dirty[flag]) return;
+      try {
+        if (!skipFn || !skipFn()) {
+          fn();
+        }
+      } catch(e) {
+        console.error('[商海浮沉] renderAll/' + name + ' error:', e);
+      }
+      dirty[flag] = false;
+    };
 
     // #6 仪表盘：除金钱外无显著变化时跳过（最昂贵的渲染）
-    safeRender('dashboard', renderDashboard, function() { return _shouldSkipDashboard(G); });
+    dirtyRender('dashboard', renderDashboard, function() { return _shouldSkipDashboard(G); }, 'dashboard');
 
     // #6 员工列表：仅数量或角色变化时重绘
     var empKeys = G.employees ? G.employees.map(function(e) { return e.id + ':' + (e.role || '') + ':' + (e.loyalty|0) + ':' + (e.fatigue|0); }).join(',') : '';
-    safeRender('employeeList', renderEmployeeList, function() { return _shouldSkipSimple('employees', empKeys); });
+    dirtyRender('employeeList', renderEmployeeList, function() { return _shouldSkipSimple('employees', empKeys); }, 'employees');
 
     // #6 业务列表：仅等级变化时重绘
     var bizKeys = G.businesses ? Object.entries(G.businesses).filter(function(e) { return e[1].level > 0; }).map(function(e) { return e[0] + ':' + e[1].level; }).join(',') : '';
-    safeRender('businessList', renderBusinessList, function() { return _shouldSkipSimple('businesses', bizKeys); });
+    dirtyRender('businessList', renderBusinessList, function() { return _shouldSkipSimple('businesses', bizKeys); }, 'businesses');
 
     // #6 区域面板：仅解锁/购买/升级变化时重绘
     var regionKeys = G.cities ? Object.entries(G.cities).map(function(e) { return e[0] + ':' + (e[1].unlocked ? 'u' : 'l'); }).join(',') : '';
-    safeRender('regions', renderRegions, function() { return _shouldSkipSimple('regions', regionKeys); });
+    dirtyRender('regions', renderRegions, function() { return _shouldSkipSimple('regions', regionKeys); }, 'regions');
 
     // #6 事件日志：无新条目时跳过
     var logIdx = G.eventLog ? G.eventLog.length - 1 : -1;
-    safeRender('eventLog', renderEventLog, function() { return _shouldSkipSimple('eventLog', logIdx); });
+    var _sfLog = function() { return _shouldSkipSimple('eventLog', logIdx); };
+    try { if (!_sfLog()) renderEventLog(); } catch(e) { console.error('[商海浮沉] renderAll/eventLog error:', e); }
 
     // #6 统计面板：几乎每tick变化但渲染轻量，保持
-    safeRender('stats', renderStats);
+    try { renderStats(); } catch(e) { console.error('[商海浮沉] renderAll/stats error:', e); }
 
-    // #7 以下面板变化频率低，始终渲染但仍用 safeRender 保护
-    safeRender('npcPanel', renderNPCPanel);
-    safeRender('actDisplay', renderActDisplay);
-    safeRender('hotSearch', renderHotSearch);
-    safeRender('hireButton', renderHireButton);
-    safeRender('synergyStatus', renderSynergyStatus);
-    safeRender('manualButton', renderManualButton);
-    safeRender('clock', renderClock);
-    safeRender('autoButton', renderAutoButton);
+    // #7 以下面板变化频率低：若对应标记脏则渲染
+    var sfNpc = function() { return _shouldSkipSimple('npcs', G.npcFavor ? JSON.stringify(G.npcFavor) : ''); };
+    dirtyRender('npcPanel', renderNPCPanel, sfNpc, 'npcs');
+    try { renderActDisplay(); } catch(e) { console.error('[商海浮沉] renderAll/actDisplay error:', e); }
+    try { renderHotSearch(); } catch(e) { console.error('[商海浮沉] renderAll/hotSearch error:', e); }
+    try { renderHireButton(); } catch(e) { console.error('[商海浮沉] renderAll/hireButton error:', e); }
+    try { renderSynergyStatus(); } catch(e) { console.error('[商海浮沉] renderAll/synergyStatus error:', e); }
+    try { renderManualButton(); } catch(e) { console.error('[商海浮沉] renderAll/manualButton error:', e); }
+    try { renderClock(); } catch(e) { console.error('[商海浮沉] renderAll/clock error:', e); }
+    try { renderAutoButton(); } catch(e) { console.error('[商海浮沉] renderAll/autoButton error:', e); }
   }
 
   // ========== 离线收益弹窗 ==========
@@ -1127,7 +1171,7 @@ window.UI = (() => {
       html += `<div data-emp-id="${emp.id}" style="padding:8px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div style="font-size:13px;font-weight:600">${emp.icon} ${emp.name} <span style="font-size:11px;color:var(--text-muted)">${roleName}</span>${internBadge}</div>
+            <div style="font-size:13px;font-weight:600">${escapeHtml(emp.icon || '')} ${escapeHtml(emp.name)} <span style="font-size:11px;color:var(--text-muted)">${escapeHtml(roleName)}</span>${internBadge}</div>
             <div style="font-size:11px;color:var(--text-muted)">忠诚: <span style="color:${loyaltyColor}">${emp.loyalty.toFixed(0)}</span> | 工资: ${displaySalary.toFixed(1)}${salaryNote} | 疲劳: <span style="color:${fatigueColor}">${fatigue.toFixed(0)}</span> | 技能: Lv.${skill}</div>
             ${internProgress}
             ${attrLine}
@@ -1200,7 +1244,7 @@ window.UI = (() => {
         }
         detHtml += `<div style="padding:4px 0;font-size:11px;display:flex;justify-content:space-between;align-items:center">
           <div>
-            <span>${emp.icon} ${emp.name} Lv.${emp.skill||1} <span style="color:${loyalCol}">❤${emp.loyalty.toFixed(0)}</span> <span style="color:${fatCol}">😫${(emp.fatigue||0).toFixed(0)}</span>${emp.isIntern && !emp.internConverted ? ' <span style="font-size:9px;color:var(--accent-cyan)">📋实习' + (emp.internTicks||0) + '/' + (CONFIG.INTERN_TICKS_TO_CONVERT||20) + '</span>' : ''}${emp.internConverted ? ' <span style="font-size:9px;color:var(--green-down)">✅转正</span>' : ''}</span>
+            <span>${escapeHtml(emp.icon || '')} ${escapeHtml(emp.name)} Lv.${emp.skill||1} <span style="color:${loyalCol}">❤${emp.loyalty.toFixed(0)}</span> <span style="color:${fatCol}">😫${(emp.fatigue||0).toFixed(0)}</span>${emp.isIntern && !emp.internConverted ? ' <span style="font-size:9px;color:var(--accent-cyan)">📋实习' + (emp.internTicks||0) + '/' + (CONFIG.INTERN_TICKS_TO_CONVERT||20) + '</span>' : ''}${emp.internConverted ? ' <span style="font-size:9px;color:var(--green-down)">✅转正</span>' : ''}</span>
             ${attrLine}
           </div>
           <button class="btn" style="font-size:9px;padding:1px 4px;opacity:0.4" onclick="UI.fireEmployee(${emp.id})">×</button>
@@ -1446,10 +1490,10 @@ window.UI = (() => {
       return `
       <div style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between">
-          <span style="font-weight:600">${c.roleIcon} ${c.name}</span>
-          <span style="font-size:11px;color:var(--text-muted)">${c.roleName}</span>
+          <span style="font-weight:600">${escapeHtml(c.roleIcon || '')} ${escapeHtml(c.name)}</span>
+          <span style="font-size:11px;color:var(--text-muted)">${escapeHtml(c.roleName)}</span>
         </div>
-        <div id="hire-bg-${i}" style="font-size:11px;color:var(--text-secondary);margin:4px 0">${c.bg}</div>
+        <div id="hire-bg-${i}" style="font-size:11px;color:var(--text-secondary);margin:4px 0">${escapeHtml(c.bg || '')}</div>
         ${attrsHtml}
         <div id="hire-eval-${i}" style="font-size:11px;color:var(--accent-cyan);margin:2px 0;min-height:16px;"></div>
         <div style="display:flex;gap:12px;font-size:12px">
@@ -1616,13 +1660,13 @@ window.UI = (() => {
     Object.values(NPCS).forEach(npc => {
       if (npc.actUnlock >= act && !(npcTriggers[npc.id] || []).some(t => t.startsWith('act_'))) {
         // 幕次未解锁
-        html += `<div class="stat-row" style="opacity:0.4;font-size:11px"><span class="stat-label">🔒 ${npc.name}</span><span class="stat-value">${npc.title}</span></div>`;
+        html += `<div class="stat-row" style="opacity:0.4;font-size:11px"><span class="stat-label">🔒 ${escapeHtml(npc.name)}</span><span class="stat-value">${escapeHtml(npc.title)}</span></div>`;
         return;
       }
       const f = NPCSystem.getFavor(npc.id);
       const fl = NPCSystem.getFavorLabel(npc.id);
       html += `<div class="stat-row" style="font-size:11px;">
-        <span class="stat-label" style="cursor:pointer" onclick="NPCSystem.openDialog('${npc.id}','greeting')">${npc.name} <span style="color:var(--text-muted)">${npc.title}</span></span>
+        <span class="stat-label" style="cursor:pointer" onclick="NPCSystem.openDialog('${npc.id}','greeting')">${escapeHtml(npc.name)} <span style="color:var(--text-muted)">${escapeHtml(npc.title)}</span></span>
         <span style="display:flex;gap:2px;align-items:center;">
           <span class="stat-value" style="font-size:10px;margin-right:4px;">${f} ${fl}</span>
           <button class="btn" style="font-size:9px;padding:1px 4px;border-radius:3px;" onclick="event.stopPropagation();NPCSystem.openDialog('${npc.id}','gift')" title="送礼">🎁</button>
@@ -1652,7 +1696,7 @@ window.UI = (() => {
       if (npc.actUnlock >= act) return;
 
       let npcHasQuests = false;
-      let npcHtml = `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;margin-bottom:4px;font-weight:600;">${npc.name}</div>`;
+      let npcHtml = `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;margin-bottom:4px;font-weight:600;">${escapeHtml(npc.name)}</div>`;
 
       npc.questLines.forEach(q => {
         const isCompleted = completed.includes(q.id);
@@ -1899,7 +1943,7 @@ window.UI = (() => {
         <div style="font-size:28px;">${done ? a.icon : '🔒'}</div>
         <div style="flex:1">
           <div style="font-size:13px;font-weight:600;color:${done?'var(--text-primary)':'var(--text-muted)'}">${a.name}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${a.desc}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${a.desc || ''}</div>
           ${done ? `<div style="font-size:10px;color:var(--accent-gold);margin-top:2px">🏅 ${getAchievementRewardDesc(a.id) || '永久加成已生效'}</div>` : ''}
         </div>
         ${done && !read ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--accent-blue);flex-shrink:0" title="新解锁"></div>' : ''}
@@ -1939,7 +1983,7 @@ window.UI = (() => {
         <div style="font-size:24px;">${done ? a.icon : '🔒'}</div>
         <div style="flex:1">
           <div style="font-size:12px;font-weight:600;color:${done?'var(--text-primary)':'var(--text-muted)'}">${a.name}</div>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${a.desc}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${a.desc || ''}</div>
           ${done ? `<div style="font-size:9px;color:var(--accent-gold);margin-top:1px">🏅 ${getAchievementRewardDesc(a.id) || '永久加成'}</div>` : ''}
         </div>
       </div>`;
@@ -2035,7 +2079,7 @@ window.UI = (() => {
         html += '<span style="font-size:9px;padding:1px 6px;background:rgba(168,85,247,0.15);color:var(--purple);border-radius:4px;margin-left:auto;">🌏 国际</span>';
       }
       html += '</div>';
-      html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">' + city.desc + '</div>';
+      html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">' + (city.desc || '') + '</div>';
       html += '<div style="font-size:10px;color:var(--accent-gold);margin-bottom:4px;">🏆 ' + (city.cityBonus ? city.cityBonus.desc : '无特殊加成') + '</div>';
       if (unlocked) {
         html += '<div style="margin-top:4px;">' + regions + '</div>';
@@ -2340,7 +2384,7 @@ window.UI = (() => {
 
   // ========== 破产面板 ==========
   function showBankruptcyPanel() {
-    const ending = ENDINGS ? ENDINGS['破产清算'] : { title:'破产清算', desc:'资金链断裂，公司进入破产清算。', icon:'💸' };
+    const ending = (ENDINGS && ENDINGS['破产清算']) ? { title:'破产清算', desc:'资金链断裂，公司进入破产清算。', icon:'💸', ...ENDINGS['破产清算'] } : { title:'破产清算', desc:'资金链断裂，公司进入破产清算。', icon:'💸' };
     const overlay = document.createElement('div');
     overlay.id = 'bankruptcy-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg-primary);display:flex;align-items:center;justify-content:center;z-index:9999;text-align:center;padding:40px';
@@ -2348,7 +2392,7 @@ window.UI = (() => {
         <div>
           <div style="font-size:80px;margin-bottom:20px">${ending.icon}</div>
           <h1 style="font-size:32px;margin-bottom:12px;background:linear-gradient(135deg,var(--red-up),var(--accent-gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent">${ending.title}</h1>
-          <p style="color:var(--text-secondary);font-size:16px;max-width:400px;line-height:1.8;margin-bottom:24px">${ending.desc}</p>
+          <p style="color:var(--text-secondary);font-size:16px;max-width:400px;line-height:1.8;margin-bottom:24px">${ending.desc || ''}</p>
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:32px">
             最终资产: ${SGame.formatMoney(SGame.G.money)} | 声誉: ${(SGame.G.reputation ?? 0).toFixed(0)} | 游戏时长: ${Math.floor(SGame.G.totalPlayTime/60)}分钟
           </div>
@@ -2881,10 +2925,10 @@ window.UI = (() => {
       const tierColors = ['var(--text-muted)', '#c0c8d4', 'var(--green-down)', 'var(--accent-blue)', 'var(--purple)', 'var(--accent-gold)'];
       const tierIdx = done ? Math.min(achieved.indexOf(ms.id) + 2, tierColors.length - 1) : 0;
       html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);opacity:' + (done ? 1 : 0.35) + '">';
-      html += '<div style="font-size:22px;">' + (done ? ms.icon : '🔒') + '</div>';
+      html += '<div style="font-size:22px;">' + (done ? (ms.icon || '🏆') : '🔒') + '</div>';
       html += '<div style="flex:1">';
       html += '<div style="font-size:12px;font-weight:600;color:' + (done ? tierColors[tierIdx] : 'var(--text-muted)') + '">' + ms.name + '</div>';
-      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + ms.desc + '</div>';
+      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + (ms.desc || '') + '</div>';
       if (done) html += '<div style="font-size:9px;color:var(--accent-gold);margin-top:2px">✓ 已达成 | +2技能点</div>';
       html += '</div></div>';
     });

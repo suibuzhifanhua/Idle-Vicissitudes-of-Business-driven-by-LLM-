@@ -1677,12 +1677,15 @@ window.SGame = (() => {
     // 低忠诚度员工比例惩罚（而非每人独立乘 0.5）
     if (G.employees.length > 0) {
       const lowRatio = lowLoyaltyCount / G.employees.length;
-      if (lowRatio > 0) mul *= Math.max(0.5, 1.0 - lowRatio * 0.5);
+      const penaltyFactor = (typeof EMPLOYEE !== 'undefined' && EMPLOYEE.loyaltyPenaltyFactor) ? EMPLOYEE.loyaltyPenaltyFactor : 0.5;
+      if (lowRatio > 0) mul *= Math.max(0.5, 1.0 - lowRatio * penaltyFactor);
     }
     // 全局疲劳影响
     if (G.employees.length > 0) {
       const avgFatigue = G.employees.reduce((s, e) => s + (e.fatigue || 0), 0) / G.employees.length;
-      if (avgFatigue > 60) mul *= Math.max(0.7, 1 - (avgFatigue - 60) * 0.005);
+      const fatigueThreshold = (typeof EMPLOYEE !== 'undefined' && EMPLOYEE.fatigueHighThreshold) ? EMPLOYEE.fatigueHighThreshold : 60;
+      const fatigueImpact = (typeof EMPLOYEE !== 'undefined' && EMPLOYEE.fatigueImpactFactor) ? EMPLOYEE.fatigueImpactFactor : 0.005;
+      if (avgFatigue > fatigueThreshold) mul *= Math.max(0.7, 1 - (avgFatigue - fatigueThreshold) * fatigueImpact);
     }
     return mul;
   }
@@ -1737,6 +1740,10 @@ window.SGame = (() => {
       G.unlockedRegions.push(regionId);
       addLog(`解锁新区域：${REGIONS[regionId].name}！`);
       showAchievement('🗺️', `解锁区域：${REGIONS[regionId].name}`);
+      if (typeof UI !== 'undefined' && UI.markDirty) {
+        UI.markDirty('regions');
+        UI.markDirty('dashboard');
+      }
     }
   }
 
@@ -1774,6 +1781,11 @@ window.SGame = (() => {
           setTimeout(() => {
             if (typeof EventSystem !== 'undefined') EventSystem.fireEvent(cityEvent);
           }, 2000);
+        }
+        // 城市解锁后标记区域面板脏
+        if (typeof UI !== 'undefined' && UI.markDirty) {
+          UI.markDirty('regions');
+          UI.markDirty('dashboard');
         }
       }
     });
@@ -1865,6 +1877,10 @@ window.SGame = (() => {
       let ev4 = greatEvents[Math.floor(Math.random() * greatEvents.length)];
       addLog('🌟 ' + ev4.text);
       ev4.effect();
+    }
+    if (typeof UI !== 'undefined' && UI.markDirty) {
+      UI.markDirty('npcs');
+      UI.markDirty('dashboard');
     }
   }
 
@@ -2024,14 +2040,14 @@ window.SGame = (() => {
         G.milestone = i + 1;
         const oldAct = G.act;
         G.act = Math.max(G.act, m.act);
-        addLog('🎉 综合里程碑达成：' + m.name + '！' + m.desc + '！');
+        addLog('🎉 综合里程碑达成：' + m.name + '！' + (m.desc || '') + '！');
         addLog('   ' + getCompositeDesc(m));
         showAchievement('🏆', m.name);
         if (typeof AudioFX !== 'undefined') AudioFX.playAchievement();
 
         // #10: LLM 里程碑叙事
         if (typeof LLM !== 'undefined') {
-          LLM.generateMilestoneNarrative(m.name, m.desc).then(function(narrative) {
+          LLM.generateMilestoneNarrative(m.name, m.desc || '').then(function(narrative) {
             if (narrative) {
               addLog('📜 ' + narrative);
               if (typeof UI !== 'undefined' && UI.showToast) UI.showToast('📜 ' + narrative.substring(0, 40) + '...');
@@ -4350,6 +4366,7 @@ window.SGame = (() => {
     emp.loyalty = Math.min(100, (emp.loyalty || 0) + 5);
     addLog(`📚 ${emp.name} 培训完成，技能升至 ${emp.skill} 级`);
     save();
+    if (typeof UI !== 'undefined' && UI.markDirty) UI.markDirty('employees');
     return { ok: true, msg: `${emp.name} 技能升至 ${emp.skill} 级` };
   }
 
@@ -4377,6 +4394,7 @@ window.SGame = (() => {
     emp.loyalty = Math.min(100, (emp.loyalty || 0) + 3);
     addLog(`🎯 ${emp.name} 专精「${specDef.name}」提升至 Lv.${curLv + 1}`);
     save();
+    if (typeof UI !== 'undefined' && UI.markDirty) UI.markDirty('employees');
     return { ok: true, msg: `${emp.name} 「${specDef.name}」升至 Lv.${curLv + 1}` };
   }
 
@@ -4410,6 +4428,7 @@ window.SGame = (() => {
     emp.happiness = Math.min(200, (emp.happiness || 50) + 10);
     addLog(`😴 ${emp.name} 休息恢复，疲劳-30`);
     save();
+    if (typeof UI !== 'undefined' && UI.markDirty) UI.markDirty('employees');
     return { ok: true, msg: `${emp.name} 疲劳恢复` };
   }
 
@@ -4484,6 +4503,11 @@ window.SGame = (() => {
     if (upgraded > 0) {
       addLog(`⬆️ ${bDef.icon} ${bDef.name} 一键升级 ${upgraded} 级 → Lv${state.level}`);
       save();
+      if (typeof UI !== 'undefined' && UI.markDirty) {
+        UI.markDirty('businesses');
+        UI.markDirty('dashboard');
+        UI.markDirty('charts');
+      }
       return { ok: true, msg: `升级${upgraded}级`, levels: upgraded };
     }
     return { ok: false, msg: '无法升级（资金不足或前置条件未满足）', levels: 0 };
@@ -4513,6 +4537,10 @@ window.SGame = (() => {
     G.money -= totalCost;
     addLog(`👥 批量招聘 ${hired} 名${roleDef.name}，花费 ${formatMoney(totalCost)}`);
     save();
+    if (typeof UI !== 'undefined' && UI.markDirty) {
+      UI.markDirty('employees');
+      UI.markDirty('dashboard');
+    }
     return { ok: true, msg: `招聘${hired}人`, hired };
   }
 
@@ -5300,5 +5328,7 @@ window.SGame = (() => {
     collectGameAnalytics,
     // ---- 商业并购系统 ----
     calculateMACost, acquireBusiness, getMARevenue, getMAList,
+    // ---- 增量更新脏标记（供 UI 调用）----
+    markDirty: (typeof UI !== 'undefined' && UI.markDirty) ? UI.markDirty : function() {},
   };
 })();

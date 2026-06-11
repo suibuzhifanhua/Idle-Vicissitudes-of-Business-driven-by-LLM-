@@ -19,7 +19,10 @@ window.LLM = (() => {
   function getCooldownMs() { return (typeof CONFIG !== 'undefined' && CONFIG.LLM_FAILURE_COOLDOWN) ? CONFIG.LLM_FAILURE_COOLDOWN : 60000; }
   function getMaxFailures() { return (typeof CONFIG !== 'undefined' && CONFIG.LLM_MAX_FAILURES) ? CONFIG.LLM_MAX_FAILURES : 3; }
 
-  function getBase() { return Settings.get('llmBase'); }
+  function getBase() {
+    var saved = Settings.get('llmBase');
+    return saved || 'http://localhost:11434';
+  }
   function getModel() { return Settings.get('llmModel'); }
   function getTemp() { return Settings.get('temperature'); }
   function getMaxTokens() {
@@ -40,30 +43,43 @@ window.LLM = (() => {
 
   // 从 thinking 内容中提取最终输出（qwen3.5 thinking 模式回退）
   // 优先提取包含中文的句子，避免英文推理过程泄露到 UI
+  // 检测文本中英文占比是否过高（基于字符数而非片段数，避免短中文词被长英文词放大比例）
+  // 阈值：英文字母字符数超过总字符数的35%判定为 thinking 泄漏
+  function isExcessivelyMixedChinese(text) {
+    if (!text || !hasChinese(text)) return false;
+    var chineseChars = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+    var englishChars = (text.match(/[a-zA-Z]/g) || []).length;
+    var totalChars = chineseChars + englishChars;
+    if (totalChars === 0) return false;
+    // 仅当英文字母占比 > 35% 且中文字符 < 50 时才判定泄漏
+    // 避免正常的中英混合回复（如 "升级 TechnologyStudio 到 Lv.3"）被误杀
+    if (englishChars / totalChars > 0.35 && chineseChars < 50) return true;
+    return false;
+  }
+
+  // 从混合中英文文本中提取中文主体（剔除明显的英文 thinking 段落）
+  function extractChineseContent(text) {
+    if (!text) return '';
+    // 移除纯英文行（开头无中文的行通常为 thinking）
+    var lines = text.split('\n');
+    var chineseLines = lines.filter(function(line) {
+      var trimmed = line.trim();
+      if (!trimmed) return true; // 保留空行
+      return hasChinese(trimmed);
+    });
+    return chineseLines.join('\n').trim();
+  }
+
   function extractFromThinking(thinking) {
-    if (!thinking) return '';
-    // 按段落拆分，优先找包含中文的段落
-    var paragraphs = thinking.split(/\n\n+/);
-    for (var p = paragraphs.length - 1; p >= 0; p--) {
-      if (hasChinese(paragraphs[p]) && paragraphs[p].trim().length > 10) {
-        return paragraphs[p].trim();
-      }
-    }
-    // 回退：逐句搜索中文
-    var tail = thinking.slice(-800);
-    var sentences = tail.split(/(?<=[。！？\.\?\!])/);
-    for (var s = sentences.length - 1; s >= 0; s--) {
-      var clean = sentences[s].trim();
-      if (hasChinese(clean) && clean.length > 10) return clean;
-    }
-    // 不返回纯英文内容
+    // qwen3.5 thinking 内容主要是模型内部推理过程（规则检查、翻译对照等），
+    // 不适合作为 UI 输出。直接返回空，让调用方使用 fallback 预设描述。
     return '';
   }
 
   // 构建 Ollama API 请求 URL（通过 /api/ollama 代理转发）
   function ollamaUrl(path) {
     var base = getBase();
-    if (!base) base = '/api/ollama';
+    if (!base) return (window.location.origin || '') + path;
     return base + path;
   }
 
@@ -78,27 +94,31 @@ window.LLM = (() => {
     console.warn('[LLM] 连续失败' + failureCount + '次，进入' + (getCooldownMs()/1000) + '秒冷却期');
   }
 
-  function exitCooldown() {
-    // 修复：isInCooldown() 要求 Date.now() < cooldownUntil，无法同时满足 >= cooldownUntil
+  // 修复 3：改为 async，await check() 结果，仅在成功时重置状态
+  async function exitCooldown() {
     if (cooldownUntil > 0 && Date.now() >= cooldownUntil) {
-      console.log('[LLM] 冷却期结束，重置状态并重检');
-      cooldownUntil = 0; failureCount = 0;
-      setStatus('LLM离线'); check();
+      console.log('[LLM] 冷却期结束，正在重检');
+      setStatus('LLM检测中...');
+      await check();
+      if (available) {
+        cooldownUntil = 0; failureCount = 0;
+        console.log('[LLM] 冷却期结束后重检成功');
+      } else {
+        console.warn('[LLM] 冷却期结束后重检失败，保留状态等待定时器重试');
+      }
     }
   }
 
   // ========== 请求队列处理 ==========
-  function processQueue() {
-    exitCooldown();
+  async function processQueue() {
+    await exitCooldown();
     const maxConcurrent = getMaxConcurrent();
     while (pendingQueue.length > 0 && activeRequests < maxConcurrent) {
       if (isInCooldown()) {
-        // 冷却期内不丢弃请求，延迟5秒后重试
-        const item = pendingQueue.shift();
-        setTimeout(() => { pendingQueue.unshift(item); processQueue(); }, 5000);
+        // 冷却期内不消费队列元素，延迟后重新检查
+        setTimeout(() => processQueue(), 5000);
         return;
       }
-      if (!available) { const item = pendingQueue.shift(); item.resolve(null); continue; }
       const item = pendingQueue.shift(); activeRequests++;
       _doGenerate(item.prompt, item.temp, 0, item.system)
         .then(result => item.resolve(result))
@@ -127,7 +147,7 @@ window.LLM = (() => {
         stream: false,
         options: { temperature, num_predict: getMaxTokens(), think: false },
       };
-      if (system) bodyObj.system = system;
+      if (system && !modelName.toLowerCase().includes('qwen')) bodyObj.system = system;
       const r = await fetch(ollamaUrl('/api/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -139,8 +159,19 @@ window.LLM = (() => {
       const data = await r.json();
       // Qwen3.5 可能返回 thinking 模式：response 为空或有英文推理泄露
       const responseText = (data.response || '').trim();
-      // 防御：检测 response 是否包含中文，防止英文推理泄露到游戏 UI
-      var responseOk = responseText && hasChinese(responseText);
+      // 防御：检测 response 是否包含中文 + 英文占比不过高，防止英文推理泄露到游戏 UI
+      if (responseText && hasChinese(responseText) && isExcessivelyMixedChinese(responseText)) {
+        // 尝试提取中文主体作为降级输出（剔除英文 thinking 行）
+        var extracted = extractChineseContent(responseText);
+        if (extracted && hasChinese(extracted) && !isExcessivelyMixedChinese(extracted)) {
+          console.warn('[LLM] 原始 response 英文占比过高，已提取中文主体（' + extracted.length + ' 字符）');
+          if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
+          failureCount = 0;
+          return extracted;
+        }
+        console.warn('[LLM] response 英文占比过高且无法提取有效中文，将走 fallback');
+      }
+      var responseOk = responseText && hasChinese(responseText) && !isExcessivelyMixedChinese(responseText);
       if (responseOk) {
         // 成功后同步修复 available 标志（check 不能是唯一的 true 来源）
         if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
@@ -148,19 +179,8 @@ window.LLM = (() => {
         return responseText;
       }
       if (responseText && !hasChinese(responseText)) {
-        console.warn('[LLM] response 为纯英文/无中文，疑似推理泄露，尝试从 thinking 提取中文');
+        console.warn('[LLM] response 为纯英文/无中文，疑似推理泄露，不提取 thinking');
       }
-      // 如果 response 为空或为纯英文，尝试从 thinking 提取中文回退输出
-      if (data.thinking) {
-        if (!responseOk) console.warn('[LLM] response 无效，从 thinking 提取中文回退输出');
-        var fallback = extractFromThinking(data.thinking);
-        if (fallback && hasChinese(fallback)) {
-          if (!available) { available = true; setDot('active'); setStatus('LLM在线(' + getModel() + ')'); }
-          failureCount = 0;
-          return fallback;
-        }
-      }
-      // 所有路径都无有效中文内容，返回 null 让调用方使用 fallback
       if (responseText) console.warn('[LLM] 无法获取有效中文内容，返回空（将使用预设描述）');
       throw new Error('no chinese content in response');
     } catch(e) {
@@ -186,11 +206,13 @@ window.LLM = (() => {
   async function check() {
     // 允许检测绕过冷却期：冷却期只应限制生成请求，不应阻止 LLM 可用性检测
     if (checking) { console.log('[LLM][check] 跳过：上一轮检测仍在进行中'); return; }
-    checking = true;
+    // 修复 1：checking = true 移入 try 块内，防止同步代码抛异常导致 checking 永久卡住
     setDot('loading'); setStatus('LLM检测中...');
-    const url = ollamaUrl('/api/tags');
-    console.log('[LLM][check] 请求 URL:', url);
+    let url;
     try {
+      checking = true;
+      url = ollamaUrl('/api/tags');
+      console.log('[LLM][check] 请求 URL:', url);
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), getCheckTimeout());
       const r = await fetch(url, { signal: ctrl.signal });
@@ -208,8 +230,9 @@ window.LLM = (() => {
       const msg = e.name === 'AbortError' ? '超时(' + (getCheckTimeout()/1000) + 's)' : (e.message || '');
       setStatus('LLM离线');
       console.warn('[LLM][check] 检测失败:', msg, '| URL:', url, e.name !== 'AbortError' ? ('| 详情: ' + (e.message || e)) : '');
+    } finally {
+      checking = false;
     }
-    checking = false;
   }
 
   function setDot(cls) { const el = document.getElementById('llm-dot'); if (el) el.className = 'llm-dot ' + cls; }
@@ -218,9 +241,21 @@ window.LLM = (() => {
 
   // ========== 带队列的 generate（公开入口） ==========
   function generate(prompt, temperature, system) {
-    exitCooldown();
+    exitCooldown(); // async fire-and-forget：check() 结果由下方 available/checking 轮询感知
     if (isInCooldown()) return Promise.resolve(null);
-    if (!available) return Promise.resolve(null);
+    // 修复 2：当 !available 时，若无检测进行中则盲发探测，统一轮询等待 check() 完成
+    if (!available) {
+      if (!checking) { check(); }
+      return new Promise((resolve) => {
+        var pollStart = Date.now();
+        var pollTimer = setInterval(() => {
+          if (!checking || Date.now() - pollStart > 10000) {
+            clearInterval(pollTimer);
+            resolve(available ? generate(prompt, temperature, system) : Promise.resolve(null));
+          }
+        }, 300);
+      });
+    }
     return new Promise((resolve) => {
       if (activeRequests < getMaxConcurrent()) {
         activeRequests++;
@@ -382,20 +417,10 @@ window.LLM = (() => {
     prompt += '\n' + qualityHint + '\n要求：简短有力，有画面感，第三人称叙述。';
 
     var result = await generate(prompt, 0.7, $SYS);
-    // 质量门控：自评+重试
-    if (result && available) {
-      var qPromptN = '请对以下叙事进行质量评分（仅输出JSON）：\n' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。严格返回{"drama":N,"coherence":N,"info":N}';
-      var qR = await generate(qPromptN, 0.3, $SYS);
-      if (qR) {
-        try {
-          var qJ = JSON.parse(qR.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
-          var tN = (qJ.drama||0)+(qJ.coherence||0)+(qJ.info||0);
-          if (tN < 18) {
-            console.warn('[LLM] 叙事质量门控未通过('+tN+'/18)，重写');
-            result = await generate(prompt + '\n[前次质量不足，请提升戏剧性和画面感]', 0.7, $SYS);
-          }
-        } catch(e) { console.warn('[LLM] 叙事质量自评失败:', e.message); }
-      }
+    // 客户端轻量检查：英文占比过高则视为失败
+    if (result && isExcessivelyMixedChinese(result)) {
+      console.warn('[LLM] 叙事英文占比过高，走fallback');
+      result = null;
     }
     var final = result || fallbackDesc;
     if (result) addToNarrativeContext(result);
@@ -521,20 +546,10 @@ window.LLM = (() => {
     var prompt = '你是一个商业传奇故事的讲述者。玩家刚刚达成了里程碑：「' + msName + '」——' + msDesc + '\n' + (context ? '当前状态：' + context : '') + '\n' + qualityHint + '\n请用2-3句话撰写一段里程碑叙事，风格类似《财富》杂志封面故事引言，要有仪式感和成就感。';
 
     var result = await generate(prompt, 0.65, $SYS);
-    // 质量门控
-    if (result && available) {
-      var qPM = '请对以下里程碑叙事进行质量评分（仅输出JSON）：\n' + result + '\n\n评分维度：戏剧性(1-10)、一致性(1-10)、信息量(1-10)。严格返回{"drama":N,"coherence":N,"info":N}';
-      var qRM = await generate(qPM, 0.3, $SYS);
-      if (qRM) {
-        try {
-          var qJM = JSON.parse(qRM.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim());
-          var tM = (qJM.drama||0)+(qJM.coherence||0)+(qJM.info||0);
-          if (tM < 18) {
-            console.warn('[LLM] 里程碑质量门控未通过('+tM+'/18)，重写');
-            result = await generate(prompt + '\n[前次质量不足，请提升仪式感和宏大叙事]', 0.65, $SYS);
-          }
-        } catch(e) { console.warn('[LLM] 里程碑质量自评失败:', e.message); }
-      }
+    // 客户端轻量检查
+    if (result && isExcessivelyMixedChinese(result)) {
+      console.warn('[LLM] 里程碑叙事英文占比过高，走fallback');
+      result = null;
     }
     return result || null;
   }
