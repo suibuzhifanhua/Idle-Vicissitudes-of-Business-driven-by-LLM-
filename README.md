@@ -1,5 +1,15 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: a9133b47afebc18a000cbb433c522a27_fdd6eceb655411f1aaba5254006c9bbf
+    ReservedCode1: neqFJ3TuLSc4R4zpoAjxgDqKgz9OaMGWfhj/Ni41igRMJB+GxCsPhM7h5891iR8Kdm0DzBUKwvE6ywTeL8kBMzP1YOJC7xSBgg1bPNkOobXIFX4p6cS8AkoZ6NphZRfkDdawcMTu2DwDlys6YK55hKFujvR354feDxzkQsMSWK8uNUnJdC3+H2pw2jc=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: a9133b47afebc18a000cbb433c522a27_fdd6eceb655411f1aaba5254006c9bbf
+    ReservedCode2: neqFJ3TuLSc4R4zpoAjxgDqKgz9OaMGWfhj/Ni41igRMJB+GxCsPhM7h5891iR8Kdm0DzBUKwvE6ywTeL8kBMzP1YOJC7xSBgg1bPNkOobXIFX4p6cS8AkoZ6NphZRfkDdawcMTu2DwDlys6YK55hKFujvR354feDxzkQsMSWK8uNUnJdC3+H2pw2jc=
+---
+
 # 商海浮沉 — 使用说明
-<img width="1280" height="636" alt="预览图" src="https://github.com/user-attachments/assets/ad44c755-4280-4970-889c-cf74577baae4" />
 
 > **Author:** Fisheep.L
 
@@ -1090,140 +1100,6 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 
 ## 最近更新
 
-### 2026-06-06（第九轮）
-
-**Bug 修复：游戏打不开问题**
-
-- 修复端口 8765 上两个 Python 进程（PID 2560 + 26632）冲突，导致请求被错误路由到空响应进程 → 已终止冲突进程
-- 修复 `TECH_TREE is not defined` + `NPCS is not defined` 运行时崩溃：6 个 data 文件（`data-tech.js` / `data-npcs.js` / `data-origins.js` / `data-businesses.js` / `data-stocks.js` / `data-events.js`）顶层变量使用 `const` 声明，跨 `<script>` 标签不可见 → 全部改为 `var`
-- `index.html` 所有 script 标签版本号 `?v=2` → `?v=3` 强制刷新浏览器缓存
-- Puppeteer 自动化诊断验证修复效果：`TECH_TREE: object` ✅ | `NPCS: object` ✅ | **0 errors** ✅
-
-**项目清理：**
-
-- 确认 `core-rival_20260606_182710_132.js` 为旧版本备份（不在 index.html 加载链中），可安全删除
-- 确认 `1/` 嵌套目录为旧存档目录（已被 `saves/` 取代），可安全删除
-- `README.md` 项目结构、代码规模表全面更新至实际文件状态
-
----
-
-
-**全新功能——商业并购（M&A）系统：**
-
-- 新增 **NPC 商业并购机制**：与好感度 ≥60 的 NPC 对话时出现「🤝 商讨并购事宜」按钮
-- 并购成本动态计算：`NPC商业价值 × (80 ÷ 好感度)`，好感越高越便宜（最高约 6.7 折）
-- 并购收益双重回报：
-  - 一次性现金奖励 = 并购成本 × 15%，即时到账
-  - 持续收入 = NPC 商业价值 × 0.8% × (好感÷80)，**永久注入每 Tick 总收入**
-- 12 位 NPC 各自拥有独立商业价值（150 万 ~ 1000 万），配置于 `config.js` 的 `NPC_BUSINESS_VALUE`
-- 冷却限制：同一 NPC 并购后 50 Tick 冷却，防止刷钱
-- UI 集成：「业务」面板底部新增「🤝 已并购业务」列表，实时显示持续 Tick 收入
-- 收入系统集成：并购收入注入 `calcTotalIncome()`，参与所有现有修正（压力、声誉、技能、市场份额等）
-- 5 个可配置参数（`MA_BASE_COST_MULT` / `MA_FAVOR_DISCOUNT_MAX` / `MA_LIQUID_BONUS_RATIO` / `MA_REVENUE_RATIO` / `MA_COOLDOWN_TICKS`）
-
----
-
-### 2026-06-04（第七轮）
-
-**Bug 修复：**
-- 修复 `data.js` "信任破裂"事件变量名拼写错误：`nps` → `npcs`，导致NPC引用失败
-- 修复员工人数可超过上限的漏洞：手动招聘（`hireEmployee`/`hireCandidate`）和苏姐快速招聘通道均新增 `getEmpMax()` 上限检查，超限直接拦截并提示
-- 修复市场情绪解析错误：`analyzeMarketSentiment` 改用正则提取LLM响应中的第一个数字，容忍模型输出类似"市场情绪为62分"等带文字的结果（旧代码 `parseInt` 直接返回 `NaN` 导致情绪永远重置为50）
-- 修复LLM离线时市场情绪被重置为50：离线改为返回 `null`，`core.js` 消费端跳过 `null` 值从而保留上次有效情绪值
-
----
-
-### 2026-06-03（第六轮）
-
-**Bug 修复：**
-- 修复 `calcCityBusinessMultiplier` 函数名与调用处 `calcCitySynergyMultiplier` 不匹配，导致统计面板报错且存档加载失败（连锁影响：离线收益计算 → `calcTotalIncome` → 报错 → `load()` 返回 false → 游戏误判无存档）
-- 修复 `SGame.calcSynergyMultiplier` 未定义：`ui.js` 调用了该函数但 core.js 从未定义和导出，导致城市面板"跨城协同加成"始终显示 0%
-- 新增 `calcSynergyMultiplier()` 函数：计算跨城协同加成倍率（2城+2%、3城+3%、4城+4%、5城+6%，国际城市额外+3%/个）
-
-**全面排查：**
-- `node -c` 全部 13 个 JS 文件语法检查 → ✅ 通过
-- Python 脚本交叉比对 `SGame.xxx` 调用与 core.js 导出列表 → ✅ 无遗漏
-- 确认 `calcActualSalary`（定义于 config.js 全局作用域）和 `calcTotalExpense`（typeof 保护）均安全
-
-### 2026-06-03（第五轮）
-
-**全新功能——实习生转正系统：**
-- 实习生入职后进入实习期（20 Tick / 约10分钟），享受正式工资 50% 折扣
-- 实习期满自动转正：全属性 +10、忠诚 +15
-- 转正目标岗位在招聘时即根据属性权重自动匹配（7 个可转正岗位：开发者/设计师/销售/分析师/管理者/律师/HR）
-- UI 展示：实习进度条、转正路径、"(实习5折)"工资标注、"✅ 已转正"徽章
-- HR 面板显示实习进度（如"📋实习12/20"）
-- 批量招聘下拉菜单标注实习生身份
-- 存档迁移：已有员工自动补充实习生字段默认值
-
-**Bug 修复：**
-- 修复导航栏 12 个 Tab 中 4 个被 overflow 隐藏：添加 `flex-wrap: wrap` + 缩小 Tab 尺寸
-- 修复 SyntaxError 崩溃（SGame undefined）：迁移代码中多余的 `}` 导致函数闭包断裂
-- 修复业务收益显示 0.00 万/年：UI 使用 `def.income`（基础定义值）而非实际计算值，新增 `calcBizIncome()` 函数精确计算
-- 修复托管模式不自动开业/升级：`autoOpenBusinessStrategy` / `autoUpgradeStrategy` 仅读取 `G.businesses`（旧格式）但游戏数据已迁移至 `G.cities[cityId].businesses`，重写为遍历城市 + 双格式写入
-- 修复 `checkBusinessUnlocks` / `UI.openBusiness` / `UI.upgradeBusiness` 未同步城市数据
-
-**界面优化：**
-- 三栏布局调整：左面板 240px→280px、右面板 280px→320px、中间区域 padding 16px→10px
-- 统计面板大幅丰富：从 10 行扩展至 30+ 行，按六大类分组（财务概览/运营数据/玩家状态/进程统计/最佳记录/托管统计）
-- 新增 `.stat-panel-section` 分类标题样式（uppercase + 分隔线）
-- 统计面板顶部增加「← 返回 / 📈 经营统计」标题栏
-
-### 2026-06-03（第四轮）
-
-**Bug 修复：**
-- 修复 `autoManualWorkStrategy` 根因：`autoInvestStrategy` 变量作用域越界 + safeRun 包装缺失导致托管模式异常
-
-### 2026-06-03（第三轮）
-
-**Bug 修复：**
-- 修复资产面板 `G.assets` 未定义崩溃：点击"资产"按钮时对 `assets`/`assetAuctionList`/`assetMarketListings` 缺省数组防护
-- 修复区域/业务/NPC Tab 切换白屏：三个渲染函数写入目标 DOM 不匹配，新增 `optEl` 可选参数支持
-- 全量鲁棒性加固：审计 ui.js 所有渲染函数和按钮操作函数，修复 18 处 `G.*` 不安全属性访问
-
-**区域/NPC 游戏联动大幅丰富：**
-- 区域增益：4 种 → **10 种**，新增激活 trade/manufacturing/logistics/opsCost/cost/rdBonus
-- 区域负面修正全量激活：7 种负面效果（burnoutProb/negativeEventProb/policyEventProb/rumorSpread/socialCost/disasterProb/connGain）在疲劳、事件、声望、送礼、人脉等系统中消费
-- NPC 被动效果从注释变现实：王律师（法律保护）、林教授（学术资源）、马记者（舆论情报）、李处（政府补贴）全部激活
-- 区域霸主成就 `region_dominator` → 区域加成翻倍联动生效
-- `core-research.js` 研发点获取增加 NPC 和区域 rdBonus 双重加成
-
-**界面优化：**
-- 设置面板全面重构：从竖直单栏（480px）改为 **Tab 式横向双栏布局**（720px），LLM 设置 / 托管管理分页
-- 新增城市概览面板，快捷键 `9`，顶栏「🏙️ 城市」按钮
-- 仪表盘新增资产组合卡（持仓数/市值/盈亏）和研发进度卡
-
-**功能增强：**
-- 自动模式新增脉动绿点动画、绿色横幅、托管统计计数器
-- 事件日志新增搜索框，支持关键词高亮
-- 教程面板扩展至 6 步，引导更详细
-
-### 2026-06-03（第二轮）
-
-**全新系统：**
-- 新增**资产购置与拍卖行系统**：5 大类 26 种可投资资产（房产/艺术品/珠宝/古董/股权），4 档稀有度，价格随 LLM 市场情绪波动涨跌
-- 拍卖行：挂牌自定义要价、自动匹配成交概率、未成交自动续期降价
-- 典当行：紧急低价变现，回款 38%-55% 市值
-- 仪表盘新增「💎 资产估值」卡片
-- 快捷键 `8` 绑定资产面板
-- 托管集成自动买资产/典当救急策略
-
-**LLM 全面增强（10 项）：**
-- `#1` 决策叙事：决策事件卡片新增金色叙事框
-- `#2` llmQuality 技能生效：AI赋能技能 x1.3 叙事质量加成注入 prompt
-- `#3` prompt 上下文丰富：所有生成器注入员工/业务/竞争对手/市场等实时状态
-- `#4` NPC 对话关联事件：NPC 对话自动引用近期游戏事件
-- `#5` 商业新闻生成：每 20 Tick LLM 生成财经快讯，右侧日志展示
-- `#6` 叙事连续性：事件间通过上下文链保持因果连贯
-- `#7` 竞争对手情报：每 30 Tick LLM 分析对手生成简报
-- `#8` LLM 动态事件：每 25 Tick 30% 概率触发 AI 即时生成事件
-- `#9` 市场情绪引擎：LLM 分析全局状态输出 0-100 情绪指数，仪表盘展示
-- `#10` 里程碑叙事：达成里程碑时 LLM 生成专属成就叙事
-
-**界面优化：**
-- 仪表盘「第 X 幕 / 已达成里程碑」替换为「声望 / 人脉」，去除线性章节感
-- 仪表盘新增「📊 市场情绪」卡片
-
 ### 2026-06-03（第一轮）
 
 **新功能：**
@@ -1263,6 +1139,150 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 - 优化托管自适应决策权重（资金/压力/游戏阶段感知）
 - 托管批量日志管道避免洪泛
 - 异步预加载 + 请求队列 + 渲染节流
+
+---
+
+### 2026-06-03（第二轮）
+
+**全新系统：**
+- 新增**资产购置与拍卖行系统**：5 大类 26 种可投资资产（房产/艺术品/珠宝/古董/股权），4 档稀有度，价格随 LLM 市场情绪波动涨跌
+- 拍卖行：挂牌自定义要价、自动匹配成交概率、未成交自动续期降价
+- 典当行：紧急低价变现，回款 38%-55% 市值
+- 仪表盘新增「💎 资产估值」卡片
+- 快捷键 `8` 绑定资产面板
+- 托管集成自动买资产/典当救急策略
+
+**LLM 全面增强（10 项）：**
+- `#1` 决策叙事：决策事件卡片新增金色叙事框
+- `#2` llmQuality 技能生效：AI赋能技能 x1.3 叙事质量加成注入 prompt
+- `#3` prompt 上下文丰富：所有生成器注入员工/业务/竞争对手/市场等实时状态
+- `#4` NPC 对话关联事件：NPC 对话自动引用近期游戏事件
+- `#5` 商业新闻生成：每 20 Tick LLM 生成财经快讯，右侧日志展示
+- `#6` 叙事连续性：事件间通过上下文链保持因果连贯
+- `#7` 竞争对手情报：每 30 Tick LLM 分析对手生成简报
+- `#8` LLM 动态事件：每 25 Tick 30% 概率触发 AI 即时生成事件
+- `#9` 市场情绪引擎：LLM 分析全局状态输出 0-100 情绪指数，仪表盘展示
+- `#10` 里程碑叙事：达成里程碑时 LLM 生成专属成就叙事
+
+**界面优化：**
+- 仪表盘「第 X 幕 / 已达成里程碑」替换为「声望 / 人脉」，去除线性章节感
+- 仪表盘新增「📊 市场情绪」卡片
+
+---
+
+### 2026-06-03（第三轮）
+
+**Bug 修复：**
+- 修复资产面板 `G.assets` 未定义崩溃：点击"资产"按钮时对 `assets`/`assetAuctionList`/`assetMarketListings` 缺省数组防护
+- 修复区域/业务/NPC Tab 切换白屏：三个渲染函数写入目标 DOM 不匹配，新增 `optEl` 可选参数支持
+- 全量鲁棒性加固：审计 ui.js 所有渲染函数和按钮操作函数，修复 18 处 `G.*` 不安全属性访问
+
+**区域/NPC 游戏联动大幅丰富：**
+- 区域增益：4 种 → **10 种**，新增激活 trade/manufacturing/logistics/opsCost/cost/rdBonus
+- 区域负面修正全量激活：7 种负面效果（burnoutProb/negativeEventProb/policyEventProb/rumorSpread/socialCost/disasterProb/connGain）在疲劳、事件、声望、送礼、人脉等系统中消费
+- NPC 被动效果从注释变现实：王律师（法律保护）、林教授（学术资源）、马记者（舆论情报）、李处（政府补贴）全部激活
+- 区域霸主成就 `region_dominator` → 区域加成翻倍联动生效
+- `core-research.js` 研发点获取增加 NPC 和区域 rdBonus 双重加成
+
+**界面优化：**
+- 设置面板全面重构：从竖直单栏（480px）改为 **Tab 式横向双栏布局**（720px），LLM 设置 / 托管管理分页
+- 新增城市概览面板，快捷键 `9`，顶栏「🏙️ 城市」按钮
+- 仪表盘新增资产组合卡（持仓数/市值/盈亏）和研发进度卡
+
+**功能增强：**
+- 自动模式新增脉动绿点动画、绿色横幅、托管统计计数器
+- 事件日志新增搜索框，支持关键词高亮
+- 教程面板扩展至 6 步，引导更详细
+
+---
+
+### 2026-06-03（第四轮）
+
+**Bug 修复：**
+- 修复 `autoManualWorkStrategy` 根因：`autoInvestStrategy` 变量作用域越界 + safeRun 包装缺失导致托管模式异常
+
+---
+
+### 2026-06-03（第五轮）
+
+**全新功能——实习生转正系统：**
+- 实习生入职后进入实习期（20 Tick / 约10分钟），享受正式工资 50% 折扣
+- 实习期满自动转正：全属性 +10、忠诚 +15
+- 转正目标岗位在招聘时即根据属性权重自动匹配（7 个可转正岗位：开发者/设计师/销售/分析师/管理者/律师/HR）
+- UI 展示：实习进度条、转正路径、"(实习5折)"工资标注、"✅ 已转正"徽章
+- HR 面板显示实习进度（如"📋实习12/20"）
+- 批量招聘下拉菜单标注实习生身份
+- 存档迁移：已有员工自动补充实习生字段默认值
+
+**Bug 修复：**
+- 修复导航栏 12 个 Tab 中 4 个被 overflow 隐藏：添加 `flex-wrap: wrap` + 缩小 Tab 尺寸
+- 修复 SyntaxError 崩溃（SGame undefined）：迁移代码中多余的 `}` 导致函数闭包断裂
+- 修复业务收益显示 0.00 万/年：UI 使用 `def.income`（基础定义值）而非实际计算值，新增 `calcBizIncome()` 函数精确计算
+- 修复托管模式不自动开业/升级：`autoOpenBusinessStrategy` / `autoUpgradeStrategy` 仅读取 `G.businesses`（旧格式）但游戏数据已迁移至 `G.cities[cityId].businesses`，重写为遍历城市 + 双格式写入
+- 修复 `checkBusinessUnlocks` / `UI.openBusiness` / `UI.upgradeBusiness` 未同步城市数据
+
+**界面优化：**
+- 三栏布局调整：左面板 240px→280px、右面板 280px→320px、中间区域 padding 16px→10px
+- 统计面板大幅丰富：从 10 行扩展至 30+ 行，按六大类分组（财务概览/运营数据/玩家状态/进程统计/最佳记录/托管统计）
+- 新增 `.stat-panel-section` 分类标题样式（uppercase + 分隔线）
+- 统计面板顶部增加「← 返回 / 📈 经营统计」标题栏
+
+---
+
+### 2026-06-03（第六轮）
+
+**Bug 修复：**
+- 修复 `calcCityBusinessMultiplier` 函数名与调用处 `calcCitySynergyMultiplier` 不匹配，导致统计面板报错且存档加载失败（连锁影响：离线收益计算 → `calcTotalIncome` → 报错 → `load()` 返回 false → 游戏误判无存档）
+- 修复 `SGame.calcSynergyMultiplier` 未定义：`ui.js` 调用了该函数但 core.js 从未定义和导出，导致城市面板"跨城协同加成"始终显示 0%
+- 新增 `calcSynergyMultiplier()` 函数：计算跨城协同加成倍率（2城+2%、3城+3%、4城+4%、5城+6%，国际城市额外+3%/个）
+
+**全面排查：**
+- `node -c` 全部 13 个 JS 文件语法检查 → ✅ 通过
+- Python 脚本交叉比对 `SGame.xxx` 调用与 core.js 导出列表 → ✅ 无遗漏
+- 确认 `calcActualSalary`（定义于 config.js 全局作用域）和 `calcTotalExpense`（typeof 保护）均安全
+
+---
+
+### 2026-06-04（第七轮）
+
+**Bug 修复：**
+- 修复 `data.js` "信任破裂"事件变量名拼写错误：`nps` → `npcs`，导致NPC引用失败
+- 修复员工人数可超过上限的漏洞：手动招聘（`hireEmployee`/`hireCandidate`）和苏姐快速招聘通道均新增 `getEmpMax()` 上限检查，超限直接拦截并提示
+- 修复市场情绪解析错误：`analyzeMarketSentiment` 改用正则提取LLM响应中的第一个数字，容忍模型输出类似"市场情绪为62分"等带文字的结果（旧代码 `parseInt` 直接返回 `NaN` 导致情绪永远重置为50）
+- 修复LLM离线时市场情绪被重置为50：离线改为返回 `null`，`core.js` 消费端跳过 `null` 值从而保留上次有效情绪值
+
+---
+
+### 2026-06-06（第九轮）
+
+**Bug 修复：游戏打不开问题**
+
+- 修复端口 8765 上两个 Python 进程（PID 2560 + 26632）冲突，导致请求被错误路由到空响应进程 → 已终止冲突进程
+- 修复 `TECH_TREE is not defined` + `NPCS is not defined` 运行时崩溃：6 个 data 文件（`data-tech.js` / `data-npcs.js` / `data-origins.js` / `data-businesses.js` / `data-stocks.js` / `data-events.js`）顶层变量使用 `const` 声明，跨 `<script>` 标签不可见 → 全部改为 `var`
+- `index.html` 所有 script 标签版本号 `?v=2` → `?v=3` 强制刷新浏览器缓存
+- Puppeteer 自动化诊断验证修复效果：`TECH_TREE: object` ✅ | `NPCS: object` ✅ | **0 errors** ✅
+
+**项目清理：**
+
+- 确认 `core-rival_20260606_182710_132.js` 为旧版本备份（不在 index.html 加载链中），可安全删除
+- 确认 `1/` 嵌套目录为旧存档目录（已被 `saves/` 取代），可安全删除
+- `README.md` 项目结构、代码规模表全面更新至实际文件状态
+
+---
+
+
+**全新功能——商业并购（M&A）系统：**
+
+- 新增 **NPC 商业并购机制**：与好感度 ≥60 的 NPC 对话时出现「🤝 商讨并购事宜」按钮
+- 并购成本动态计算：`NPC商业价值 × (80 ÷ 好感度)`，好感越高越便宜（最高约 6.7 折）
+- 并购收益双重回报：
+  - 一次性现金奖励 = 并购成本 × 15%，即时到账
+  - 持续收入 = NPC 商业价值 × 0.8% × (好感÷80)，**永久注入每 Tick 总收入**
+- 12 位 NPC 各自拥有独立商业价值（150 万 ~ 1000 万），配置于 `config.js` 的 `NPC_BUSINESS_VALUE`
+- 冷却限制：同一 NPC 并购后 50 Tick 冷却，防止刷钱
+- UI 集成：「业务」面板底部新增「🤝 已并购业务」列表，实时显示持续 Tick 收入
+- 收入系统集成：并购收入注入 `calcTotalIncome()`，参与所有现有修正（压力、声誉、技能、市场份额等）
+- 5 个可配置参数（`MA_BASE_COST_MULT` / `MA_FAVOR_DISCOUNT_MAX` / `MA_LIQUID_BONUS_RATIO` / `MA_REVENUE_RATIO` / `MA_COOLDOWN_TICKS`）
 
 ---
 
@@ -1384,7 +1404,73 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 
 ---
 
-*文档版本：11.0 | 最后更新：2026-06-08*
+### 2026-06-10（第十二轮）
+
+**LLM可用但顾问走规则生成 — 三个根因修复：**
+
+- `advisor.js`：生成入口轮询等待不足，LLM结果尚未返回即判定超时回退规则生成 → 延长等待 + 轮询间隔优化
+- `llm.js`：`isExcessivelyMixedChinese()` 基于片段数误判，中文内容被错误判定为"中英混杂"触发回退 → 改为基于字符占比判断
+- `llm.js`：`generate()` 在 `exitCooldown` 后不等待 `check()` 结果就直接 fire-and-forget 放行，导致规则生成未被阻断 → 新增 await 等待链路
+
+**ui.js 增量渲染改造：**
+
+- `renderAll()` 从全量 `innerHTML` 替换改为 **6 脏标记 + Canvas 200ms debounce** 增量更新
+- 脏标记覆盖：资金、声誉、压力、人脉、业务列表、事件日志
+- Canvas 渲染层 200ms debounce 合并高频更新，降低 DOM 重排开销
+
+**全面代码审查 P0/P1 修复：**
+
+- `testConnection()` 中 `base` 变量未定义 → 补充变量声明
+- `advisor.js` 不可达代码 → 清理死代码路径
+- 质量门控双倍 LLM 消耗 → 合并重复调用
+- `ui.js` XSS 风险：8 处未转义用户输入 → 全部包裹 `escapeHtml()`
+- system prompt 重复拼接 → 提取公共前缀复用
+- `processQueue` 冷却期队列阻塞 → 冷却期内仍消费队列头部
+- `calcAchievementRewards` boolean 字段修复 → 类型断言加固
+
+**项目初始化问题修复：**
+
+- 中英文混杂检测优化：避免中文内容被误判
+- LLM 离线死锁修复：离线状态下不阻塞初始化流程
+- `testConnection` 与状态栏检测路径不一致 → 统一检测逻辑
+
+---
+
+### 2026-06-11（第十三轮）
+
+**托管模式事件决策覆盖不全：**
+
+- 里程碑事件、城市解锁事件和 LLM AI 事件绕过 `core.fireEvent()` 直接调用 `EventSystem.fireEvent()`，导致托管模式下无法自动决策
+- 已诊断，待修复
+
+**破产清算界面 undefined：**
+
+- `ENDINGS['破产清算']` 缺少 `desc` 字段 → 补充描述
+- `ui.js` 渲染层添加 `|| ''` 兜底，防止 undefined 展示
+
+**全面 undefined 风险排查：**
+
+- 发现并修复 **8 个结局** 缺少 `desc`
+- 发现并修复 **10 个城市** 缺少 `desc`
+- 发现并修复 **10 个 cityBonus** 缺少 `desc`
+- 发现并修复 **61 个成就** 缺少 `desc`
+- 发现并修复 **5 个里程碑** 缺少 `desc` / `icon`
+- `ui.js` 渲染层全面添加 `|| ''` 兜底保护
+
+**补充审查：**
+
+- NPC 数据损毁：同一键名 `relations` 重复定义导致 11 个 NPC 的 `relations` 为空 → 修复重复键
+- 定时器泄漏：`llmRetryTimer` 未 `clearInterval` → 补充清理逻辑
+
+**LLM available 标志链路修复（三个阻塞点全部修复）：**
+
+- `checking` 永久卡死 → 添加超时兜底
+- `_doGenerate` 死代码 → 移除不可达分支
+- `exitCooldown` fire-and-forget 无重试 → 添加重试机制
+
+---
+
+*文档版本：12.0 | 最后更新：2026-06-11*
 
 <div align="center">
 喜欢这个游戏吗？喜欢可以请我一杯奶茶 全糖 正常冰
