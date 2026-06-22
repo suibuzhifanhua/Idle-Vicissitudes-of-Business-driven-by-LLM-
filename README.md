@@ -1464,8 +1464,242 @@ A：拍卖需要等待 3-8 Tick，有机会以接近市场价甚至更高价卖�
 
 ---
 
-*文档版本：12.0 | 最后更新：2026-06-11*
+### 2026-06-17（第十四轮）
 
+**Bug 修复：**
+- 修复主题切换：手动模式锁定改为三态循环（自动/亮色/暗色），修正 markDirty npc→npcs 键名不匹配，补充 _dirtyFlags 缺 assets/stocks/research
+
+---
+
+### 2026-06-17（第十五轮）
+
+**Bug 修复：**
+- 修复渲染不更新：renderDashboard 增量路径补 auto stats，员工缓存键补 skill 维度，renderDashboardExtraRow 重构 innerHTML+=，Dashboard 模板补 #dashboard-extra 容器
+
+---
+
+### 2026-06-17（第十六轮）
+
+**Bug 修复：**
+- 修复脏标记链路：markDirty 未导出致 30+ 处调用失效（关键Bug），getRivalIntel 扣费后补 markDirty，settings applyAndClose 保存后补刷新
+
+---
+
+### 2026-06-22（第十七轮）
+
+**界面优化：**
+- 配色全面重做：深空蓝黑系（主背景 #0B1220 / 卡片 #162033 / 文字 #E8EDF5），强调色 #2B57A8 蓝，正向绿 #4ADE80 柔和，负向红 #FF4D6A，金色 #A8572B 橙棕。6 个时间主题块全部同步
+
+**Bug 修复：**
+- 战略顾问超时修复：本地 qwen3.5 处理复杂 prompt 需 40-90s，队列级超时从 30s → 90s（底层 fetch 120s AbortController 不冲突）。advisor.js 和 llm.js 增加 DEBUG 日志
+- 白天模式修复：light-mode 和 time-day 此前配色与暗色模式一致导致失效，已反转为浅色底深色字
+
+**优化：**
+- LLM 队列优先级机制：顾问调用前 cancelAll 清空队列等待任务，确保战略顾问优先执行
+
+
+---
+
+
+**全新功能——商业并购（M&A）系统：**
+
+- 新增 **NPC 商业并购机制**：与好感度 ≥60 的 NPC 对话时出现「🤝 商讨并购事宜」按钮
+- 并购成本动态计算：`NPC商业价值 × (80 ÷ 好感度)`，好感越高越便宜（最高约 6.7 折）
+- 并购收益双重回报：
+  - 一次性现金奖励 = 并购成本 × 15%，即时到账
+  - 持续收入 = NPC 商业价值 × 0.8% × (好感÷80)，**永久注入每 Tick 总收入**
+- 12 位 NPC 各自拥有独立商业价值（150 万 ~ 1000 万），配置于 `config.js` 的 `NPC_BUSINESS_VALUE`
+- 冷却限制：同一 NPC 并购后 50 Tick 冷却，防止刷钱
+- UI 集成：「业务」面板底部新增「🤝 已并购业务」列表，实时显示持续 Tick 收入
+- 收入系统集成：并购收入注入 `calcTotalIncome()`，参与所有现有修正（压力、声誉、技能、市场份额等）
+- 5 个可配置参数（`MA_BASE_COST_MULT` / `MA_FAVOR_DISCOUNT_MAX` / `MA_LIQUID_BONUS_RATIO` / `MA_REVENUE_RATIO` / `MA_COOLDOWN_TICKS`）
+
+---
+
+### 2026-06-07（第十轮）
+
+**顾问英文回答持续修复：**
+
+- 用户反馈顾问仍然输出英文，尽管 system 参数已传入 Ollama API
+- 根因：qwen3.5:4b 对 Ollama API 的 `system` 字段支持不稳定，即使设置了 system 参数也经常忽略
+- 修复（llm.js）：`_doGenerate()` 新增模型检测，当 model 包含 `"qwen"` 时，将 system 指令直接嵌入 prompt 开头（双保险策略）
+- 修复（advisor.js）：system 指令全面强化，从 1 行扩展为 6 条硬性规则（全程中文、禁止英文词汇/句子/标点、阿拉伯数字例外、英文概念翻译后回复）
+- 修复（advisor.js）：单引号字符串内包含引号字符导致 SyntaxError，改用 template literal
+- `index.html` 版本号 `?v=3` → `?v=4` 强制刷新缓存
+
+**自动拉项目 CD 冲突修复（第二轮）：**
+
+- 用户明确要求"改为UI按钮可点击时才触发"
+- 根因分析：`autoManualWorkStrategy()` 使用 wall-clock CD（`getManualWorkCdRemain()`），与手动拉项目共享 `manualWorkCdUntil` 变量。用户手动点击拉项目会把 CD 推到下一个 tick 之内，导致自动拉被跳过
+- 修复（core.js 两处）：
+  1. `autoManager()` 中拉项目条件从 `if (am.autoManualWork)` 改为 `getManualWorkCdRemain() === 0`，与 UI 按钮完全同步
+  2. `autoManualWorkStrategy()` 移除临时清零 CD 的 hack，改为直接调用 `manualWork()`（它内部有 wall-clock CD 检查）
+- `index.html` 版本号 `?v=4` → `?v=5` → `?v=6`
+
+**自动招聘不工作修复：**
+
+- 用户反馈：自动托管招员工不工作
+- 根因：`autoHireStrategy()` 有三层金钱检查（gate 门控 + per-role money >= salary×3月 + fallback 随机选），但手动 UI 招聘（`hireCandidate`）完全不检查金钱，也不扣钱。玩家存档 money=-57541 导致三层检查全部拦截
+- 修复（core.js）：
+  1. 移除顶部 gate：`curTotalSalary/totalIncome` 计算 + `totalIncome < curTotalSalary && G.money < curTotalSalary*12` 条件 → 改为注释
+  2. per-role 循环：移除 `G.money >= salaryForCheck * 10000 * 3` 金钱检查，改为选第一个满足前置条件的角色
+  3. fallback 随机选：移除 money 过滤器（`G.money >= estSalary * 10000 * 3`），只保留角色前置条件过滤（empCount/money/techLv）
+  4. `autoManager()` 防御初始化新增 `am.autoHire === undefined` 兜底
+- `index.html` 版本号 `?v=6` → `?v=7`
+
+**doTick 作用域 Bug 导致托管只触发一次：**
+
+- 用户反馈：新建游戏开托管后，拉项目+招员工只触发一次，后续不再执行
+- 控制台显示两个 ReferenceError：`_tickIncome is not defined` / `_tickAchRewards is not defined`
+- 根因：`_tickIncome` 在 `tickIncome()` 内声明（局部变量），但在 `tickPostCalc()` 中引用；`_tickAchRewards` 在 `tickDecay()` 内声明，但在 `tickEmployees()` 中引用 — 均为跨函数作用域访问
+- 关键连锁：`tickEmployees()` 抛错 → `tickEvents()`（包含 `autoManager()`）被跳过 → 托管永不执行。首次 tick 无员工所以不报错，自动招人后第二次 tick 即有员工→报错→托管死
+- 修复（core.js）：
+  1. `tickIncome()` 将 `_tickIncome` 存入 `G._lastTickIncome`；`tickPostCalc()` 改为读 `G._lastTickIncome`
+  2. `tickEmployees()` 改为读 `G._achRewardsCache.loyaltyDecay`（已在 `tickDecay()` 中缓存）
+- `index.html` 版本号 `?v=7` → `?v=8`
+
+**NPC 对话框按钮无响应（调试中）：**
+
+- 用户反馈：遇到新 NPC 弹出的对话框，除"送礼"外其他按钮点了没反应
+- 已添加调试日志（`npc.js`）：`NPCSystem.renderNPCActions` 和 `NPCSystem.doAction` 中新增 `console.log`，用于追踪按钮索引与回调绑定
+- `index.html` `npc.js` 版本号 `?v=6` → `?v=7`
+- 待用户按 F12 查看控制台输出后进一步定位
+
+**LLM 显示离线但 Ollama 正常运行修复：**
+
+- 用户反馈：游戏顶部显示"LLM离线"，但浏览器直接访问 `127.0.0.1:11434` 显示 "Ollama is running"
+- 根因：设置面板中 Ollama API 地址填了 `http://localhost:11434/`，浏览器 JavaScript `fetch()` 发起跨域请求被 CORS 拦截，导致检测失败
+- 修复（settings.js）：
+  1. `load()` 迁移逻辑：补充检测 `http://localhost:11434/`（带尾部斜杠）→ 清空使用代理
+  2. `get()` 新增归一化：返回 `llmBase` 时自动将 localhost:11434 转换为空字符串（走 `/api/ollama` 代理）
+  3. `testConnection()` 和 `fetchModels()` 输入归一化：localhost:11434 统一替换为 `/api/ollama`
+  4. `applyAndClose()` 保存时同样归一化，避免错误配置持久化
+- `index.html` `settings.js` 版本号 `?v=8` → `?v=9` → `?v=10`
+
+**LLM CORS 修复（第二轮）— 覆盖 127.0.0.1 + 输入框归一化：**
+
+- 控制台显示 CORS 错误 URL 为 `http://127.0.0.1:11434//api/tags`（双斜杠），第一轮只匹配了 `localhost` 字符串，未覆盖 `127.0.0.1`
+- `renderSettings()` 用原始 `s.llmBase` 而非 `get()` 归一化后的值，导致输入框仍显示旧地址
+- 修复（settings.js v9→v10）：
+  1. `get()` / `load()` 归一化扩展：同时检测 `localhost` + `127.0.0.1`，大小写不敏感，有/无尾部斜杠共 4 种变体
+  2. `renderSettings()` 输入框改用 `get('llmBase')`，placeholder 提示"留空走代理 (推荐)"
+  3. `fetchModels()` / `testConnection()` 追加 `replace(/\/+$/, '')` 去尾部斜杠防双斜杠
+  4. `applyAndClose()` 保存时归一化
+
+**事件/叙事/对话英文输出全面修复：**
+
+- 用户反馈：游戏中事件描述出现英文（如 "Content: Post-disaster, Subsidies/Insurance available..."）
+- 根因：`llm.js` 中 12+ 处 `generate()` 调用未传 `system` 参数强制中文，涵盖 `generateNarrative()` / `generateEmployeeBackground()` / `generateDecisionNarrative()` / `generateNPCDialog()` / `generateBusinessNews()` / `generateRivalReport()` / `generateMilestoneNarrative()` / `generateDynamicEvent()` 等所有用户可见文本生成入口
+- 修复（llm.js v8→v9）：
+  1. 新增 `$SYS` 常量：强制全程简体中文、禁止英文词汇/句子
+  2. 所有用户可见文本的 `generate()` 统一传 `$SYS`；JSON/数字输出函数不传（避免干扰格式）
+  3. `generateNarrative()` 的质量门控回退也传 `$SYS`
+
+---
+
+### 2026-06-08（第十一轮）
+
+**服务器稳定性优化：**
+
+- 修复服务器日志大量 `TimeoutError` / `ConnectionAbortedError` 崩溃堆栈
+  - `server.py` `handle_ollama_proxy` 所有 socket 写操作加 `try/except` 捕获 ConnectionAbortedError / ConnectionResetError / BrokenPipeError
+  - 新增 `TimeoutError → 504` 响应、`ConnectionRefusedError → 502` 响应分支
+  - 后端 Ollama 连接超时从 60s 提升到 120s
+  - `handle_ping` 加异常保护
+  - `handle_error` 扩展捕获 TimeoutError / BrokenPipeError / OSError
+
+- 修复"经常容易与服务器断开"问题
+  - 根因：`HTTPServer` 单线程同步，Ollama 代理请求阻塞时 ping 无法响应，前端 16s 内误判断线
+  - server.py：`HTTPServer` → `ThreadingHTTPServer`（多线程），Ollama 代理不再阻塞其他请求
+  - `daemon_threads = True` 确保 Ctrl+C 可正常退出
+
+- 前端断线检测容错优化
+  - `FAIL_THRESHOLD` 2→3，`CHECK_INTERVAL` 8s→12s，断线判定从 16s 放宽到 36s
+
+- 前端超时配置修复
+  - `config.js` `LLM_GENERATE_TIMEOUT` 从 15000ms 提升到 120000ms（qwen3.5:4b 本地推理慢）
+
+**BGM 背景音乐：**
+
+- 新增 `generate_bgm.py`：基于 numpy + scipy 纯 Python 合成 87 秒 BGM 纯音乐
+  - A段（0-43s）：Cm7 → Abmaj7 → Ebmaj7 → Bb7sus4 和弦进行，沉稳冷静
+  - B段（44-87s）：Fm7 → Gm7 → Abmaj7 → G7 和弦进行，紧张攀升
+  - 音色分层：底鼓/踩镲节奏 + 低音贝斯 + 和弦垫音 + 钢琴主旋律 + 钟声点缀
+  - 首尾淡入淡出，支持无缝循环播放
+- 输出 `bgm.wav`（7.3MB，44100Hz 16bit），浏览器直接播放无需转码
+- `index.html` 集成 BGM 播放器：
+  - 顶栏新增 🎵 按钮切换播放/暂停
+  - 首次点击或按键页面时自动播放（符合浏览器自动播放策略）
+  - 循环播放，默认音量 35%
+
+---
+
+### 2026-06-10（第十二轮）
+
+**LLM可用但顾问走规则生成 — 三个根因修复：**
+
+- `advisor.js`：生成入口轮询等待不足，LLM结果尚未返回即判定超时回退规则生成 → 延长等待 + 轮询间隔优化
+- `llm.js`：`isExcessivelyMixedChinese()` 基于片段数误判，中文内容被错误判定为"中英混杂"触发回退 → 改为基于字符占比判断
+- `llm.js`：`generate()` 在 `exitCooldown` 后不等待 `check()` 结果就直接 fire-and-forget 放行，导致规则生成未被阻断 → 新增 await 等待链路
+
+**ui.js 增量渲染改造：**
+
+- `renderAll()` 从全量 `innerHTML` 替换改为 **6 脏标记 + Canvas 200ms debounce** 增量更新
+- 脏标记覆盖：资金、声誉、压力、人脉、业务列表、事件日志
+- Canvas 渲染层 200ms debounce 合并高频更新，降低 DOM 重排开销
+
+**全面代码审查 P0/P1 修复：**
+
+- `testConnection()` 中 `base` 变量未定义 → 补充变量声明
+- `advisor.js` 不可达代码 → 清理死代码路径
+- 质量门控双倍 LLM 消耗 → 合并重复调用
+- `ui.js` XSS 风险：8 处未转义用户输入 → 全部包裹 `escapeHtml()`
+- system prompt 重复拼接 → 提取公共前缀复用
+- `processQueue` 冷却期队列阻塞 → 冷却期内仍消费队列头部
+- `calcAchievementRewards` boolean 字段修复 → 类型断言加固
+
+**项目初始化问题修复：**
+
+- 中英文混杂检测优化：避免中文内容被误判
+- LLM 离线死锁修复：离线状态下不阻塞初始化流程
+- `testConnection` 与状态栏检测路径不一致 → 统一检测逻辑
+
+---
+
+### 2026-06-11（第十三轮）
+
+**托管模式事件决策覆盖不全：**
+
+- 里程碑事件、城市解锁事件和 LLM AI 事件绕过 `core.fireEvent()` 直接调用 `EventSystem.fireEvent()`，导致托管模式下无法自动决策
+- 已诊断，待修复
+
+**破产清算界面 undefined：**
+
+- `ENDINGS['破产清算']` 缺少 `desc` 字段 → 补充描述
+- `ui.js` 渲染层添加 `|| ''` 兜底，防止 undefined 展示
+
+**全面 undefined 风险排查：**
+
+- 发现并修复 **8 个结局** 缺少 `desc`
+- 发现并修复 **10 个城市** 缺少 `desc`
+- 发现并修复 **10 个 cityBonus** 缺少 `desc`
+- 发现并修复 **61 个成就** 缺少 `desc`
+- 发现并修复 **5 个里程碑** 缺少 `desc` / `icon`
+- `ui.js` 渲染层全面添加 `|| ''` 兜底保护
+
+**补充审查：**
+
+- NPC 数据损毁：同一键名 `relations` 重复定义导致 11 个 NPC 的 `relations` 为空 → 修复重复键
+- 定时器泄漏：`llmRetryTimer` 未 `clearInterval` → 补充清理逻辑
+
+**LLM available 标志链路修复（三个阻塞点全部修复）：**
+
+- `checking` 永久卡死 → 添加超时兜底
+- `_doGenerate` 死代码 → 移除不可达分支
+- `exitCooldown` fire-and-forget 无重试 → 添加重试机制
+
+---
+*文档版本：13.0 | 最后更新：2026-06-22*
 <div align="center">
 喜欢这个游戏吗？喜欢可以请我一杯奶茶 全糖 正常冰
 
