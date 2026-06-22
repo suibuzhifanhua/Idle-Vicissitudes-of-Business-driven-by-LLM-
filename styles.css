@@ -1,0 +1,91 @@
+// Author: Fisheep.L
+// storage.js - 文件存档适配层（仅通过 server.py API 读写游戏目录下的 saves/ 文件夹）
+window.Storage = (() => {
+  // 缓存：从 __preloadPromise 异步初始化
+  const cache = {};
+  let serverReady = false;
+
+  // 持久化错误状态（供 UI 持续显示）
+  let _persistentError = false;
+
+  // 单一异步预加载入口（不阻塞页面渲染），暴露 ready Promise 供 main.js 等待
+  const _readyPromise = (window.__preloadPromise || Promise.resolve(null))
+    .then(data => {
+      if (data && typeof data === 'object') {
+        Object.assign(cache, data);
+        serverReady = true;
+        SGame.DEBUG && console.log('[Storage] preload ok, keys:', Object.keys(data));
+      }
+      return serverReady;
+    })
+    .catch((e) => {
+      serverReady = false;
+      console.warn('[Storage] preload failed:', e.message || e);
+      return false;
+    });
+
+  // 预加载已覆盖所有 key，缓存未命中说明 key 不存在
+  function get(key) {
+    if (key in cache) return cache[key];
+    console.warn('[Storage] key not in preload cache:', key);
+    return null;
+  }
+
+  // 带指数退避的网络写入
+  async function _persist(key, value, retriesLeft) {
+    const maxRetries = retriesLeft !== undefined ? retriesLeft : 2;
+    let delay = 1000; // 初始退避 1s
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const resp = await fetch('/api/save?key=' + encodeURIComponent(key), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          body: value
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        // 成功：清除错误状态
+        _persistentError = false;
+        return true;
+      } catch (e) {
+        if (attempt < maxRetries) {
+          console.warn('[Storage] save retry ' + (attempt + 1) + '/' + maxRetries + ' for key "' + key + '":', e.message || e);
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2; // 指数退避：1s → 2s
+        } else {
+          console.warn('[Storage] save failed for key "' + key + '" after ' + (maxRetries + 1) + ' attempts:', e.message || e);
+          _persistentError = true;
+          throw e;
+        }
+      }
+    }
+  }
+
+  function set(key, value) {
+    return _persist(key, value).then(() => {
+      cache[key] = value;
+    }).catch((e) => {
+      // 尝试通知前端（一次性 toast）
+      try {
+        if (typeof UI !== 'undefined' && UI.showToast) {
+          UI.showToast('error', '存档保存失败', e.message || '请检查服务端连接');
+        }
+      } catch (_) { if (typeof SGame !== "undefined" && SGame.DEBUG) console.error("[storage] showToast failed:", _ && _.message); }
+
+      throw e; // 继续向上抛出，让 core.js 感知
+    });
+  }
+
+  function remove(key) {
+    delete cache[key];
+    fetch('/api/delete?key=' + encodeURIComponent(key), { method: 'POST' }).catch((e) => {
+      console.warn('[Storage] delete failed for key "' + key + '":', e.message || e);
+    });
+  }
+
+  function ready() { return _readyPromise; }
+
+  function hasPersistentError() { return _persistentError; }
+
+  return { get, set, remove, ready, hasPersistentError };
+})();
