@@ -1,0 +1,15 @@
+# 私人游戏存档（含个人进度/会话数据，勿提交）
+saves/
+*.db
+*.db-shm
+*.db-wal
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# 系统杂项
+.DS_Store
+Thumbs.db

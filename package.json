@@ -1,0 +1,15 @@
+{
+  "name": "shanghaifc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "商海浮沉本地测试与交付元数据（无第三方运行时依赖）",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node verify-gameplay.mjs",
+    "test:api": "python -m unittest -v test_server_api.py",
+    "test:balance": "node balance-simulation.mjs",
+    "test:all": "node verify-gameplay.mjs && python -m unittest -v test_server_api.py"
+  }
+}
