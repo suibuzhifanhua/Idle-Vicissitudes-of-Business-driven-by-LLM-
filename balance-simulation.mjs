@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 
 const GAME_DIR = process.argv[2]
   ? path.resolve(process.argv[2]) + path.sep
-  : 'C:/Users/A1/Desktop/shanghaifc/';
+  : path.dirname(fileURLToPath(import.meta.url)) + path.sep;
 
 function makeElement(tag) {
   const element = {
