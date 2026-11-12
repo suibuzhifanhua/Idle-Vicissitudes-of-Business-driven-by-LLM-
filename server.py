@@ -5,9 +5,11 @@ import gzip
 import http.client
 import http.server
 import io
+import ipaddress
 import json
 import os
 import secrets
+import socket
 import socketserver
 import sys
 import time
@@ -47,6 +49,51 @@ SECURITY_HEADERS = (
         "object-src 'none'; base-uri 'self'; form-action 'self'"
     ),
 )
+
+# ---- Relay SSRF 防护：禁止指向云元数据/链路本地地址（防 DNS 重绑定时在转发前再解析一次）----
+BLOCKED_RELAY_CIDRS = (
+    ipaddress.ip_network('169.254.0.0/16'),   # 链路本地：AWS/腾讯云/华为云元数据 169.254.169.254
+)
+BLOCKED_RELAY_IPS = (
+    ipaddress.ip_address('100.100.100.200'),  # 阿里云元数据服务
+)
+
+
+def _ip_blocked(ip_str):
+    try:
+        addr = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # 无法解析的地址一律视为危险
+    if any(addr in net for net in BLOCKED_RELAY_CIDRS):
+        return True
+    if addr in BLOCKED_RELAY_IPS:
+        return True
+    return False
+
+
+def _host_ips(hostname):
+    """解析主机名 → (是否解析成功, IP 列表)。"""
+    if not hostname:
+        return False, []
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except (socket.gaierror, UnicodeError):
+        return False, []
+    return True, [info[4][0].split('%')[0] for info in infos]
+
+
+def _host_has_blocked_ip(hostname):
+    """注册闸：仅当主机名可解析且命中危险段时拒绝（内网域名/临时 DNS 失败允许注册，转发时再拦）。"""
+    _ok, ips = _host_ips(hostname)
+    return any(_ip_blocked(ip) for ip in ips)
+
+
+def _host_ip_blocked(hostname):
+    """转发闸：解析失败或任一解析结果命中危险段都拒绝（防 DNS 重绑定）。"""
+    ok, ips = _host_ips(hostname)
+    if not ok:
+        return True
+    return any(_ip_blocked(ip) for ip in ips)
 
 
 def _host_without_port(value):
@@ -489,6 +536,13 @@ class GameServer(http.server.SimpleHTTPRequestHandler):
             if not normalized:
                 self._send_json(400, {'ok': False, 'error': 'invalid_relay_base'})
                 return
+            try:
+                _reg_host = urllib.parse.urlsplit(normalized).hostname
+            except ValueError:
+                _reg_host = None
+            if _host_has_blocked_ip(_reg_host):
+                self._send_json(403, {'ok': False, 'error': 'relay_target_blocked'})
+                return
             bases = self._relay_bases()
             if action == 'remove':
                 bases = [item for item in bases if item != normalized]
@@ -608,6 +662,10 @@ class GameServer(http.server.SimpleHTTPRequestHandler):
                 target_path += '?' + parsed.query
         except ValueError:
             self._send_json(400, {'ok': False, 'error': 'invalid_relay_target'})
+            return
+        # 转发前再解析一次并复核：防止 DNS 重绑定绕过注册时的检查
+        if _host_ip_blocked(hostname):
+            self._send_json(403, {'ok': False, 'error': 'relay_target_blocked'})
             return
 
         headers = {'User-Agent': 'shanghaifc-relay/1.1', 'Accept': 'application/json'}

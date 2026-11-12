@@ -129,6 +129,38 @@ class ServerApiTests(unittest.TestCase):
         status, _ = self._request("GET", "/server.py")
         self.assertEqual(status, 404)
 
+    def test_relay_config_and_proxy_require_session_token(self):
+        # 无令牌访问 relay 注册与转发端点一律 401
+        status, _ = self._request("POST", "/api/relay/config", b'{"action":"clear"}')
+        self.assertEqual(status, 401)
+        unregistered = "/api/relay?target=" + "http%3A%2F%2Fevil.test%2Fv1"
+        status, _ = self._request("GET", unregistered)
+        self.assertEqual(status, 401)
+
+    def test_relay_blocks_metadata_and_linklocal_targets(self):
+        token = {"X-Shanghaifc-Token": self.server_module.SESSION_TOKEN}
+        # 注册云元数据/链路本地目标必须被拒绝，且不进入注册表
+        for blocked_base in ("http://169.254.169.254/latest/meta-data",
+                             "http://100.100.100.200/latest/meta-data"):
+            body = json.dumps({"action": "add", "base": blocked_base}).encode("utf-8")
+            status, payload = self._request(
+                "POST", "/api/relay/config", body,
+                {**token, "Content-Type": "application/json"},
+            )
+            self.assertEqual(status, 403, blocked_base)
+            self.assertEqual(payload["error"], "relay_target_blocked")
+        status, listed = self._request("GET", "/api/relay/config", headers=token)
+        self.assertEqual(status, 200)
+        self.assertEqual(listed["bases"], [])
+
+        # 助手函数：元数据/链路本地拦截，回环与公网放行（回环本地推理是合法场景）
+        check = self.server_module._host_ip_blocked
+        self.assertTrue(check("169.254.169.254"))
+        self.assertTrue(check("100.100.100.200"))
+        self.assertFalse(check("127.0.0.1"))
+        self.assertFalse(check("8.8.8.8"))
+        self.assertTrue(check(""))
+
     def test_relay_requires_registered_base(self):
         token = {"X-Shanghaifc-Token": self.server_module.SESSION_TOKEN}
         unregistered = "/api/relay?target=" + "http%3A%2F%2Fevil.test%2Fv1%2Fmodels"
