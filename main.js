@@ -298,6 +298,9 @@
         case '6': UI.switchPanel && UI.switchPanel('stats'); break;
         case '7': UI.switchPanel && UI.switchPanel('ranking'); break;
         case '8': UI.switchPanel && UI.switchPanel('asset'); break;
+        case '9':
+          if (typeof UI !== 'undefined' && typeof UI.showCityOverview === 'function') UI.showCityOverview();
+          break;
         case 'r': case 'R':
           UI.switchPanel && UI.switchPanel('milestone');
           if (typeof UI !== 'undefined' && UI.showToast) UI.showToast('🏅', '里程碑', '查看里程碑与成就进度');

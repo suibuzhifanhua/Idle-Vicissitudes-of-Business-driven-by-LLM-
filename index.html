@@ -141,10 +141,12 @@ window.addEventListener('unhandledrejection', function(e) {
   <span class="key-hint"><span class="key-badge">6</span>统计</span>
   <span class="key-hint"><span class="key-badge">7</span>排行榜</span>
   <span class="key-hint"><span class="key-badge">8</span>资产</span>
+  <span class="key-hint"><span class="key-badge">9</span>城市</span>
   <span class="key-hint"><span class="key-badge">R</span>里程碑</span>
   <span class="key-hint"><span class="key-badge">Space</span>拉项目</span>
   <span class="key-hint"><span class="key-badge">A</span>托管</span>
   <span class="key-hint"><span class="key-badge">S</span>设置</span>
+  <span class="key-hint"><span class="key-badge">F</span>财报</span>
   <span class="key-hint"><span class="key-badge">F</span>财报</span>
 </div>
 
@@ -269,8 +271,9 @@ document.getElementById('auto-toggle-input').addEventListener('change', function
 })();
 </script>
 
-<!-- BGM 背景音乐（7.7MB，不随首屏预载，首次交互后才拉取） -->
+<!-- BGM 背景音乐（MP3 2MB，原 WAV 7.7MB 已压缩；不随首屏预载，首次交互后才拉取） -->
 <audio id="bgm-audio" loop preload="none">
+  <source src="/bgm.mp3" type="audio/mpeg">
   <source src="/bgm.wav" type="audio/wav">
 </audio>
 <script>
