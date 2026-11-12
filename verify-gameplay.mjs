@@ -172,6 +172,20 @@ const sandbox = {
     error: (...a) => errors.push(a.map(String).join(' ')),
   },
 };
+// [复现] 种子化 PRNG + 固定时钟（SEED 环境变量控制随机序列），用于复现偶发状态损坏
+function mulberry32(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const SEED = Number(process.env.SEED) || 1;
+const _realMath = Math;
+sandbox.Math = Object.create(_realMath);
+sandbox.Math.random = mulberry32(SEED);
+const _fakeNow = 1750000000000;
+const RealDate = Date;
+class FakeDate extends RealDate {
+  constructor(...args) { if (args.length === 0) { super(_fakeNow); } else { super(...args); } }
+  static now() { return _fakeNow; }
+}
+sandbox.Date = FakeDate;
+
 // 浏览器里 window 就是全局对象：游戏代码用裸 UI / CONFIG 直接访问 window.X 的挂载物
 const ctx = vm.createContext(sandbox);
 sandbox.window = sandbox;
@@ -549,7 +563,7 @@ check('扩展状态可序列化进存档', !!savedExtensionRoundtrip.G.ext && Ar
 // ---------- 反膨胀经济回归 ----------
 const offlineG = S.G;
 offlineG.netIncomeSamples = Array.from({ length: 20 }, (_, index) => ({ tick: index, net: 100000 }));
-offlineG._offlineSettledAt = Date.now() - 24 * 3600 * 1000;
+offlineG._offlineSettledAt = _fakeNow - 24 * 3600 * 1000; // 用沙箱假时钟，避免真实 Date.now() 算出负 elapsed
 const offline24h = S.calcOfflineIncome();
 check('24小时离线按净收入并分段折算', offline24h.ticks === 2880 && offline24h.effectiveTicks === 1800 && Math.abs(offline24h.income - 180000000) < 100000,
   `raw=${offline24h.ticks} effective=${offline24h.effectiveTicks} income=${Math.round(offline24h.income)}`);
@@ -581,7 +595,12 @@ const lastFourAverage = manualResults.slice(8).reduce((sum, value) => sum + valu
 check('自动拉项目超过每日软上限后收益大幅衰减', lastFourAverage < firstEightAverage * 0.35,
   `first8=${Math.round(firstEightAverage)} tail=${Math.round(lastFourAverage)}`);
 
-S.G.businesses = { fund: { level: 10, region: null, unlocked: true } };
+// 注意：G.businesses 是活视图（指向当前城市真源），不能整体赋值；直接改真源字段
+const _fundProbe = S.G.businesses.fund;
+if (!_fundProbe) S.G.businesses.fund = { level: 1, region: null, unlocked: true };
+_fundProbe.level = 10;
+_fundProbe.region = null;
+_fundProbe.unlocked = true;
 const employeeManagerCount = 30;
 S.G.employees = Array.from({ length: employeeManagerCount }, (_, index) => ({
   id: 'cap_emp_' + index, role: 'manager', salary: 1, baseSalary: 1,
@@ -625,6 +644,26 @@ check('统一清理入口回收全部登记定时器', timersBefore > 0 && _stor
 S.save();
 const saved = JSON.parse(JSON.stringify({ G: S.G, tickCount: S.tickCount }));
 check('存档含做空与子公司字段', !!saved.G.shortPositions && !!saved.G.subsidiaries && !!saved.G.subsidiaries[cityId]);
+
+// ---------- v1.1 多城市数据源统一（businesses 活视图） ----------
+check('G.businesses 是当前城市的活视图（同引用）', S.G.businesses === S.G.cities[S.G.currentCityId].businesses);
+check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
+  !!saved.G.businesses && Object.keys(saved.G.businesses).length === BUSINESS_DEFS.length,
+  'keys=' + (saved.G.businesses ? Object.keys(saved.G.businesses).length : 0));
+{
+  const _origCity = S.G.currentCityId;
+  const _origBizJson = JSON.stringify(S.G.businesses);
+  const _targetTechBefore = S.G.cities[cityId].businesses.tech.level; // 托管可能已升级，动态取当前值
+  check('switchCity 切到子公司城市成功', S.switchCity(cityId) === true, cityId);
+  check('切换后 businesses 跟随新城市（同引用+等级指纹）',
+    S.G.businesses === S.G.cities[cityId].businesses && S.G.businesses.tech.level === _targetTechBefore,
+    'tech=' + S.G.businesses.tech.level + ' expected=' + _targetTechBefore);
+  S.G.businesses.media.level = 7;
+  check('活视图写入直达城市数据', S.G.cities[cityId].businesses.media.level === 7);
+  check('切回原城市成功', S.switchCity(_origCity) === true, _origCity);
+  check('往返后原城市数据零交叉污染', JSON.stringify(S.G.businesses) === _origBizJson);
+  check('新城市侧写入已保留', S.G.cities[cityId].businesses.media.level === 7);
+}
 
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;

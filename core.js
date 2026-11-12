@@ -75,6 +75,7 @@ window.SGame = (() => {
   function initState(origin, playerName) {
     const o = ORIGINS.find(x => x.id === origin);
     G = _buildInitialState(origin, playerName, o);
+    _installBusinessesLiveView(G);
     _initStatePost(G, o);
     if (typeof StateManager !== 'undefined') { StateManager.init(G); }
   }
@@ -2217,13 +2218,9 @@ window.SGame = (() => {
   // ========== 城市切换 ==========
   function switchCity(cityId) {
     if (!G.cities[cityId] || !G.cities[cityId].unlocked) return false;
-    // 保存当前城市业务状态
-    G.cities[G.currentCityId].businesses = structuredClone(G.businesses);
+    // v1.1 数据源统一：G.businesses 是当前城市的活视图（getter），随 currentCityId 自动跟随，无需手动存档/恢复
     G.currentCityId = cityId;
-    // 加载目标城市业务状态
-    if (!G.cities[cityId].businesses) G.cities[cityId].businesses = {};
-    G.businesses = JSON.parse(JSON.stringify(G.cities[cityId].businesses));
-    // 确保所有业务定义都在businesses中存在
+    // 确保所有业务定义都在当前城市 businesses 中存在
     BUSINESS_DEFS.forEach(bDef => {
       if (!G.businesses[bDef.id]) {
         G.businesses[bDef.id] = bDef.unlockMoney === 0
@@ -2675,10 +2672,65 @@ window.SGame = (() => {
   }
 
   // ========== 多槽存档系统 ==========
-  // ========== 多城市业务同步 ==========
+  // ========== 多城市数据源统一（v1.1） ==========
+  // G.cities[currentCityId].businesses 是唯一真源，G.businesses 是它的活视图（getter/setter），
+  // 全部既有 G.businesses 读写路径无需改动即可与城市数据实时一致。
+  function _ensureCityBiz(g, cid) {
+    if (!g.cities || typeof g.cities !== 'object') g.cities = {};
+    let c = g.cities[cid];
+    if (!c || typeof c !== 'object') c = g.cities[cid] = { unlocked: true, businesses: {}, unlockedRegions: [] };
+    if (!c.businesses || typeof c.businesses !== 'object') c.businesses = {};
+    return c.businesses;
+  }
+
+  // 安装活视图：G.businesses 变为指向当前城市 businesses 的 getter/setter
+  // - getter：返回当前城市的 businesses 对象（切换城市后自动跟随）
+  // - setter：把新对象内容复制进当前城市 businesses（保持引用稳定，旧引用不失效）
+  // 安装时机：initState 新建 / load 迁移完成后。JSON.stringify(G) 行为不变（可枚举访问器），
+  // 存档格式与旧版本完全兼容（businesses 扁平字段与 cities 字段同时保留）。
+  function _installBusinessesLiveView(state) {
+    const g = state || G;
+    if (!g || !g.currentCityId) return;
+    const cityBiz = _ensureCityBiz(g, g.currentCityId);
+    const flat = g.businesses;
+    // 新建局：城市数据为空而扁平视图有数据 → 把扁平视图提升为城市数据；
+    // 加载局：迁移后两者已同引用（或城市侧更完整）→ 以城市侧为唯一真源。
+    if (flat && flat !== cityBiz) {
+      const flatKeys = Object.keys(flat);
+      const cityKeys = Object.keys(cityBiz);
+      if (cityKeys.length === 0 || flatKeys.length > cityKeys.length) {
+        cityKeys.forEach(k => delete cityBiz[k]);
+        flatKeys.forEach(k => { cityBiz[k] = flat[k]; });
+      }
+    }
+    try {
+      Object.defineProperty(g, 'businesses', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          if (!G || !G.currentCityId) return {};
+          return _ensureCityBiz(G, G.currentCityId);
+        },
+        set(v) {
+          if (!G || !G.currentCityId) return;
+          const target = _ensureCityBiz(G, G.currentCityId);
+          Object.keys(target).forEach(k => delete target[k]);
+          if (v && typeof v === 'object') {
+            Object.keys(v).forEach(k => { target[k] = v[k]; });
+          }
+        }
+      });
+    } catch (e) {
+      SGame.DEBUG && console.error('[商海浮沉] businesses 活视图安装失败:', e);
+    }
+  }
+
+  // 多城市业务同步：活视图启用后 G.businesses 与城市数据是同一对象，无需同步。
+  // 保留函数签名以兼容既有调用点（tick 管线/存档前）；未安装活视图时走旧同步逻辑兜底。
   function syncCityBiz() {
     if (!G || !G.currentCityId || !G.cities[G.currentCityId]) return;
-    // 每个 Tick 只同步一次（避免多次 save/切换触发重复深拷贝）
+    if (G.cities[G.currentCityId].businesses === G.businesses) return;
+    // 兜底路径（活视图未安装）：每个 Tick 只同步一次，避免重复深拷贝
     if (G._lastCityBizSync === G.tickCount) return;
     G._lastCityBizSync = G.tickCount;
     G.cities[G.currentCityId].businesses = structuredClone(G.businesses);
@@ -2832,6 +2884,7 @@ window.SGame = (() => {
       pendingDecisions = (data.pendingDecisions || []).filter((d) => d && d.id && Array.isArray(d.choices) && d.choices.length > 0);
       if (!Array.isArray(G.unlockedRegions)) G.unlockedRegions = [];
       migrateSave();
+      _installBusinessesLiveView();
       window.SGame._repairAnnualCheckpoint();
       _applyRegionUnlocks(G.unlockedRegions);
       checkAndShowOfflineIncome();
