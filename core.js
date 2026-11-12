@@ -3884,7 +3884,12 @@ window.SGame = (() => {
       { text: '竞争对手挖角', moneyLoss: 0, repLoss: 2, loyaltyHit: true },
     ];
     const risk = risks[Math.floor(Math.random() * risks.length)];
-    const loss = G.money * risk.moneyLoss;
+    // v1.8 后期档位衰减：企业规模越大，单次事故占总资产比例越小（多元化/保险效应）。
+    // 4320h 实测：固定 0.514%/h 的资产比例摩擦在千亿帝国档吃掉 ~85% 净利，
+    // 在万亿财阀(10T)门槛前形成硬资产墙（3.4T 平台期，增长 ~0.1%/h）。每档 ×0.5 后摩擦快速退出主导。
+    const lgCfg = (typeof LATEGAME_SCALE !== 'undefined') ? LATEGAME_SCALE : { baseTier: 6 };
+    const riskDecay = Math.pow(0.5, Math.max(0, getLateGameTier() - (lgCfg.baseTier || 0)));
+    const loss = G.money * risk.moneyLoss * riskDecay;
     G.money -= loss;
     if (risk.repLoss) G.reputation = Math.max(0, G.reputation - risk.repLoss);
     if (risk.stressAdd) G.stress = Math.min(100, G.stress + risk.stressAdd);
@@ -5263,6 +5268,7 @@ window.SGame = (() => {
     calcTotalIncome, calcOfflineIncome, claimOfflineIncome, getNetIncomePerTick,
     addLog, showAchievement, formatMoney: _formatMoney, getEmpMax,
     getLateGameTier, getLateGameIncomeScale, getLateGameCostScale,
+    triggerOperationalRisk, // v1.8 导出（运营风险档位衰减回归测试用）
     addConnections,
     calcNpcBonus,
     save, load, reset, getSaveSlots,

@@ -493,6 +493,31 @@ check('档位8（2000亿）：收入×9 / 成本×64', S.getLateGameIncomeScale(
 }
 S.G.money = LG_SAVE_MONEY; // 还原，避免污染后续断言
 
+// ---------- v1.8 运营风险档位衰减 ----------
+// 4320h 实测：固定 0.514%/h 总资产摩擦在千亿帝国档吃掉 ~85% 净利，10T 门槛前形成资产墙。
+// 修复：损失 × 0.5^(tier-baseTier)。Math.random=0.5 钉住 risks[3]（供应商临时涨价 moneyLoss 0.015、无 repLoss）。
+{
+  const ORIG_RAND = sandbox.Math.random;
+  const ORIG_MONEY = S.G.money;
+  const ORIG_REP = S.G.reputation;
+  sandbox.Math.random = () => 0.5;
+  S.G.money = 5e6; // 档位1（小老板）：衰减 ×1
+  const m1 = S.G.money;
+  S.triggerOperationalRisk();
+  check('v1.8 档位1：运营风险损失 = 资产×1.5%（衰减×1，中局不变）', Math.abs((m1 - S.G.money) - 75000) < 75000 * 1e-6, 'Δ=' + (m1 - S.G.money) + ' 期望=75000');
+  check('v1.8 钉住验证：risks[3] 不扣声誉', S.G.reputation === ORIG_REP, 'rep ' + ORIG_REP + '->' + S.G.reputation);
+  S.G.money = 6e10; // 档位7（全球富豪）：衰减 ×0.5
+  const m2 = S.G.money;
+  S.triggerOperationalRisk();
+  check('v1.8 档位7：运营风险损失 ×0.5 衰减（4.5e8）', Math.abs((m2 - S.G.money) - 4.5e8) < 4.5e8 * 1e-6, 'Δ=' + (m2 - S.G.money) + ' 期望=450000000');
+  S.G.money = 2.5e12; // 档位9（千亿帝国）：衰减 ×0.125 → 4320h 摩擦墙场景
+  const m3 = S.G.money;
+  S.triggerOperationalRisk();
+  check('v1.8 档位9：运营风险损失 ×0.125 衰减（4.6875e9）', Math.abs((m3 - S.G.money) - 4.6875e9) < 4.6875e9 * 1e-6, 'Δ=' + (m3 - S.G.money) + ' 期望=4687500000');
+  sandbox.Math.random = ORIG_RAND;
+  S.G.money = ORIG_MONEY;
+}
+
 // ---------- 新成就条件 ----------
 S.G.supplyChain.retail.supplierLv = 3;
 S.G.shortProfitTotal = 200000;
