@@ -2723,4 +2723,75 @@ var EVENTS = [
     fallbacks:['黑客攻破的不是服务器，是用户对你的信任。','数据泄露，是所有互联网企业的梦魇。'],
   },
 
+  // ===== 法务/商战线（v1.6 新增）=====
+  {
+    id:'legal_spy', type:'crisis', category:'decision',
+    acts:[2,3,4,5], cooldown:90, weight:6,
+    conditionTags:{ assetThreshold:3000000 },
+    title:'商业间谍案',
+    getDesc:()=>`你正在研发的新品上线前一周，竞品公司突然发布了功能几乎一模一样的产品。研发负责人连夜排查后发现：你的内部设计文档出现在了暗网。上周刚离职的一名核心工程师，入职的正是这家竞品公司。律师看完证据链后说：「值得打，但打不打，你定。」`,
+    effects:{ stress:[15,30] },
+    choices:[
+      { text:'付高额和解金，签保密协议息事宁人', effect:{ moneyAbs:[-250000,-150000], stress:[-10,10], reputation:[-5,5] }, label:'花钱消灾' },
+      { text:'反诉+申请法院禁令，要求对方下架新品', effect:{ expense:500000, moneyAbs:[100000,600000], stress:[20,35], reputation:[5,15] }, label:'对簿公堂' },
+      { text:'媒体实名曝光，让行业公论评理', effect:{ expense:50000, reputation:[-15,10], stress:[25,45], connections:[-10,5] }, label:'公开施压' },
+    ],
+    fallbacks:['商业秘密失窃，输掉的往往不止一场官司。','最好的防守，是让你的核心资产离开个人。'],
+  },
+  {
+    id:'legal_labor', type:'social', category:'decision',
+    acts:[1,2,3,4,5], cooldown:100, weight:7,
+    title:'劳动纠纷',
+    getDesc:()=>`你上个月优化掉的一名骨干员工申请了劳动仲裁，主张违法解除并索要2N赔偿。他的工牌和离职谈话录音在朋友圈流传，几个老员工跟着转发：「今天优化他，明天就是我们。」HR总监说再拖下去，士气会出问题。`,
+    effects:{ stress:[10,25] },
+    choices:[
+      { text:'主动谈和解，按2N标准额外补偿', effect:{ expense:150000, stress:[-5,10], reputation:[0,8] }, label:'花钱买太平' },
+      { text:'公司手续合规，坚持仲裁到底', effect:{ expense:60000, moneyAbs:[-80000,50000], stress:[20,35], reputation:[-12,5] }, label:'据理力争' },
+      { text:'借此重组：全员转长期合同+涨薪留人', effect:{ expense:300000, stress:[15,30], reputation:[5,12], connections:[0,8] }, label:'釜底抽薪' },
+    ],
+    fallbacks:['劳动法是最便宜，也是最贵的那本法律。','员工走之前问的是工资，走之后告的是你。'],
+  },
+  {
+    id:'legal_env', type:'crisis', category:'decision',
+    acts:[2,3,4,5], cooldown:120, weight:5,
+    conditionTags:{ industryLimit:['new_energy','food_chain','retail'] },
+    title:'环保整改令',
+    getDesc:()=>`环保部门突击检查，认定你的生产/仓储环节排污指标超标，下达了限期整改通知书——15天内不改，直接停产。当地媒体已经闻风而动，记者的镜头就架在厂区门口。`,
+    effects:{ stress:[15,30] },
+    choices:[
+      { text:'停产整改，一切按流程走', effect:{ money:[0.85,0.95], stress:[20,35], reputation:[-3,8] }, label:'合规止损' },
+      { text:'立即升级环保设备，投入大但一劳永逸', effect:{ expense:400000, money:[0.9,1.0], stress:[15,25], reputation:[5,15] }, label:'设备升级' },
+      { text:'公关洗白：赞助环保活动+媒体沟通会', effect:{ expense:150000, reputation:[-15,5], stress:[25,40], connections:[-5,5] }, label:'舆论对冲' },
+    ],
+    fallbacks:['环保红线，从来不是可以讨价还价的生意。','罚款单只是开头，停产才是正文。'],
+  },
+  {
+    id:'legal_tax', type:'crisis', category:'decision',
+    acts:[2,3,4,5], cooldown:140, weight:4,
+    conditionTags:{ assetThreshold:5000000 },
+    title:'税务稽查',
+    getDesc:()=>`税务局通知你公司接受例行稽查——「例行」两个字让财务总监失眠了三天。初步核账发现，过去一年的开票口径和资金流水对不上，缺口不小。税务所所长约你喝茶，话里有话。`,
+    effects:{ stress:[20,35] },
+    choices:[
+      { text:'认账：补缴税款+滞纳金+罚款，立正挨打', effect:{ money:[0.8,0.9], stress:[15,30], reputation:[0,5] }, label:'立正挨打' },
+      { text:'聘请顶级税务师事务所重新梳理申报口径', effect:{ expense:300000, money:[0.9,1.0], stress:[10,25], reputation:[0,8] }, label:'专业辩护' },
+      { text:'连夜把部分业务腾挪到低税率主体（灰色操作）', effect:{ money:[0.75,0.95], stress:[30,50], reputation:[-10,0], connections:[-8,2] }, label:'架构腾挪' },
+    ],
+    fallbacks:['税务上省下来的每一分钱，都是借来的。','金税四期时代，没有一笔流水是秘密。'],
+  },
+  {
+    id:'legal_short', type:'crisis', category:'decision',
+    acts:[3,4,5], cooldown:120, weight:5,
+    conditionTags:{ assetThreshold:8000000 },
+    title:'恶意做空',
+    getDesc:()=>`一家海外做空基金突然发布做空报告，你的股价应声跳水。更蹊跷的是：做空基金建仓的时间点，和你那位「老合作伙伴」的私人行程高度重合。你的律师从对方前员工那里拿到了一份内部邮件——「帮我们把水搅浑，事成之后分两成。」`,
+    effects:{ money:[0.85,0.95], stress:[20,35] },
+    choices:[
+      { text:'静默：大额回购+联系基石投资者稳定盘面', effect:{ money:[0.8,0.9], stress:[15,30], reputation:[-3,5] }, label:'暗中托底' },
+      { text:'公布实锤邮件，公开指认幕后金主', effect:{ expense:200000, money:[0.9,1.05], stress:[25,45], reputation:[-10,12] }, label:'公开对质' },
+      { text:'双管齐下：起诉做空机构+向监管实名举报', effect:{ expense:350000, moneyAbs:[-100000,300000], stress:[30,50], reputation:[0,15] }, label:'法律追诉' },
+    ],
+    fallbacks:['做空报告可以炮制，但信任一旦做空，再融资就是天价。','资本市场里，最大的做空是人心。'],
+  },
+
 ]

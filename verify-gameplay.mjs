@@ -377,6 +377,51 @@ const repB2 = S.G.reputation;
 sandbox.EventSystem.choose('verify_dyn_2', 0);
 check('手动点击 AI/动态事件选项生效', S.G.reputation > repB2, repB2.toFixed(1) + ' -> ' + S.G.reputation.toFixed(1));
 
+// ---------- P0 回归：数组型 effect（[min,max] 区间）不得破坏 G.money ----------
+const arrEvt = { id: 'verify_arr_1', type: 'decision', title: '数组效应验证', desc: 'x',
+  choices: [{ text: 'A', effect: { money: [0.95, 1.05], moneyAbs: [1000, 2000], stress: [5, 10] } }] };
+sandbox.EventSystem.fireEvent(arrEvt);
+const moneyArrBefore = S.G.money;
+sandbox.EventSystem.choose('verify_arr_1', 0);
+check('数组型 money/moneyAbs 应用后 G.money 仍为数字（P0 回归）', typeof S.G.money === 'number' && isFinite(S.G.money), String(S.G.money));
+const moneyDeltaArr = S.G.money - moneyArrBefore;
+const deltaMin = moneyArrBefore * (0.95 - 1) + 1000;
+const deltaMax = moneyArrBefore * (1.05 - 1) + 2000;
+check('数组型 effect 落在区间内（money 乘数 0.95~1.05 + moneyAbs 1000~2000）',
+  moneyDeltaArr >= deltaMin - 0.01 && moneyDeltaArr <= deltaMax + 0.01,
+  'Δ=' + moneyDeltaArr.toFixed(0) + ' 期望[' + deltaMin.toFixed(0) + ',' + deltaMax.toFixed(0) + ']');
+check('存量数组型事件 m07 选项3 不再把 G.money 变成字符串', (() => {
+  const m07 = sandbox.EVENTS.find(e => e.id === 'm07');
+  if (!m07 || !m07.choices || m07.choices.length < 3) return false;
+  const m = S.G.money, st = S.G.stress;
+  sandbox.EventSystem.choose('m07', 2);
+  const ok = typeof S.G.money === 'number' && isFinite(S.G.money);
+  S.G.money = m; S.G.stress = st; // 还原，避免污染后续断言
+  return ok;
+})(), typeof S.G.money);
+
+// ---------- 法务/商战线 5 事件数据校验 ----------
+const LEGAL_IDS = ['legal_spy', 'legal_labor', 'legal_env', 'legal_tax', 'legal_short'];
+LEGAL_IDS.forEach(id => {
+  const ev = sandbox.EVENTS.find(e => e.id === id);
+  check(`法务/商战事件 ${id} 已注册`, !!ev && ev.title, ev ? ev.title : '缺失');
+  if (ev) {
+    check(`${id} 有 3 个抉择选项`, Array.isArray(ev.choices) && ev.choices.length === 3, String(ev.choices && ev.choices.length));
+    check(`${id} 选项均带 effect`, ev.choices.every(c => c.effect && typeof c.effect === 'object'));
+  }
+});
+// 新事件至少含数组型 effect（覆盖 P0 修复路径）
+check('法务事件含数组型 effect（P0 路径覆盖）', LEGAL_IDS.some(id => {
+  const ev = sandbox.EVENTS.find(e => e.id === id);
+  return ev && (Object.values(ev.effects || {}).some(v => Array.isArray(v)) || ev.choices.some(c => Object.values(c.effect).some(v => Array.isArray(v))));
+}));
+// 新事件实跑：触发 legal_labor（无 conditionTags 门槛）并走完抉择
+const laborEvt = sandbox.EVENTS.find(e => e.id === 'legal_labor');
+sandbox.EventSystem.fireEvent(laborEvt);
+const moneyBeforeLabor = S.G.money;
+sandbox.EventSystem.choose('legal_labor', 1);
+check('legal_labor 实跑抉择后 G.money 仍为数字', typeof S.G.money === 'number' && isFinite(S.G.money), String(S.G.money) + ' (before ' + moneyBeforeLabor.toFixed(0) + ')');
+
 // ---------- 新成就条件 ----------
 S.G.supplyChain.retail.supplierLv = 3;
 S.G.shortProfitTotal = 200000;

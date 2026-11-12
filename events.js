@@ -385,22 +385,34 @@ window.EventSystem = (() => {
     if (typeof UI !== 'undefined') UI.renderAll();
   }
 
+  // 事件数据里的数组 = [最小, 最大] 随机区间。必须解包成标量：
+  // 旧代码直接运算时 `G.money += [0.7,1.3]` 会把 G.money 变成字符串（P0：经济系统全崩）
+  function _effVal(v) {
+    if (Array.isArray(v)) return v[0] + Math.random() * (v[v.length - 1] - v[0]);
+    return v;
+  }
+
   function applyEffects(eff) {
     if (!eff) return;
     const G = SGame.G;
-    // eff.money: 绝对值<1 且不为0 视为乘数，否则视为绝对增减量
-    if (eff.money) {
-      if (Math.abs(eff.money) < 1 && eff.money !== 0) {
-        G.money *= eff.money;
+    // eff.money: 绝对值<1 且不为0 视为乘数，否则视为绝对增减量（数组按区间随机解包）
+    const moneyV = _effVal(eff.money);
+    if (moneyV) {
+      if (Math.abs(moneyV) < 1 && moneyV !== 0) {
+        G.money *= moneyV;
       } else {
-        G.money += eff.money;
+        G.money += moneyV;
       }
     }
-    if (eff.moneyAbs) G.money += eff.moneyAbs;
-    if (eff.reputation) G.reputation = Math.max(0, Math.min(100, G.reputation + eff.reputation));
-    if (eff.stress) G.stress = Math.max(0, Math.min(100, G.stress + eff.stress));
-    if (eff.connections) {
-      const scaled = Math.floor(eff.connections * (CONFIG.CONNECTIONS_GAIN_SCALE || 0.6));
+    const moneyAbsV = _effVal(eff.moneyAbs);
+    if (moneyAbsV) G.money += moneyAbsV;
+    const repV = _effVal(eff.reputation);
+    if (repV) G.reputation = Math.max(0, Math.min(100, G.reputation + repV));
+    const stressV = _effVal(eff.stress);
+    if (stressV) G.stress = Math.max(0, Math.min(100, G.stress + stressV));
+    const connV = _effVal(eff.connections);
+    if (connV) {
+      const scaled = Math.floor(connV * (CONFIG.CONNECTIONS_GAIN_SCALE || 0.6));
       G.connections = Math.min(CONFIG.MAX_CONNECTIONS || 100, Math.max(0, G.connections + scaled));
     }
     if (eff.reputationMul) G.reputation = Math.max(0, Math.min(100, G.reputation * eff.reputationMul));
