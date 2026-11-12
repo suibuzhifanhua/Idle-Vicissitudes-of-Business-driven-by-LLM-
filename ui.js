@@ -187,6 +187,7 @@ window.UI = (() => {
       { id:'worldmap', label:'🗺 地图' },
       { id:'tech', label:'🔬 科技' },
       { id:'stock', label:'📊 股票' },
+      { id:'venture', label:'🚀 风投' },
       { id:'financial', label:'📊 财报' },
     ];
     panels.forEach(function(p) {
@@ -201,7 +202,7 @@ window.UI = (() => {
     container.insertBefore(tabBar, container.firstChild);
   }
   function switchPanel(name) {
-    if (!['dashboard', 'region', 'business', 'npc', 'asset', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'ranking', 'milestone', 'intel', 'financial', 'extensions'].includes(name)) return;
+    if (!['dashboard', 'region', 'business', 'npc', 'asset', 'achievement', 'stats', 'worldmap', 'tech', 'stock', 'venture', 'ranking', 'milestone', 'intel', 'financial', 'extensions'].includes(name)) return;
     currentPanel = name;
     _centerNeedsFullRefresh = true;
     _lastCenterPanelSignature = null;
@@ -254,6 +255,7 @@ window.UI = (() => {
       case 'worldmap': renderWorldMap(panel); return;
       case 'tech': renderTechPanel(panel); return;
       case 'stock': renderStockPanel(panel); return;
+      case 'venture': renderVenturePanel(panel); return;
       case 'ranking': renderRankingPanel(panel); return;
       case 'milestone': renderMilestonePanel(panel); return;
       case 'asset': renderAssetPanel(panel); return;
@@ -3956,6 +3958,114 @@ window.UI = (() => {
     container.innerHTML = html;
   }
 
+  // ========== 风投面板（天使→PE→IPO）(#14) ==========
+  function renderVenturePanel(panel) {
+    if (!panel) return;
+    const G = SGame.G;
+    if (!G) return;
+    const cfg = (typeof VENTURE_CFG !== 'undefined') ? VENTURE_CFG : { UNLOCK_MONEY: 10e6, MAX_POSITIONS: 5 };
+    let html = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
+    html += _renderBackButton('dashboard');
+    html += '<div style="font-size:16px;font-weight:700;color:var(--accent)">🚀 风投线 <span style="font-size:11px;color:var(--text-muted);font-weight:400;">天使 → PE → IPO</span></div></div>';
+
+    // 解锁门槛（从未投资过时）
+    const everInvested = (G.ventureInvestCount || 0) > 0 || Object.keys(G.ventures || {}).length > 0;
+    if (!everInvested && G.money < cfg.UNLOCK_MONEY) {
+      html += '<div style="padding:16px;border:1px dashed var(--border);border-radius:8px;font-size:12px;color:var(--text-secondary);">🔒 现金达到 ' + SGame.formatMoney(cfg.UNLOCK_MONEY) + ' 解锁风投（当前 ' + SGame.formatMoney(G.money) + '）。投资 14 家 NPC 初创公司，陪跑从天使轮到 IPO 上市。</div>';
+      panel.innerHTML = html;
+      return;
+    }
+
+    const st = (typeof SGame.getVentureStats === 'function') ? SGame.getVentureStats() : { cost: 0, value: 0, profit: 0, held: 0, total: 0 };
+    const profitColor = st.profit >= 0 ? 'var(--red)' : 'var(--green)';
+    const totalColor = st.total >= 0 ? 'var(--red)' : 'var(--green)';
+    html += '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--text-secondary);">';
+    html += '<div>已投入 <b style="color:var(--text-primary)">' + SGame.formatMoney(st.cost) + '</b></div>';
+    html += '<div>当前市值 <b style="color:var(--text-primary)">' + SGame.formatMoney(st.value) + '</b></div>';
+    html += '<div>浮动盈亏 <b style="color:' + profitColor + '">' + (st.profit >= 0 ? '+' : '') + SGame.formatMoney(st.profit) + '</b></div>';
+    html += '<div>累计盈亏 <b style="color:' + totalColor + '">' + (st.total >= 0 ? '+' : '') + SGame.formatMoney(st.total) + '</b></div>';
+    html += '<div>持有 <b style="color:var(--text-primary)">' + st.held + '/' + cfg.MAX_POSITIONS + '</b></div>';
+    html += '</div>';
+
+    const companies = (typeof VENTURE_COMPANIES !== 'undefined') ? VENTURE_COMPANIES : [];
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    companies.forEach(function(c) {
+      const val = (G.ventureValuations || {})[c.id] || c.baseVal;
+      const h = (G.ventures || {})[c.id];
+      const dead = val <= 0;
+      const chg = (typeof SGame.ventureChange === 'function') ? SGame.ventureChange(c.id) : 0;
+      const chgPct = (chg * 100).toFixed(1);
+      const chgColor = chg > 0.001 ? 'var(--red)' : (chg < -0.001 ? 'var(--green)' : 'var(--text-muted)');
+      let stage, stageColor;
+      if (dead) { stage = '已破产'; stageColor = 'var(--text-muted)'; }
+      else if (h && h.ipo && !h.ipoCorrected) { stage = '🔔 IPO 窗口'; stageColor = 'var(--gold, #f59e0b)'; }
+      else if (h && h.ipo) { stage = '上市·修正期'; stageColor = 'var(--text-muted)'; }
+      else { stage = SGame.ventureStageOf ? SGame.ventureStageOf(val, c.baseVal) : '-'; stageColor = 'var(--text-secondary)'; }
+
+      html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+      html += '<span style="font-size:18px;">' + c.icon + '</span>';
+      html += '<span style="font-weight:600;font-size:13px;">' + c.name + '</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);">' + c.industry + '</span>';
+      html += '<span style="font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid ' + stageColor + ';color:' + stageColor + ';">' + stage + '</span>';
+      html += '<span style="flex:1;"></span>';
+      html += dead
+        ? '<span style="font-size:12px;color:var(--text-muted);">估值归零</span>'
+        : '<span style="font-size:12px;">估值 <b>' + SGame.formatMoney(val) + '</b> <span style="color:' + chgColor + ';font-size:11px;">' + (chg > 0 ? '+' : '') + chgPct + '%</span></span>';
+      html += '</div>';
+
+      if (h) {
+        const posVal = h.cost * (h.entryVal > 0 ? val / h.entryVal : 0);
+        const posProfit = posVal - h.cost;
+        html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text-secondary);">';
+        html += '<span>持股 <b style="color:var(--text-primary)">' + ((h.pct || 0) * 100).toFixed(1) + '%</b></span>';
+        html += '<span>成本 ' + SGame.formatMoney(h.cost) + '</span>';
+        html += '<span>市值 <b style="color:var(--text-primary)">' + SGame.formatMoney(posVal) + '</b></span>';
+        html += '<span style="color:' + (posProfit >= 0 ? 'var(--red)' : 'var(--green)') + ';">' + (posProfit >= 0 ? '+' : '') + SGame.formatMoney(posProfit) + '</span>';
+        if (dead) {
+          html += '<span style="color:var(--text-muted);">（已破产，投资损失）</span>';
+        } else {
+          const isIpoWindow = h.ipo && !h.ipoCorrected;
+          html += '<button onclick="UI.ventureLiquidate(\'' + c.id + '\')" style="font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;border:1px solid ' + (isIpoWindow ? 'var(--gold, #f59e0b)' : 'var(--border)') + ';background:' + (isIpoWindow ? 'rgba(245,158,11,0.15)' : 'transparent') + ';color:var(--text-primary);">' + (isIpoWindow ? '🔔 IPO 溢价退出' : '退出（' + Math.round(cfg.EXIT_DISCOUNT * 100) + '% 折价）') + '</button>';
+        }
+        html += '</div>';
+      } else if (!dead) {
+        const cost10 = Math.floor(G.money * 0.10);
+        const cost30 = Math.floor(G.money * 0.30);
+        const c10pct = val > 0 ? (cost10 / val) : 0;
+        const c30pct = val > 0 ? (cost30 / val) : 0;
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">';
+        html += '<span style="font-size:11px;color:var(--text-muted);flex:1;min-width:140px;">' + c.desc + '</span>';
+        html += '<button onclick="UI.ventureInvest(\'' + c.id + '\',10)" ' + (cost10 <= 0 || c10pct > cfg.MAX_HOLD_PCT ? 'disabled ' : '') + 'style="font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-primary);">投 10%（' + SGame.formatMoney(cost10) + '）</button>';
+        html += '<button onclick="UI.ventureInvest(\'' + c.id + '\',30)" ' + (cost30 <= 0 || c30pct > cfg.MAX_HOLD_PCT ? 'disabled ' : '') + 'style="font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-primary);">投 30%（' + SGame.formatMoney(cost30) + '）</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    panel.innerHTML = html;
+  }
+
+  // 风投交互：按现金百分比投资 / 退出
+  function ventureInvest(cid, pctOfCash) {
+    const G = SGame.G;
+    if (!G || typeof SGame.investVenture !== 'function') return;
+    const amount = Math.floor(G.money * (pctOfCash / 100));
+    const r = SGame.investVenture(cid, amount);
+    if (typeof showToast === 'function') showToast(r && r.ok ? '🎯' : '⚠️', '风投', (r && r.msg) || '', 2500);
+    if (currentPanel === 'venture') { try { renderVenturePanel(document.getElementById('center-panel')); } catch (e) { SGame.DEBUG && console.error('[UI] ventureInvest rerender:', e && e.message); } }
+  }
+  function ventureLiquidate(cid) {
+    const G = SGame.G;
+    if (!G || typeof SGame.liquidateVenture !== 'function') return;
+    const r = SGame.liquidateVenture(cid);
+    if (typeof showToast === 'function') {
+      const tag = r && r.wasIpo ? '🔔' : '📤';
+      showToast(tag, '风投退出', (r && r.msg) || '', 3000);
+    }
+    if (currentPanel === 'venture') { try { renderVenturePanel(document.getElementById('center-panel')); } catch (e) { SGame.DEBUG && console.error('[UI] ventureLiquidate rerender:', e && e.message); } }
+  }
+
   // ========== 理财面板（股票+贷款） ==========
   function renderStockPanel(container) {
     if (!container) return;
@@ -4804,6 +4914,8 @@ window.UI = (() => {
     openAdvisor, closeAdvisor,
     // 问世界 (#13)
     sendAskWorld, askWorldQuick, executeAdvisorAction,
+    // 风投线 (#14)
+    renderVenturePanel, ventureInvest, ventureLiquidate,
     triggerBalanceCheck, closeBalanceModal,
     updateLLMQueueStatus,
 

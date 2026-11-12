@@ -103,6 +103,10 @@ const ACHIEVEMENTS = [
   { id:'short_seller',    name:'做空初成',       icon:'🐻', desc:'做空累计盈利达到10万', cond:{ type:'short_profit', value:100000 } },
   { id:'bear_tycoon',     name:'熊市猎手',       icon:'🩸', desc:'做空累计盈利达到200万', cond:{ type:'short_profit', value:2000000 } },
   { id:'group_empire',    name:'集团化经营',     icon:'🏢', desc:'同时运营3家子公司', cond:{ type:'subsidiary_count', count:3 } },
+  // ---- 风投线成就 (#14) ----
+  { id:'venture_first',   name:'天使投资人',     icon:'🎯', desc:'完成首次初创公司投资', cond:{ type:'venture_invest', count:1 } },
+  { id:'venture_ipo',     name:'敲钟时刻',       icon:'🔔', desc:'完成一次 IPO 溢价退出', cond:{ type:'venture_ipo_exit', count:1 } },
+  { id:'venture_100m',    name:'风投大亨',       icon:'💸', desc:'风投累计盈利达到1亿', cond:{ type:'venture_profit', value:100000000 } },
 ];
 
 
@@ -194,7 +198,11 @@ const ACHIEVEMENT_REWARDS = {
   supply_chain_6:     { desc:'全局收入+4%',           incomeMult:0.04 },
   short_seller:       { desc:'全局收入+2%',           incomeMult:0.02 },
   bear_tycoon:        { desc:'研发速度+8%',           rdBonus:0.08 },
-  group_empire:       { desc:'全局收入+6%',           incomeMult:0.06 }};
+  group_empire:       { desc:'全局收入+6%',           incomeMult:0.06 },
+  // 风投线 (#14)
+  venture_first:      { desc:'解锁技能点+1',           statPoints:1 },
+  venture_ipo:        { desc:'全局收入+3%',           incomeMult:0.03 },
+  venture_100m:       { desc:'全局收入+8%',           incomeMult:0.08 }};
 
 // 计算所有已解锁成就的总奖励
 function calcAchievementRewards() {

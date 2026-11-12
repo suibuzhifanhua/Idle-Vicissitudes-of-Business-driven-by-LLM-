@@ -198,9 +198,9 @@ sandbox.__storageBootstrap = Promise.resolve({
 });
 
 const SCRIPTS = ['config-game.js', 'config-businesses.js', 'config-achievements.js', 'config-npcs.js', 'config-extensions.js',
-  'data-origins.js', 'data-businesses.js', 'data-stocks.js', 'data-tech.js', 'data-npcs.js', 'data-events.js',
+  'data-origins.js', 'data-businesses.js', 'data-stocks.js', 'data-venture.js', 'data-tech.js', 'data-npcs.js', 'data-events.js',
   'state.js', 'network.js', 'storage.js', 'settings.js', 'llm.js', 'core.js', 'core-engine.js', 'core-market.js',
-  'core-finance.js', 'core-strategy.js', 'core-stock.js', 'core-research.js', 'core-rival.js', 'extensions.js',
+  'core-finance.js', 'core-strategy.js', 'core-stock.js', 'core-venture.js', 'core-research.js', 'core-rival.js', 'extensions.js',
   'advisor.js', 'events.js', 'npc.js', 'ui.js', 'audio.js'];
 
 // 顶层 const/let 只存在于 context 的词法作用域，需在同一 context 内求值
@@ -711,6 +711,103 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
     G.rpt = _origRpt; G.tickCount = _origTick;
   }
 })();
+
+// ============ 风投线：天使→PE→IPO (#14) ============
+{
+  const G = S.G;
+  // 快照原始风投状态，测完复原，避免污染后续（问世界/Commands）块
+  const _snap = {
+    money: G.money,
+    ventures: JSON.stringify(G.ventures || {}),
+    valuations: JSON.stringify(G.ventureValuations || {}),
+    profitTotal: G.ventureProfitTotal,
+    ipos: G.ventureIpos,
+    investCount: G.ventureInvestCount,
+    ipoExits: G.ventureIpoExits,
+    ipoAnnounced: JSON.stringify(G._ventureIpoAnnounced || {}),
+  };
+  try {
+    const vcos = evalIn('VENTURE_COMPANIES');
+    const vcfg = evalIn('VENTURE_CFG');
+    check('风投：14 家公司定义', Array.isArray(vcos) && vcos.length === 14, 'count=' + (vcos || []).length);
+
+    // 初始化估值基线
+    S.initVentures();
+    check('风投：估值基线 14 家全初始化', Object.keys(G.ventureValuations).length === 14, 'keys=' + Object.keys(G.ventureValuations).length);
+    check('风投：基线估值均>0且有限', Object.values(G.ventureValuations).every(v => Number.isFinite(v) && v > 0), '');
+
+    // 投资：钉住 freshbox 估值=基准 5e6（前面 120 tick 随机游走会偏离，上限断言需确定性）
+    G.money = 5e7;
+    G.ventureValuations.v_freshbox = 5e6;
+    const r1 = S.investVenture('v_freshbox', 1e6);
+    check('风投：投资成功且扣现金', r1 && r1.ok === true && G.money < 5e7 && (G.ventures.v_freshbox && Math.abs(G.ventures.v_freshbox.pct - 0.2) < 1e-9), JSON.stringify(r1));
+    check('风投：投资计数累加', (G.ventureInvestCount || 0) >= 1, 'count=' + G.ventureInvestCount);
+
+    // 49% 持股上限：估值钉 5e6，再投 3e6 → 累计 80% > 49% 应拒绝
+    G.ventureValuations.v_freshbox = 5e6;
+    const rCap = S.investVenture('v_freshbox', 3e6);
+    check('风投：单家 49% 持股上限生效', !(rCap && rCap.ok) && (G.ventures.v_freshbox.pct) === 0.2, JSON.stringify(rCap));
+
+    // 5 家持仓上限（钉住估值防随机游走把小额投资推过 49% 上限）
+    const _pin = { v_petlink: 3e6, v_starcode: 12e6, v_mooncat: 8e6, v_neurofit: 60e6 };
+    Object.keys(_pin).forEach(cid => { G.ventureValuations[cid] = _pin[cid]; });
+    ['v_petlink','v_starcode','v_mooncat','v_neurofit'].forEach(cid => { try { S.investVenture(cid, 1e6); } catch(e) {} });
+    const rFull = S.investVenture('v_medscan', 1e6);
+    check('风投：5 家持仓上限拦截第 6 家', !(rFull && rFull.ok) && rFull && /5/.test(rFull.msg), JSON.stringify(rFull));
+
+    // 100 tick 结算不抛错、估值非负有限
+    let threw = '';
+    for (let i = 0; i < 100; i++) { try { S.updateVentures(); } catch (e) { threw = e.message; break; } }
+    check('风投：100 tick 结算不抛错', !threw, threw);
+    check('风投：结算后估值均有限且>=0', Object.values(G.ventureValuations).every(v => Number.isFinite(v) && v >= 0), '');
+
+    // 超 2×IPO 线强制 IPO（确定性路径；先清宣布记录，防前置 100 tick 已宣布过）
+    const _ipoBefore = G.ventureIpos || 0;
+    G._ventureIpoAnnounced = {};
+    G.ventureValuations['v_solaris'] = 2.1e9;
+    try { S.updateVentures(); } catch (e) {}
+    check('风投：超 2×IPO 线强制宣布 IPO', (G.ventureIpos || 0) > _ipoBefore && (G.ventureValuations.v_solaris || 0) > 2.1e9, 'ipos=' + G.ventureIpos + ' val=' + G.ventureValuations.v_solaris);
+
+    // 退出：freshbox 折算回现金、清仓、累计盈亏记账
+    const rLiq = S.liquidateVenture('v_freshbox');
+    check('风投：退出结算回现金且清仓', rLiq && rLiq.ok === true && !G.ventures.v_freshbox && G.money > 0, JSON.stringify(rLiq));
+    check('风投：累计盈亏为数值', typeof G.ventureProfitTotal === 'number' && Number.isFinite(G.ventureProfitTotal), String(G.ventureProfitTotal));
+
+    // 非法输入
+    const rBad = S.investVenture('not_exist', 1e6);
+    check('风投：不存在公司被拒绝', rBad && rBad.ok === false, JSON.stringify(rBad));
+    const rNoHold = S.liquidateVenture('v_freshbox');
+    check('风投：未持有退出被拒绝', rNoHold && rNoHold.ok === false, JSON.stringify(rNoHold));
+
+    // 统计与 UI 入口
+    const st = S.getVentureStats();
+    check('风投：getVentureStats 结构正确', st && typeof st.cost === 'number' && typeof st.value === 'number' && typeof st.held === 'number', JSON.stringify(st));
+    check('风投：UI 入口导出', typeof UI.ventureInvest === 'function' && typeof UI.ventureLiquidate === 'function' && typeof UI.renderVenturePanel === 'function', '');
+    let pthrew = '';
+    try {
+      const p = document.createElement('div');
+      UI.renderVenturePanel(p);
+    } catch (e) { pthrew = e.message; }
+    check('风投：面板渲染不抛错', !pthrew, pthrew);
+
+    // 成就条件函数可求值（venture_* 分支）
+    const achThrew = '';
+    try {
+      const hasCond = evalIn("ACHIEVEMENTS.some(a => ['venture_invest','venture_ipo_exit','venture_profit'].includes(a.cond.type))");
+      check('风投：3 个风投成就已注册', hasCond === true, 'found=' + hasCond);
+    } catch (e) { achThrew ? check('风投：成就注册检查', false, e.message) : null; }
+  } finally {
+    // 复原，防止污染后续块
+    G.money = _snap.money;
+    G.ventures = JSON.parse(_snap.ventures);
+    G.ventureValuations = JSON.parse(_snap.valuations);
+    G.ventureProfitTotal = _snap.profitTotal;
+    G.ventureIpos = _snap.ipos;
+    G.ventureInvestCount = _snap.investCount;
+    G.ventureIpoExits = _snap.ipoExits;
+    G._ventureIpoAnnounced = JSON.parse(_snap.ipoAnnounced);
+  }
+}
 
 // ============ 问世界：LLM 自由问答 + 一键执行建议 (#13) ============
 {

@@ -69,11 +69,11 @@ function mulberry32(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let
 const LLM_STUB = 'window.LLM = new Proxy({ available: false, isAvailable: function(){ return false; }, queueLength: 0 }, { get: function(t, k) { return (k in t) ? t[k] : function(){ return Promise.resolve(null); }; } });';
 const SCRIPTS = [
   'config-game.js', 'config-businesses.js', 'config-achievements.js', 'config-npcs.js', 'config-extensions.js',
-  'data-origins.js', 'data-businesses.js', 'data-stocks.js', 'data-tech.js', 'data-npcs.js', 'data-events.js',
+  'data-origins.js', 'data-businesses.js', 'data-stocks.js', 'data-venture.js', 'data-tech.js', 'data-npcs.js', 'data-events.js',
   'state.js', 'network.js', 'storage.js', 'settings.js', 'llm.js',
   null, // ← LLM_STUB 占位（必须在 main.js 前）
   'core.js', 'core-engine.js', 'core-market.js', 'core-finance.js',
-  'core-strategy.js', 'core-stock.js', 'core-research.js', 'core-rival.js', 'extensions.js',
+  'core-strategy.js', 'core-stock.js', 'core-venture.js', 'core-research.js', 'core-rival.js', 'extensions.js',
   'advisor.js', 'events.js', 'npc.js', 'ui.js', 'audio.js', 'main.js',
 ];
 

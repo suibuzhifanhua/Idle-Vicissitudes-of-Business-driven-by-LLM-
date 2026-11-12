@@ -271,6 +271,13 @@ window.SGame = (() => {
       // 做空持仓（本轮新增玩法）：stockId → { shares, entryPrice, margin, openTick }
       shortPositions: {},
       shortProfitTotal: 0,
+      // 风投线（天使→PE→IPO）：ventures cid→{entryVal,entryTick,cost,pct,ipo,ipoTick,ipoCorrected}
+      ventures: {},
+      ventureValuations: {},
+      ventureProfitTotal: 0,
+      ventureIpos: 0,
+      ventureInvestCount: 0,
+      ventureIpoExits: 0,
       // 贷款
       loans: [],
       neverLoaned: true,
@@ -807,6 +814,8 @@ window.SGame = (() => {
     if (G.tickCount % CONFIG.STOCK_UPDATE_INTERVAL === 0) window.SGame.updateStockPrices();
     // 12.5 空头每Tick结算：借券利息侵蚀保证金，触及亏损上限强制平仓
     if (G.shortPositions && Object.keys(G.shortPositions).length > 0) window.SGame.processShortPositions();
+    // 12.6 风投估值结算（每 tick）：随机游走 + IPO + 破产
+    if (window.SGame.updateVentures) window.SGame.updateVentures();
     // 13. 贷款利息处理
     processLoans();
     // 14. 节日检查
@@ -2442,6 +2451,9 @@ window.SGame = (() => {
       case 'stress_never_above': return (G.stressMax || 0) <= a.cond.value && G.tickCount > 50;
       case 'stock_profit': return (G.stockProfitTotal || 0) >= a.cond.value;
       case 'short_profit': return (G.shortProfitTotal || 0) >= a.cond.value;
+      case 'venture_invest': return (G.ventureInvestCount || 0) >= (a.cond.count || 1);
+      case 'venture_ipo_exit': return (G.ventureIpoExits || 0) >= (a.cond.count || 1);
+      case 'venture_profit': return (G.ventureProfitTotal || 0) >= a.cond.value;
       case 'supplier_level': return Object.values(G.supplyChain || {}).some(sc => (sc.supplierLv || 1) >= a.cond.level);
       case 'subsidiary_count': return getActiveSubsidiaryCount() >= a.cond.count;
       case 'never_loan': return (G.loans || []).length === 0 && G.tickCount > 200;

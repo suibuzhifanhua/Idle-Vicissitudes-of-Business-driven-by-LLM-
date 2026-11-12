@@ -278,6 +278,7 @@
     { name:'解雇',       key:'fire',         interval:30,                action:(bLog) => autoFireStrategy(bLog) },
     { name:'研发',       key:'research',     interval:25,                action:(bLog) => autoResearchStrategy(bLog) },
     { name:'股票',       key:'invest',       interval:20,                action:(bLog) => autoInvestStrategy(bLog) },
+    { name:'风投',       key:'venture',      interval:30,                action:(bLog) => autoVentureStrategy(bLog) },
     { name:'送礼',       key:'gift',         intervalFn:() => getGameStage() === 'late' ? 10 : 15, action:(bLog) => autoGiftStrategy(bLog) },
     { name:'拉项目',     key:'manualWork',   guard:() => S.getManualWorkCdRemain() === 0,  nocd:true, action:(bLog) => autoManualWorkStrategy() },
     { name:'商务约谈',   key:'negotiate',    interval:30,                action:(bLog) => autoNegotiateStrategy(bLog) },
@@ -310,13 +311,14 @@
     if (am.autoRest === undefined) am.autoRest = true;
     if (am.autoSupplier === undefined) am.autoSupplier = true;
     if (am.autoSubsidiary === undefined) am.autoSubsidiary = true;
+    if (am.autoVenture === undefined) am.autoVenture = false; // 风投高风险，默认关
     am.cooldowns = am.cooldowns || {};
     const now = G.tickCount;
     const cd = (key, interval) => (am.cooldowns[key] && (now - am.cooldowns[key]) < interval);
     const setCd = (key) => { am.cooldowns[key] = now; };
 
     // 初始化统计（兜底初始化，字段名必须与 initState 中的 autoStats 保持一致，否则计数器累计到未定义的字段将产生 NaN）
-    if (!G.autoStats) G.autoStats = { startedAt:Date.now(), totalTicks:0, totalIncome:0, totalExpense:0, decisions:0, businessesOpened:0, businessesUpgraded:0, employeesHired:0, employeesFired:0, regionsUnlocked:0, researchesStarted:0, stocksBought:0, stocksSold:0, giftsGiven:0, loansTaken:0, loansRepaid:0, manualWorks:0 };
+    if (!G.autoStats) G.autoStats = { startedAt:Date.now(), totalTicks:0, totalIncome:0, totalExpense:0, decisions:0, businessesOpened:0, businessesUpgraded:0, employeesHired:0, employeesFired:0, regionsUnlocked:0, researchesStarted:0, stocksBought:0, stocksSold:0, giftsGiven:0, loansTaken:0, loansRepaid:0, manualWorks:0, venturesInvested:0, venturesExited:0 };
     G.autoStats.totalTicks++;
 
     // 阶段自适应冷却倍率
@@ -371,7 +373,7 @@
       if (!s) continue;
 
       // 检查是否启用（映射 s.key → am 字段名）
-      var keyMap = { hire:'autoHire',fire:'autoFire',repay:'autoRepay',unlock:'autoUnlockRegion',openBiz:'autoOpenBusiness',upgrade:'autoUpgradeBusiness',research:'autoResearch',invest:'autoInvest',gift:'autoGift',manualWork:'autoManualWork',negotiate:'autoNegotiate',assetBuy:'autoAssetBuy',assetPawn:'autoAssetPawn',rest:'autoRest' };
+      var keyMap = { hire:'autoHire',fire:'autoFire',repay:'autoRepay',unlock:'autoUnlockRegion',openBiz:'autoOpenBusiness',upgrade:'autoUpgradeBusiness',research:'autoResearch',invest:'autoInvest',gift:'autoGift',manualWork:'autoManualWork',negotiate:'autoNegotiate',assetBuy:'autoAssetBuy',assetPawn:'autoAssetPawn',rest:'autoRest',venture:'autoVenture' };
       var amKey = keyMap[s.key] || s.key;
       if (am[amKey] === false) {
         SGame.DEBUG && console.log('[DIAG] 策略 ' + s.name + ' 被禁用(am[amKey]=false)');
@@ -891,6 +893,55 @@
         if (G.autoStats) G.autoStats.stocksBought++;
       }
     });
+  }
+
+  // 风投托管 (#14)：IPO 溢价立即退出 / 盈利 40%+ 且涨势停 → 止盈 / 亏损 30% → 止损 / 估值低于基础价 70% 且现金充裕 → 低吸
+  function autoVentureStrategy(bLog) {
+    if (!G || typeof VENTURE_COMPANIES === 'undefined') return;
+    const cfg = (typeof VENTURE_CFG !== 'undefined') ? VENTURE_CFG : null;
+    if (!cfg || typeof SGame.investVenture !== 'function') return;
+    const vcos = VENTURE_COMPANIES;
+
+    // === 退出 ===
+    Object.keys(G.ventures || {}).forEach(cid => {
+      const h = G.ventures[cid];
+      if (!h) return;
+      const c = vcos.find(x => x.id === cid);
+      if (!c) return;
+      const val = (G.ventureValuations || {})[cid] || 0;
+      if (val <= 0) return;
+      const pnl = h.entryVal > 0 ? (val / h.entryVal - 1) : 0;
+      if (h.ipo && !h.ipoCorrected) {
+        const r = SGame.liquidateVenture(cid);
+        if (r && r.ok) { bLog('风投IPO退出 ' + c.name + ' ' + (r.profit >= 0 ? '+' : '') + (SGame.formatMoney ? SGame.formatMoney(r.profit) : r.profit)); if (G.autoStats) G.autoStats.venturesExited++; }
+        return;
+      }
+      if (pnl >= 0.4) {
+        const chg = (typeof SGame.ventureChange === 'function') ? SGame.ventureChange(cid) : 0;
+        if (chg <= 0) { // 涨势停了才走，还在涨就拿着
+          const r = SGame.liquidateVenture(cid);
+          if (r && r.ok) { bLog('风投止盈 ' + c.name + ' +' + (pnl * 100).toFixed(0) + '%'); if (G.autoStats) G.autoStats.venturesExited++; }
+        }
+      } else if (pnl <= -0.3) {
+        const r = SGame.liquidateVenture(cid);
+        if (r && r.ok) { bLog('风投止损 ' + c.name + ' ' + (pnl * 100).toFixed(0) + '%'); if (G.autoStats) G.autoStats.venturesExited++; }
+      }
+    });
+
+    // === 买入：持仓 <3、现金 >500万、估值低于基础价 70%（低吸）===
+    const held = Object.keys(G.ventures || {}).length;
+    if (held >= 3) return;
+    if (G.money < 5e6) return;
+    const candidates = vcos
+      .filter(c => !G.ventures[c.id])
+      .filter(c => { const v = (G.ventureValuations || {})[c.id] || 0; return v > 0 && v < c.baseVal * 0.7; })
+      .sort((a, b) => ((G.ventureValuations[a.id] || 1) / a.baseVal) - ((G.ventureValuations[b.id] || 1) / b.baseVal));
+    if (candidates.length === 0) return;
+    const c = candidates[0];
+    const amount = Math.floor(G.money * 0.1);
+    if (amount <= 0) return;
+    const r = SGame.investVenture(c.id, amount);
+    if (r && r.ok) { bLog('风投低吸 ' + c.name + ' ' + (SGame.formatMoney ? SGame.formatMoney(amount) : amount)); if (G.autoStats) G.autoStats.venturesInvested++; }
   }
 
   function autoGiftStrategy(bLog) {
