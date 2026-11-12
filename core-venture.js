@@ -78,8 +78,11 @@
       val = Math.max(val, c.baseVal * cfg.FLOOR_FACTOR); // 估值下限（破产除外不归零）
 
       // IPO：达标公司小概率宣布；超过达标线 2 倍强制 IPO；只宣布一次（防重复 bump 爆炸）
-      const announcedTick = held ? held.ipoTick : (g._ventureIpoAnnounced[cid] || 0);
-      if (!announcedTick && val >= cfg.IPO_THRESHOLD) {
+      // 注意：宣布标记必须用 undefined 语义判断——记录值可能为 0（tickCount=0 的测试环境），
+      // 用 truthy 判断会把"tick 0 宣布"误判为未宣布 → 每 tick 重复 bump
+      const announced = held ? !!held.ipo : (g._ventureIpoAnnounced[cid] !== undefined);
+      const announcedTick = held ? (held.ipoTick || 0) : (g._ventureIpoAnnounced[cid] || 0);
+      if (!announced && val >= cfg.IPO_THRESHOLD) {
         const prob = val >= cfg.IPO_THRESHOLD * cfg.IPO_FORCE_FACTOR ? 1 : cfg.IPO_PROB;
         if (Math.random() < prob) {
           const bump = cfg.IPO_BUMP_MIN + Math.random() * (cfg.IPO_BUMP_MAX - cfg.IPO_BUMP_MIN);
@@ -91,7 +94,7 @@
         }
       }
       // IPO 后修正：30 tick 未卖出则估值回落（持仓一次性 ×0.6；未持仓持续缓降回基础估值附近）
-      if (announcedTick && (g.tickCount || 0) - announcedTick >= cfg.IPO_CORRECT_TICKS) {
+      if (announced && (g.tickCount || 0) - announcedTick >= cfg.IPO_CORRECT_TICKS) {
         if (held && !held.ipoCorrected) {
           val = val * cfg.IPO_CORRECT_FACTOR;
           held.ipoCorrected = true;
