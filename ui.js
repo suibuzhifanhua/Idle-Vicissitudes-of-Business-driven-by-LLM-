@@ -4502,6 +4502,104 @@ window.UI = (() => {
   }
 
   // ========== 智能顾问系统 ==========
+  // ---- 问世界：自由问答 + 一键执行建议 (#13) ----
+  var _askWorldLoading = false;
+  var _askWorldPendingActions = [];
+
+  function askWorldSectionHtml() {
+    var quick = ['下一步做什么？', '先升级哪个业务？', '现在该招聘吗？', '经济走势如何？'];
+    var chips = quick.map(function(q) {
+      return '<button data-q="' + escapeHtml(q) + '" onclick="UI.askWorldQuick(this)" style="padding:3px 8px;font-size:11px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);border-radius:10px;cursor:pointer;">' + escapeHtml(q) + '</button>';
+    }).join('');
+    return '<div id="ask-world-section" style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px;">' +
+      '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">🌍 问世界 <span style="font-size:11px;color:var(--text-muted);font-weight:400;">向顾问询问任何经营问题，LLM 离线时由本地规则应答</span></div>' +
+      '<div style="display:flex;gap:6px;margin-bottom:6px;">' +
+        '<input id="ask-world-input" type="text" maxlength="120" placeholder="例如：下一步最该做什么？" onkeydown="if(event.key===\'Enter\')UI.sendAskWorld()" style="flex:1;padding:6px 8px;font-size:12px;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;outline:none;">' +
+        '<button id="ask-world-send" onclick="UI.sendAskWorld()" style="padding:6px 14px;font-size:12px;border:1px solid var(--purple);background:rgba(168,85,247,0.15);color:var(--text-primary);border-radius:6px;cursor:pointer;">问</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' + chips + '</div>' +
+      '<div id="ask-world-answer" style="font-size:12px;color:var(--text-secondary);line-height:1.7;">向顾问提问，可一键执行的建议在回答下方显示执行按钮。</div>' +
+    '</div>';
+  }
+
+  function _askWorldActionLabel(a) {
+    var label = a.type === 'upgrade' ? '升级' : a.type === 'open' ? '开业' : a.type === 'hire' ? '招聘 1 名' : '解锁';
+    var name = a.target;
+    try {
+      if ((a.type === 'upgrade' || a.type === 'open') && typeof BUSINESS_DEFS !== 'undefined') {
+        var b = BUSINESS_DEFS.find(function(x) { return x.id === a.target; }); if (b) name = b.name;
+      } else if (a.type === 'hire' && typeof EMP_ROLES !== 'undefined') {
+        var r = EMP_ROLES.find(function(x) { return x.id === a.target; }); if (r) name = r.name;
+      } else if (a.type === 'unlockRegion' && typeof REGIONS !== 'undefined' && REGIONS[a.target]) {
+        name = REGIONS[a.target].name;
+      }
+    } catch (e) { /* 回退 target */ }
+    return label + '「' + name + '」' + (a.reason ? '（' + a.reason + '）' : '');
+  }
+
+  function sendAskWorld() {
+    if (typeof Advisor === 'undefined' || !Advisor.askWorld) return;
+    var input = document.getElementById('ask-world-input');
+    var ansEl = document.getElementById('ask-world-answer');
+    var q = input ? String(input.value || '').trim() : '';
+    if (!q) {
+      if (typeof showToast === 'function') showToast('🌍', '问世界', '请输入问题再发送');
+      return;
+    }
+    _askWorldLoading = true;
+    _askWorldPendingActions = [];
+    if (input) input.disabled = true;
+    var btn = document.getElementById('ask-world-send');
+    if (btn) btn.disabled = true;
+    if (ansEl) ansEl.innerHTML = '🤔 顾问思考中…（LLM 在线时约需数十秒，离线时秒回）';
+
+    Advisor.askWorld(q).then(function(result) {
+      _askWorldLoading = false;
+      if (input) input.disabled = false;
+      if (btn) btn.disabled = false;
+      if (!ansEl) return;
+      if (!result) { ansEl.innerHTML = '⚠️ 顾问返回为空，请稍后再试。'; return; }
+      var html = '';
+      if (result.error && result.error !== 'busy') {
+        html += '<div class="advisor-warning" style="margin-bottom:6px;">⚠️ ' + escapeHtml(result.error) + '</div>';
+      }
+      var text = escapeHtml((result.text || '（无回答）').trim())
+        .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+        .replace(/\n/g, '<br>');
+      html += '<div style="color:var(--text-primary);">' + text + '</div>';
+      var actions = result.actions || [];
+      if (actions.length) {
+        _askWorldPendingActions = actions;
+        html += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">' +
+          actions.map(function(a, i) {
+            return '<button onclick="UI.executeAdvisorAction(' + i + ')" style="align-self:flex-start;padding:5px 10px;font-size:12px;border:1px solid var(--green,#22c55e);background:rgba(34,197,94,0.12);color:var(--text-primary);border-radius:6px;cursor:pointer;">⚡ 一键执行：' + escapeHtml(_askWorldActionLabel(a)) + '</button>';
+          }).join('') +
+          '</div>';
+      }
+      ansEl.innerHTML = html;
+    }).catch(function(err) {
+      _askWorldLoading = false;
+      if (input) input.disabled = false;
+      if (btn) btn.disabled = false;
+      if (ansEl) ansEl.innerHTML = '⚠️ 提问失败：' + escapeHtml(err && err.message ? err.message : String(err));
+    });
+  }
+
+  function askWorldQuick(el) {
+    var input = document.getElementById('ask-world-input');
+    if (input && el && el.dataset && el.dataset.q) input.value = el.dataset.q;
+    sendAskWorld();
+  }
+
+  function executeAdvisorAction(idx) {
+    var a = _askWorldPendingActions[idx];
+    if (!a || typeof Advisor === 'undefined' || !Advisor.executeAction) return;
+    var r = Advisor.executeAction(a);
+    if (typeof showToast === 'function') {
+      showToast(r && r.ok ? '✅' : '⚠️', '问世界·一键执行', (r && r.msg) || '已执行', 3000);
+    }
+  }
+
   function openAdvisor() {
     const modal = document.getElementById('modal-advisor');
     const content = document.getElementById('advisor-content');
@@ -4513,13 +4611,13 @@ window.UI = (() => {
 
     // 调用顾问系统
     if (typeof Advisor === 'undefined' || !Advisor.getAdvice) {
-      content.innerHTML = '<div class="advisor-error">⚠️ 顾问系统未加载，请刷新页面后重试。</div>';
+      content.innerHTML = '<div class="advisor-error">⚠️ 顾问系统未加载，请刷新页面后重试。</div>' + askWorldSectionHtml();
       return;
     }
 
     Advisor.getAdvice().then(function(result) {
       if (!result) {
-        content.innerHTML = '<div class="advisor-error">⚠️ 顾问系统返回为空，请稍后再试。</div>';
+        content.innerHTML = '<div class="advisor-error">⚠️ 顾问系统返回为空，请稍后再试。</div>' + askWorldSectionHtml();
         return;
       }
 
@@ -4550,9 +4648,12 @@ window.UI = (() => {
       // 提示
       html += '<div class="advisor-hint">💡 建议在托管模式下让 AI 自动执行，或直接手动操作。</div>';
 
+      // 问世界区块 (#13)
+      html += askWorldSectionHtml();
+
       content.innerHTML = html;
     }).catch(function(err) {
-      content.innerHTML = '<div class="advisor-error">⚠️ 获取建议失败：' + (err.message || err) + '</div>';
+      content.innerHTML = '<div class="advisor-error">⚠️ 获取建议失败：' + (err.message || err) + '</div>' + askWorldSectionHtml();
     });
   }
 
@@ -4701,6 +4802,8 @@ window.UI = (() => {
     renderIncomeTrendChart, renderBizPieChart,
     toggleTheme,
     openAdvisor, closeAdvisor,
+    // 问世界 (#13)
+    sendAskWorld, askWorldQuick, executeAdvisorAction,
     triggerBalanceCheck, closeBalanceModal,
     updateLLMQueueStatus,
 

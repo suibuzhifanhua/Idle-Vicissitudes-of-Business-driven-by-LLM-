@@ -5342,8 +5342,10 @@ window.SGame = (() => {
       importSave: (slot, payload) => importSave(slot, payload),
       deleteSave: (slot) => deleteSaveSlot(slot),
       work: () => manualWork(),
-      openBusiness: (bizId, regionId) => openBusiness(bizId, regionId),
-      upgradeBusiness: (bizId) => upgradeBusiness(bizId),
+      // P1 修复：core.js 作用域无 openBusiness/upgradeBusiness（实现在 ui.js），
+      // 原写法调用即 ReferenceError；改为惰性解析 UI 实现（core.js 先于 ui.js 加载，不能直接引用）
+      openBusiness: (bizId) => (typeof UI !== 'undefined' && UI.openBusiness ? UI.openBusiness(bizId) : { ok: false, msg: 'UI 未就绪' }),
+      upgradeBusiness: (bizId) => (typeof UI !== 'undefined' && UI.upgradeBusiness ? UI.upgradeBusiness(bizId) : { ok: false, msg: 'UI 未就绪' }),
       hireEmployee: (role, candidate) => hireEmployee(role, candidate),
       fireEmployee: (employeeId) => fireEmployee(employeeId),
       chooseEvent: (eventId, index) => EventSystem.choose(eventId, index),

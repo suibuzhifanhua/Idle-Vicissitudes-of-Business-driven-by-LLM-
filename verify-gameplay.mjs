@@ -222,7 +222,9 @@ if (errors.length) {
 }
 
 // 真实 llm.js 已通过模块加载检查；玩法验证阶段改用离线替身，避免重试链干扰 Tick。
-sandbox.LLM = new Proxy({ available: false, isAvailable: () => false, queueLength: 0 }, {
+// checking 必须是显式 false：Advisor._doGetAdvice 有 while (LLM.checking && waited < 10000)
+// 轮询等待，Proxy 默认对缺失 key 返回函数（truthy）→ 沙箱 setTimeout 桩永不触发 → 永久挂起。
+sandbox.LLM = new Proxy({ available: false, checking: false, isAvailable: () => false, queueLength: 0 }, {
   get: (target, key) => (key in target ? target[key] : () => Promise.resolve(null)),
 });
 
@@ -709,6 +711,83 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
     G.rpt = _origRpt; G.tickCount = _origTick;
   }
 })();
+
+// ============ 问世界：LLM 自由问答 + 一键执行建议 (#13) ============
+{
+  const G = S.G;
+  const A = sandbox.Advisor;
+  // prompt 构建：含问题、状态快照、可执行动作清单与输出格式约定
+  let prompt = '';
+  try { prompt = A.buildAskWorldPrompt('下一步该做什么？', '资金: ¥100000') || ''; } catch (e) { prompt = 'ERR:' + e.message; }
+  check('问世界：prompt 含玩家问题', prompt.includes('下一步该做什么？'), prompt.slice(0, 60));
+  check('问世界：prompt 含状态快照', prompt.includes('资金: ¥100000') && prompt.includes('游戏状态快照'), '');
+  check('问世界：prompt 含可执行动作清单与格式约定', prompt.includes('可一键执行的动作清单') && prompt.includes('[ACTIONS]'), '');
+
+  // parseActions：合法项保留、非法 type/不存在 target 丢弃、块从显示文本移除
+  const p1 = A.parseActions('建议升级。\n[ACTIONS]\n[{"type":"upgrade","target":"retail","reason":"回本快"},{"type":"fly","target":"x"},{"type":"upgrade","target":"not_exist_biz"}]\n[/ACTIONS]\n结尾。');
+  check('问世界：parseActions 仅保留合法动作', p1.actions.length === 1 && p1.actions[0].type === 'upgrade' && p1.actions[0].target === 'retail', JSON.stringify(p1.actions));
+  check('问世界：parseActions 移除块保留正文', p1.display.includes('建议升级') && p1.display.includes('结尾。') && !p1.display.includes('[ACTIONS]'), p1.display.slice(0, 60));
+  const p2 = A.parseActions('没有块的回答');
+  check('问世界：无块时原文不变且无动作', p2.actions.length === 0 && p2.display === '没有块的回答', '');
+  const p3 = A.parseActions('坏块 [ACTIONS]\n{not json}\n[/ACTIONS]');
+  check('问世界：坏 JSON 不抛错且动作置空', p3.actions.length === 0 && p3.display.length > 0, p3.display.slice(0, 30));
+
+  // 空问题 / 离线规则兜底（沙箱 LLM.available=false → 必走本地规则；askWorld 为 async 需 await）
+  const rEmpty = await A.askWorld('   ');
+  check('问世界：空问题返回 empty_question', rEmpty && rEmpty.error === 'empty_question', rEmpty && rEmpty.error);
+  const rUpgrade = await A.askWorld('现在该升级什么业务？');
+  check('问世界：离线规则应答非空(fromLLM=false)', rUpgrade && rUpgrade.fromLLM === false && (rUpgrade.text || '').length > 10, rUpgrade && rUpgrade.text.slice(0, 40));
+  const rHireQ = await A.askWorld('现在该招聘吗？');
+  check('问世界：招聘类问题命中员工路由', (rHireQ.text || '').includes('人'), rHireQ && rHireQ.text.slice(0, 50));
+  const rNormal = await A.askWorld('经济走势如何？');
+  check('问世界：经济类问题命中经济路由', (rNormal.text || '').includes('现金'), rNormal && rNormal.text.slice(0, 50));
+
+  // 一键执行：upgrade 实际升 1 级 / hire 走 batchHire 真实接口 / 非法 target 不抛错
+  const _origMoney = G.money;
+  const _origRetail = G.businesses.retail ? JSON.parse(JSON.stringify(G.businesses.retail)) : null;
+  const _origEmpLen = (G.employees || []).length;
+  G.money = 1e7;
+  if (G.businesses.retail) { G.businesses.retail.level = 1; }
+  else { G.businesses.retail = { level: 1, region: 'yongning', unlocked: true }; }
+  let rUp = null;
+  try { rUp = A.executeAction({ type: 'upgrade', target: 'retail' }); } catch (e) { rUp = { ok: false, msg: 'THREW:' + e.message }; }
+  check('问世界：executeAction upgrade 实际升级', rUp && rUp.ok === true && G.businesses.retail.level === 2, JSON.stringify(rUp) + ' lv=' + (G.businesses.retail && G.businesses.retail.level));
+  let rHire = null;
+  try { rHire = A.executeAction({ type: 'hire', target: 'intern' }); } catch (e) { rHire = { ok: false, msg: 'THREW:' + e.message }; }
+  check('问世界：executeAction hire 走 batchHire 不抛错', rHire && typeof rHire.ok === 'boolean' && (G.employees || []).length >= _origEmpLen, JSON.stringify(rHire));
+  let rBad = null;
+  try { rBad = A.executeAction({ type: 'upgrade', target: 'not_exist_biz' }); } catch (e) { rBad = { ok: false, msg: 'THREW:' + e.message }; }
+  check('问世界：非法 target 不抛错返回 ok:false', rBad && rBad.ok === false, JSON.stringify(rBad));
+  // 状态复原
+  G.money = _origMoney;
+  if (_origRetail) G.businesses.retail = _origRetail;
+
+  // 历史记录（3 次有效问答应入史）
+  check('问世界：历史记录已写入(≥3 条)', (A.getAskWorldHistory() || []).length >= 3, String(A.getAskWorldHistory().length));
+}
+
+// Commands.openBusiness/upgradeBusiness P1 修复验证 + 顾问面板含问世界区块
+{
+  const G = S.G;
+  const _origMoney = G.money;
+  let cmdErr = '';
+  try {
+    S.Commands.upgradeBusiness('tech');  // 修复前：core.js 作用域无 upgradeBusiness → ReferenceError
+  } catch (e) { cmdErr = e.message; }
+  check('Commands.upgradeBusiness 不再 ReferenceError', !cmdErr, cmdErr);
+  check('UI 导出含问世界入口', typeof UI.sendAskWorld === 'function' && typeof UI.executeAdvisorAction === 'function' && typeof UI.askWorldQuick === 'function', '');
+  // openAdvisor 渲染（getAdvice 离线走规则建议，异步完成后断言问世界区块存在）
+  try {
+    UI.openAdvisor();
+    await new Promise(r => setTimeout(r, 200));
+    const c = document.getElementById('advisor-content');
+    check('顾问面板渲染含问世界区块', !!(c && c.innerHTML && c.innerHTML.includes('ask-world-section')), '');
+  } catch (e) {
+    check('顾问面板渲染含问世界区块', false, 'THREW:' + e.message);
+  }
+  // 复原（upgradeBusiness 可能已扣钱升级 tech，恢复钱数）
+  G.money = _origMoney;
+}
 
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;

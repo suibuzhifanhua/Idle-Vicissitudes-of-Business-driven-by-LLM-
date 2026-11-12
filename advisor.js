@@ -506,6 +506,300 @@ window.Advisor = (function() {
     return result;
   }
 
+  // ========== 问世界：LLM 自由问答 + 一键执行建议 (#13) ==========
+  // 设计：
+  // - 玩家任意中文问题 + buildStateSummary 状态快照 + 实时"可执行动作清单"拼 prompt
+  // - 回答末尾可选 [ACTIONS] JSON 块（type 白名单：upgrade/open/hire/unlockRegion），
+  //   parseActions 解析并校验 target 真实性，UI 渲染"一键执行"按钮
+  // - LLM 不可用（available=false / 调用失败 / 返回空）→ ruleBasedAskWorld 本地规则应答，
+  //   同样支持 ACTIONS 块，离线也能一键执行
+  // - 历史保留最近 10 条于内存（_askWorldHistory），不写入存档
+  var _askWorldHistory = [];
+  var _askWorldPending = false;
+
+  var ASK_ACTION_META = {
+    upgrade: '升级',
+    open: '开业',
+    hire: '招聘',
+    unlockRegion: '解锁区域',
+  };
+
+  function _askActionName(type, target) {
+    try {
+      if (type === 'upgrade' || type === 'open') {
+        var b = (typeof BUSINESS_DEFS !== 'undefined' ? BUSINESS_DEFS : []).find(function(x) { return x.id === target; });
+        return b ? b.name : target;
+      }
+      if (type === 'hire') {
+        var r = (typeof EMP_ROLES !== 'undefined' ? EMP_ROLES : []).find(function(x) { return x.id === target; });
+        return r ? r.name : target;
+      }
+      if (type === 'unlockRegion') {
+        var rg = (typeof REGIONS !== 'undefined' && REGIONS[target]) ? REGIONS[target].name : target;
+        return rg;
+      }
+    } catch (e) { /* 忽略，回退 target */ }
+    return target;
+  }
+
+  // 汇总"当前真正可执行"的动作清单（prompt 与一键执行共用同一事实来源）
+  function buildAvailableActions() {
+    var G = (typeof SGame !== 'undefined' && SGame.G) ? SGame.G : null;
+    var out = [];
+    if (!G || !G.businesses || typeof BUSINESS_DEFS === 'undefined') return out;
+    BUSINESS_DEFS.forEach(function(b) {
+      var st = G.businesses[b.id];
+      var lv = st ? (st.level || 0) : 0;
+      if (lv === 0) {
+        // 未开业：满足解锁条件才列入
+        if ((!b.unlockMoney || G.money >= b.unlockMoney) && (!b.unlockAct || (G.currentAct || 0) >= (b.unlockAct || 0))) {
+          var openCost = (b.levels && b.levels[0] && b.levels[0].cost) ? b.levels[0].cost * 10000 : 0;
+          out.push({ type: 'open', target: b.id, name: b.name, detail: openCost > 0 ? '开业费 ' + openCost : '免费开业' });
+        }
+      } else if (lv < b.levels.length) {
+        var next = b.levels[lv];
+        if (next && next.cost > 0) {
+          out.push({ type: 'upgrade', target: b.id, name: b.name, detail: 'Lv.' + lv + '→Lv.' + (lv + 1) + '，费用 ' + next.cost * 10000 });
+        }
+      }
+    });
+    if (typeof EMP_ROLES !== 'undefined' && Array.isArray(G.employees)) {
+      EMP_ROLES.forEach(function(r) {
+        if (!r.req) out.push({ type: 'hire', target: r.id, name: r.name, detail: '基础月薪 ' + r.baseSalary + ' 万' });
+      });
+    }
+    if (typeof REGIONS !== 'undefined' && Array.isArray(G.unlockedRegions)) {
+      Object.keys(REGIONS).forEach(function(rid) {
+        if (G.unlockedRegions.indexOf(rid) >= 0) return;
+        var rg = REGIONS[rid];
+        var cond = (rg && rg.unlockCond) || {};
+        var ok = true;
+        if (cond.money && G.money < cond.money) ok = false;
+        if (cond.reputation && (G.reputation || 0) < cond.reputation) ok = false;
+        if (cond.act && (G.currentAct || 0) < cond.act) ok = false;
+        if (rg.actUnlock && (G.currentAct || 0) < rg.actUnlock) ok = false;
+        if (ok) out.push({ type: 'unlockRegion', target: rid, name: rg.name, detail: '解锁条件已满足' });
+      });
+    }
+    return out;
+  }
+
+  // 拼装问世界 prompt：问题 + 状态快照 + 可执行动作清单 + 输出格式约定
+  function buildAskWorldPrompt(question, summary) {
+    if (!question) return null;
+    var avail = buildAvailableActions();
+    var lines = [];
+    lines.push('【玩家问题】');
+    lines.push(question);
+    lines.push('');
+    lines.push('【游戏状态快照】');
+    lines.push(summary || '（无）');
+    lines.push('');
+    lines.push('【当前可一键执行的动作清单】（target 必须原样使用清单中的 id，禁止编造）');
+    if (avail.length === 0) {
+      lines.push('（当前没有满足条件的一键动作）');
+    } else {
+      avail.forEach(function(a) { lines.push('- ' + a.type + ': ' + a.target + '（' + a.name + '，' + a.detail + '）'); });
+    }
+    lines.push('');
+    lines.push('回答要求：');
+    lines.push('1. 直接回答玩家的问题，先结论后依据，简明扼要（200字以内为佳）。');
+    lines.push('2. 若建议的动作在上述清单中，请在回答末尾附加机器可读块，供玩家一键执行：');
+    lines.push('[ACTIONS]');
+    lines.push('[{"type":"upgrade","target":"示例id","reason":"简短中文理由"}]');
+    lines.push('[/ACTIONS]');
+    lines.push('3. 无可执行建议时不要输出[ACTIONS]块；type 只能是 upgrade / open / hire / unlockRegion。');
+    return lines.join('\n');
+  }
+
+  // 动作目标存在性校验（parseActions 与 executeAction 共用，防止 LLM 幻觉 target 被静默吞掉）
+  function _askActionExists(type, target) {
+    try {
+      if (type === 'upgrade' || type === 'open') {
+        return (typeof BUSINESS_DEFS !== 'undefined') && BUSINESS_DEFS.some(function(b) { return b.id === target; });
+      }
+      if (type === 'hire') {
+        return (typeof EMP_ROLES !== 'undefined') && EMP_ROLES.some(function(r) { return r.id === target; });
+      }
+      if (type === 'unlockRegion') {
+        return (typeof REGIONS !== 'undefined') && !!REGIONS[target];
+      }
+    } catch (e) { /* 忽略 */ }
+    return false;
+  }
+
+  // 解析回答中的 [ACTIONS] 块：校验 type 白名单 + target 真实存在；块从显示文本中移除
+  function parseActions(text) {
+    var result = { display: text || '', actions: [] };
+    if (!text) return result;
+    var m = text.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+    if (!m) return result;
+    result.display = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).replace(/\n{3,}/g, '\n\n').trim();
+    try {
+      var arr = JSON.parse(m[1]);
+      if (Array.isArray(arr)) {
+        arr.forEach(function(a) {
+          if (!a || typeof a !== 'object') return;
+          if (typeof ASK_ACTION_META[a.type] === 'undefined') return;
+          if (typeof a.target !== 'string' || !a.target) return;
+          if (!_askActionExists(a.type, a.target)) return;
+          result.actions.push({ type: a.type, target: a.target, reason: typeof a.reason === 'string' ? a.reason.slice(0, 60) : '' });
+        });
+      }
+    } catch (e) { /* JSON 损坏：保留显示文本，动作置空 */ }
+    return result;
+  }
+
+  // LLM 离线时的本地规则问答（关键词路由，可输出 ACTIONS 块走同一条执行管线）
+  function ruleBasedAskWorld(question) {
+    var G = (typeof SGame !== 'undefined' && SGame.G) ? SGame.G : null;
+    if (!G) return '游戏尚未开始，无法回答。';
+    var q = String(question || '');
+    var ql = q.toLowerCase();
+    var has = function() { for (var i = 0; i < arguments.length; i++) if (ql.indexOf(arguments[i].toLowerCase()) >= 0) return true; return false; };
+    var fmt = (typeof SGame.formatMoney === 'function') ? SGame.formatMoney : function(v) { return String(v); };
+    var avail = buildAvailableActions();
+    var body = '';
+    var actions = [];
+
+    if (has('升级', '扩张', '投资方向')) {
+      var best = null;
+      avail.forEach(function(a) {
+        if (a.type !== 'upgrade') return;
+        var b = BUSINESS_DEFS.find(function(x) { return x.id === a.target; });
+        if (!b) return;
+        var lv = G.businesses[a.target].level;
+        var inc = (b.levels[lv].income - b.levels[lv - 1].income) * 10000;
+        var cost = b.levels[lv].cost * 10000;
+        if (inc > 0 && G.money >= cost) {
+          var payback = cost / inc;
+          if (!best || payback < best.payback) best = { a: a, payback: payback };
+        }
+      });
+      if (best) {
+        body = '当前性价比最高：' + best.a.detail + '，预计约 ' + Math.ceil(best.payback) + ' 个 Tick 回本。';
+        actions.push({ type: 'upgrade', target: best.a.target, reason: '回本周期最短' });
+      } else {
+        body = '当前没有资金允许的高性价比升级，建议先积累资金再扩张。';
+      }
+    } else if (has('招聘', '员工', '招人')) {
+      var empCount = (G.employees || []).length;
+      body = '当前团队 ' + empCount + ' 人。' + (empCount < 5 && G.money > 1000000
+        ? '小团队阶段招聘性价比最高，建议扩编。'
+        : '团队规模已不小，按需补充即可。');
+      if (empCount < 5 && G.money > 1000000 && (typeof EMP_ROLES !== 'undefined') && EMP_ROLES.some(function(r) { return r.id === 'intern'; })) {
+        actions.push({ type: 'hire', target: 'intern', reason: '小团队扩编' });
+      }
+    } else if (has('区域', '解锁')) {
+      var rgs = avail.filter(function(a) { return a.type === 'unlockRegion'; });
+      body = rgs.length
+        ? '已满足条件可解锁：' + rgs.map(function(a) { return a.name; }).join('、') + '。'
+        : '暂无满足解锁条件的区域，先提升资金或声誉。';
+      if (rgs.length) actions.push({ type: 'unlockRegion', target: rgs[0].target, reason: '条件已满足' });
+    } else if (has('经济', '走势', '行情', '股市', '股票')) {
+      var econDesc = { boom: '经济繁荣期，扩张窗口', crisis: '经济危机，收入降至70%，收缩过冬', recession: '经济萧条，收入-15%，稳健经营', stable: '经济平稳，按部就班' }[G.economicState] || '经济状态：' + (G.economicState || 'stable');
+      body = econDesc + '。现金 ' + fmt(G.money) + '。';
+    } else if (has('压力')) {
+      body = '当前压力 ' + (G.stress || 0) + '。' + ((G.stress || 0) > 70
+        ? '压力偏高，收入被大幅削减，建议减少主动操作，等压力自然回落。'
+        : '压力可控，正常经营。');
+    } else if (has('风险', '危险', '亏')) {
+      body = '主要风险：' + (G.economicState === 'crisis' ? '经济危机是最大威胁，' : '') +
+        '现金 ' + fmt(G.money) + '，' + ((G.stress || 0) > 70 ? '压力过高正在侵蚀收入，' : '') +
+        '建议保留至少 3 个月维护成本的现金缓冲。';
+    } else {
+      // 默认：总览 + 顾问推荐一个当前可行动作
+      body = '现金 ' + fmt(G.money) + '，声誉 ' + (G.reputation || 0) + '，等级「' + (G.rank || '-') + '」。' +
+        (G.economicState === 'boom' ? '正值繁荣，建议扩张。' : '建议稳扎稳打。');
+      if (avail.length) {
+        var first = avail.find(function(a) { return a.type === 'upgrade'; }) || avail[0];
+        actions.push({ type: first.type, target: first.target, reason: '顾问推荐' });
+      }
+    }
+    if (actions.length) {
+      body += '\n[ACTIONS]\n' + JSON.stringify(actions) + '\n[/ACTIONS]';
+    }
+    return body;
+  }
+
+  // 问世界主入口（LLM 优先，规则兜底；解析 ACTIONS；记录历史）
+  async function askWorld(question) {
+    var G = (typeof SGame !== 'undefined' && SGame.G) ? SGame.G : null;
+    var q = String(question || '').trim();
+    if (!q) return { text: '', actions: [], fromLLM: false, error: 'empty_question' };
+    if (!G) return { text: '', actions: [], fromLLM: false, error: '游戏尚未开始' };
+    if (_askWorldPending) return { text: '', actions: [], fromLLM: false, error: 'busy' };
+    _askWorldPending = true;
+
+    var system = `你是《商海浮沉》游戏内的中文商业顾问，可以回答玩家关于本游戏经营的任何问题（业务升级、招聘、区域扩张、科技研发、股市、经济周期、事件应对等）。以下规则必须严格遵守：
+1. 全程使用简体中文回复，每一个字都必须是中文（动作清单中的 id 除外）。
+2. 禁止出现任何英文单词、英文短语、英文句子。
+3. 只允许使用中文标点（，。！？；：""''（））。
+4. 数字和百分号可以使用阿拉伯数字。
+5. 回答必须基于给出的游戏状态快照，不要编造快照之外的数据。`;
+
+    var raw = null, fromLLM = false, error = null;
+    try {
+      var L = (typeof LLM !== 'undefined') ? LLM : (typeof window !== 'undefined' ? window.LLM : null);
+      if (L && L.available && typeof L.generate === 'function') {
+        var prompt = buildAskWorldPrompt(q, buildStateSummary());
+        if (!prompt) throw new Error('no_prompt');
+        var result = await L.generate(prompt, 0.6, system, {
+          taskType: '问世界',
+          priority: L.PRIORITY ? (L.PRIORITY.NORMAL || 0) : 0,
+          timeout: 60000
+        });
+        if (result && String(result).trim()) { raw = String(result); fromLLM = true; }
+      }
+    } catch (e) {
+      error = 'LLM调用失败：' + (e && e.message ? e.message : '未知错误');
+    }
+    if (!raw) {
+      raw = ruleBasedAskWorld(q);
+      if (!error) error = 'LLM 不可用，以下为本地规则应答';
+    }
+    _askWorldPending = false;
+
+    var parsed = parseActions(raw);
+    if (!parsed.display) parsed.display = raw;
+    _askWorldHistory.push({ q: q.slice(0, 120), a: parsed.display.slice(0, 300), t: G.tickCount || 0, fromLLM: fromLLM });
+    if (_askWorldHistory.length > 10) _askWorldHistory = _askWorldHistory.slice(-10);
+    return { text: parsed.display, actions: parsed.actions, fromLLM: fromLLM, error: error };
+  }
+
+  // 一键执行建议：调用真实游戏 API（UI 层含完整前置校验与日志）
+  function executeAction(action) {
+    var G = (typeof SGame !== 'undefined' && SGame.G) ? SGame.G : null;
+    if (!action || typeof ASK_ACTION_META[action.type] === 'undefined') return { ok: false, msg: '无效动作' };
+    if (!G) return { ok: false, msg: '游戏尚未开始' };
+    // 预校验 target：UI 层对未知业务是静默 return，不校验会把幻觉 target 误报为"已提交"
+    if (!_askActionExists(action.type, action.target)) return { ok: false, msg: '目标不存在或不可用：' + (action.target || '') };
+    var U = (typeof UI !== 'undefined') ? UI : null;
+    var name = _askActionName(action.type, action.target);
+    try {
+      if (action.type === 'upgrade') {
+        if (U && typeof U.upgradeBusiness === 'function') U.upgradeBusiness(action.target);
+        else if (typeof SGame.upgradeBusinessMax === 'function') SGame.upgradeBusinessMax(action.target);
+        return { ok: true, msg: '已提交：升级「' + name + '」（结果见日志）' };
+      }
+      if (action.type === 'open') {
+        if (U && typeof U.openBusiness === 'function') U.openBusiness(action.target);
+        return { ok: true, msg: '已提交：开业「' + name + '」（结果见日志）' };
+      }
+      if (action.type === 'hire') {
+        var r = (typeof SGame.batchHire === 'function') ? SGame.batchHire(action.target, 1) : { ok: false, msg: '招聘接口不可用' };
+        return { ok: !!(r && r.ok), msg: (r && r.msg) || '招聘失败' };
+      }
+      if (action.type === 'unlockRegion') {
+        var rr = (typeof SGame.unlockRegion === 'function') ? SGame.unlockRegion(action.target) : false;
+        return { ok: rr !== false, msg: rr === false ? '解锁失败：条件未满足' : '已解锁区域：' + name };
+      }
+    } catch (e) {
+      return { ok: false, msg: '执行失败：' + (e && e.message ? e.message : '未知错误') };
+    }
+    return { ok: false, msg: '未知动作类型' };
+  }
+
   // ========== 获取上次结果 ==========
   function getLastResult() {
     return _lastResult;
@@ -532,6 +826,15 @@ window.Advisor = (function() {
     generateRuleBasedAdvice: generateRuleBasedAdvice,
     canRequest: canRequest,
     getCooldownRemaining: getCooldownRemaining,
+    // ---- 问世界 (#13) ----
+    askWorld: askWorld,
+    executeAction: executeAction,
+    parseActions: parseActions,
+    buildAskWorldPrompt: buildAskWorldPrompt,
+    buildAvailableActions: buildAvailableActions,
+    ruleBasedAskWorld: ruleBasedAskWorld,
+    getAskWorldHistory: function() { return _askWorldHistory.slice(); },
+    get askWorldPending() { return _askWorldPending; },
   };
 
 })();
