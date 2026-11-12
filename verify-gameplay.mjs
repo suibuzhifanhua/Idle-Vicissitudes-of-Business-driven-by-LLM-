@@ -674,4 +674,15 @@ if (errors.length) {
   errors.slice(0, 12).forEach(e => console.log('  ! ' + e.slice(0, 220)));
 }
 if (warns.length) console.log('\n警告 ' + warns.length + ' 条（前 5 条）:\n  ' + warns.slice(0, 5).join('\n  ').slice(0, 900));
-process.exitCode = failCount || errors.length || loaded !== SCRIPTS.length ? 1 : 0;
+// 显式退出 + 完成哨兵（重要）：
+// 本沙箱环境中 node 进程脚本结束后可能滞留数分钟才真正退出（工作负载越大越明显，零 CPU），
+// 曾长期被误判为"游戏挂起"。这里先等 stdout 刷完再 process.exit（3s 兜底），并同步落盘退出码哨兵，
+// 外部 harness 可轮询哨兵后立即回收进程，不受滞留影响。
+const _exitCode = failCount || errors.length || loaded !== SCRIPTS.length ? 1 : 0;
+const _sentinel = process.env.VERIFY_SENTINEL || 'C:/Users/A1/AppData/Local/Temp/verify-gameplay.done';
+function _finish() { try { fs.writeFileSync(_sentinel, String(_exitCode) + '\n'); } catch (_) {} process.exit(_exitCode); }
+if (process.stdout.writableFinished) _finish();
+else {
+  process.stdout.once('finish', _finish);
+  setTimeout(_finish, 3000);
+}
