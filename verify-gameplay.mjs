@@ -665,6 +665,51 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
   check('新城市侧写入已保留', S.G.cities[cityId].businesses.media.level === 7);
 }
 
+// ============ P2 体验：富豪等级进度条 + 首次解锁渐进提示 ============
+(function() {
+  const G = S.G;
+  // renderRankProgress：中间等级应含进度条与下一等级名
+  const _origRank = G.rank, _origMoney = G.money;
+  // 小老板(200万) → 区域龙头(2000万)：650万 = 25% 进度
+  G.rank = '小老板'; G.money = 6500000;
+  let rp = '';
+  try { rp = UI.renderRankProgress(G); } catch (e) { rp = 'ERR:' + e.message; }
+  check('等级进度条：中间等级渲染进度', rp.includes('dash-rank-bar-fill') && rp.includes('区域龙头'), rp.slice(0, 80));
+  check('等级进度条：百分比正确(25%)', rp.includes('25.0%'), rp.match(/width:[\d.]+%/)?.[0]);
+  // 峰值等级：无进度条，显示巅峰
+  G.rank = '永恒商神'; G.money = 1e12;
+  try { rp = UI.renderRankProgress(G); } catch (e) { rp = 'ERR:' + e.message; }
+  check('等级进度条：峰值等级显示巅峰', rp.includes('巅峰等级'), rp.slice(0, 60));
+  G.rank = _origRank; G.money = _origMoney;
+
+  // checkUnlockHints：基线/翻转/重复/新开局回卷 各路径不抛错
+  // （toast 在沙箱中由 setTimeout 桩立即清除，无法断言 DOM；触发逻辑以实跑为准）
+  const _origRpt = G.rpt, _origTick = G.tickCount;
+  try {
+    G.tickCount = 1; G.rpt = 0;            // 回卷重建基线（research=false）
+    let threw = '';
+    try { UI.checkUnlockHints(G); } catch (e) { threw = e.message; }
+    check('解锁提示：基线建立不抛错', !threw, threw);
+    G.tickCount = 2; G.rpt = 8;            // 状态翻转（false→true）
+    threw = '';
+    try { UI.checkUnlockHints(G); } catch (e) { threw = e.message; }
+    check('解锁提示：状态翻转不抛错', !threw, threw);
+    threw = '';
+    try { UI.checkUnlockHints(G); UI.checkUnlockHints(G); } catch (e) { threw = e.message; }
+    check('解锁提示：重复调用幂等', !threw, threw);
+    G.tickCount = 10;                       // 推进（st.tick=10）
+    threw = '';
+    try { UI.checkUnlockHints(G); } catch (e) { threw = e.message; }
+    check('解锁提示：推进调用不抛错', !threw, threw);
+    G.tickCount = 1; G.rpt = 0;             // 回卷 1 < 10-1 → 重建基线（模拟新开局）
+    threw = '';
+    try { UI.checkUnlockHints(G); } catch (e) { threw = e.message; }
+    check('解锁提示：新开局回卷重建基线不抛错', !threw, threw);
+  } finally {
+    G.rpt = _origRpt; G.tickCount = _origTick;
+  }
+})();
+
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;
 const failCount = results.filter(r => r.startsWith('FAIL')).length;

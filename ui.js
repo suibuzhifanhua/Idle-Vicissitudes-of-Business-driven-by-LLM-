@@ -671,6 +671,7 @@ window.UI = (() => {
     try { renderManualButton(); } catch(e) { SGame.DEBUG && console.error('[商海浮沉] renderAll/manualButton error:', e); }
     try { renderClock(); } catch(e) { SGame.DEBUG && console.error('[商海浮沉] renderAll/clock error:', e); }
     try { renderAutoButton(); } catch(e) { SGame.DEBUG && console.error('[商海浮沉] renderAll/autoButton error:', e); }
+    try { checkUnlockHints(G); } catch(e) { SGame.DEBUG && console.error('[商海浮沉] renderAll/unlockHints error:', e); }
 
     // 实时面板刷新：签名未变化时跳过整块 center-panel 重建。
     if (currentPanel && currentPanel !== 'dashboard') {
@@ -1163,6 +1164,7 @@ window.UI = (() => {
     const chartHtml = renderMiniAssetChart(G);
     const breakdownHtml = renderIncomeBreakdown();
     const citySelectHtml = renderCitySelector();
+    const rankProgressHtml = renderRankProgress(G);
     const rankDef = RANK_TIERS ? RANK_TIERS.find(r => r.name === G.rank) : null;
     const rankIcon = rankDef ? rankDef.icon : '';
     const timeInfo = getTimeDisplay(G);
@@ -1238,6 +1240,8 @@ window.UI = (() => {
       if (chEl) chEl.innerHTML = renderMiniAssetChart(G);
       var trEl = el.querySelector('#dash-trend');
       if (trEl) trEl.innerHTML = renderAssetTrend(G);
+      var rpEl = el.querySelector('#dash-rank-progress');
+      if (rpEl) rpEl.innerHTML = renderRankProgress(G);
       var tiEl = el.querySelector('#dash-time-info');
       if (tiEl) tiEl.textContent = getTimeDisplay(G);
       return;
@@ -1254,6 +1258,7 @@ window.UI = (() => {
           <div class="dash-label">${rankIcon} ${G.rank || '个体户'}  |  ${citySelectHtml}</div>
           <div class="dash-value" style="color:var(--accent);font-size:28px;"><span id="dash-money">${SGame.formatMoney(G.money ?? 0)}</span> <span id="dash-trend">${trendHtml}</span></div>
           <div class="dash-sub"><span id="dash-time-info">${timeInfo}</span> |  当前总资产 <span id="dash-total-assets">${SGame.formatMoney(G.money ?? 0)}</span></div>
+          <div id="dash-rank-progress">${rankProgressHtml}</div>
           ${autoStatusHtml}
           <div id="dash-chart">${chartHtml}</div>
         </div>
@@ -1541,6 +1546,26 @@ window.UI = (() => {
   }
 
 
+
+  // P2：富豪等级进度条（当前等级 → 下一等级）
+  function renderRankProgress(G) {
+    if (!RANK_TIERS || !RANK_TIERS.length) return '';
+    var idx = -1;
+    for (var i = 0; i < RANK_TIERS.length; i++) { if (RANK_TIERS[i].name === G.rank) { idx = i; break; } }
+    if (idx < 0) idx = 0;
+    var cur = RANK_TIERS[idx], next = RANK_TIERS[idx + 1];
+    var money = G.money || 0;
+    if (!next) {
+      return '<div style="margin-top:6px;"><span style="font-size:10px;color:var(--accent-gold);">🏆 巅峰等级：' + cur.name + '（富豪榜顶端）</span></div>';
+    }
+    var span = next.minMoney - cur.minMoney;
+    var pct = span > 0 ? Math.max(0, Math.min(100, ((money - cur.minMoney) / span) * 100)) : 100;
+    var info = '📈 ' + cur.name + ' → ' + next.name + ' ' + pct.toFixed(1) + '%（还差 ' + SGame.formatMoney(Math.max(0, next.minMoney - money)) + '）';
+    return '<div style="margin-top:6px;">' +
+      '<div style="height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">' +
+      '<div id="dash-rank-bar-fill" style="height:100%;width:' + pct.toFixed(1) + '%;background:linear-gradient(90deg,var(--accent),var(--accent-gold));border-radius:3px;transition:width .5s;"></div></div>' +
+      '<div id="dash-rank-info" style="font-size:10px;color:var(--text-secondary);margin-top:2px;">' + info + '</div></div>';
+  }
 
   function renderAssetTrend(G) {
     const hist = G.assetHistory || [];
@@ -2673,6 +2698,45 @@ window.UI = (() => {
     overlay.textContent = text;
     overlay.className = 'show';
     setTimeout(() => { overlay.className = ''; }, 2600);
+  }
+
+  // ========== P2：系统首次解锁渐进提示 ==========
+  // 开局只拍基线快照（不触发），之后状态从"不可用"变"可用"才提示一次。
+  // 每 tick 最多弹 1 条（队列串行），避免开局/升级期 toast 刷屏。
+  const UNLOCK_HINT_RULES = [
+    { id: 'stock', icon: '📊', title: '股市已开放', desc: '点击顶部「股票」标签页，可进行首次投资',
+      check: function(G) { return G.stockPrices != null && Object.keys(G.stockPrices).length > 0; } },
+    { id: 'city2', icon: '🏙', title: '多城扩张已解锁', desc: '可以把生意开到新城市了，看看「区域」标签页',
+      check: function(G) { return G.cities ? Object.keys(G.cities).filter(function(k) { return G.cities[k] && G.cities[k].unlocked; }).length > 1 : false; } },
+    { id: 'finance', icon: '📑', title: '第一份财报已生成', desc: '「财报」标签页可以查看经营成果',
+      check: function(G) { return (G.financialReports || []).length > 0; } },
+    { id: 'rival', icon: '⚔️', title: '竞品出现了', desc: '竞争对手进入市场，「排行榜」标签页查看局势',
+      check: function(G) { return (G.rivals || []).length > 0; } },
+    { id: 'research', icon: '🔬', title: '可以开始研发了', desc: '研发点数够买第一项科技，「科技」标签页看看',
+      check: function(G) { return (G.rpt || 0) >= 8; } }
+  ];
+  let _unlockHintState = null; // { baseline:{}, shown:{}, queued:[], tick }
+  function checkUnlockHints(G) {
+    if (!G || !G.tickCount) return;
+    if (!_unlockHintState || G.tickCount < _unlockHintState.tick - 1) {
+      // 首次检查或新开局（tick 回卷）：拍基线，不触发
+      const baseline = {};
+      UNLOCK_HINT_RULES.forEach(r => { baseline[r.id] = r.check(G); });
+      _unlockHintState = { baseline, shown: {}, queued: [], tick: G.tickCount };
+      return;
+    }
+    const st = _unlockHintState;
+    st.tick = G.tickCount;
+    for (const r of UNLOCK_HINT_RULES) {
+      if (!st.shown[r.id] && !st.baseline[r.id] && r.check(G)) {
+        st.shown[r.id] = true;
+        st.queued.push(r);
+      }
+    }
+    if (st.queued.length) {
+      const hint = st.queued.shift();
+      showToast(hint.icon, hint.title, hint.desc, 5000);
+    }
   }
 
   // ========== 时钟 ==========
@@ -4612,7 +4676,7 @@ window.UI = (() => {
     showToast, showMilestone, renderStatPanel,
     renderSaveSlots, saveToSlot, loadSaveSlot,
     exportSaveSlot, deleteSaveSlot, importToSlot,
-    renderMiniAssetChart, renderIncomeBreakdown,
+    renderMiniAssetChart, renderIncomeBreakdown, renderRankProgress, checkUnlockHints,
     switchPanel,
     renderRankingPanel, showNewsDetail, retireGame,
     renderTechPanel, renderStockPanel, renderQuestPanel,

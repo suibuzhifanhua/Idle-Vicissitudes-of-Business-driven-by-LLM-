@@ -27,6 +27,7 @@ TMP="C:/Users/A1/AppData/Local/Temp"
 run_node_with_marker() {
   local out="$1" marker="$2" sentinel="$3"; shift 3
   : > "$out"
+  rm -f "$sentinel"   # 必须清掉上一轮的旧哨兵，否则残留退出码会污染本轮判定
   "$@" > "$out" 2>&1 &
   local pid=$!
   local i code=""
