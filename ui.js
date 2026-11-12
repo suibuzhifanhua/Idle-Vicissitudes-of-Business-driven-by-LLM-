@@ -916,7 +916,7 @@ window.UI = (() => {
         <div style="display:flex;gap:6px;margin-top:6px">
           ${lv === 0 ? `<button class="btn" style="font-size:10px;padding:3px 8px" onclick="UI.openBusiness('${b.id}')">开业</button>` : ''}
           ${nextDef ? (() => {
-            const baseCost = nextDef.cost * WAN;
+            const baseCost = nextDef.cost * WAN * (SGame.getLateGameCostScale ? SGame.getLateGameCostScale() : 1); // v1.7 后期档位成本
             const cost = (G.origin === 'rich2nd') ? Math.floor(baseCost * 0.8) : baseCost;
             const canAfford = G.money >= cost;
             // 检查前置条件
@@ -1083,7 +1083,7 @@ window.UI = (() => {
         }
       }
     }
-    let cost = next.cost * WAN;
+    let cost = next.cost * WAN * (SGame.getLateGameCostScale ? SGame.getLateGameCostScale() : 1); // v1.7 后期档位成本
     if (G.origin === 'rich2nd') cost = Math.floor(cost * 0.8);
     if (G.money < cost) { EventSystem.addLog(`${bDef.icon} ${bDef.name} 资金不足，升级需要 ${SGame.formatMoney(cost)}。`); return; }
     G.money -= cost;

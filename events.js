@@ -405,7 +405,11 @@ window.EventSystem = (() => {
       }
     }
     const moneyAbsV = _effVal(eff.moneyAbs);
-    if (moneyAbsV) G.money += moneyAbsV;
+    if (moneyAbsV) {
+      // v1.7 后期档位：绝对值金额跟随富豪等级缩放（与升级成本同乘数），防止晚期归零
+      const lgCost = (typeof SGame !== 'undefined' && SGame.getLateGameCostScale) ? SGame.getLateGameCostScale() : 1;
+      G.money += moneyAbsV * lgCost;
+    }
     const repV = _effVal(eff.reputation);
     if (repV) G.reputation = Math.max(0, Math.min(100, G.reputation + repV));
     const stressV = _effVal(eff.stress);

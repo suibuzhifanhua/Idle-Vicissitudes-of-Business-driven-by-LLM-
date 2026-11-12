@@ -436,7 +436,8 @@ window.Advisor = (function() {
             if (!bizDef || bizData.level >= bizDef.levels.length) return;
             var nextLv = bizDef.levels[bizData.level];
             if (!nextLv || nextLv.cost === 0) return;
-            var cost = nextLv.cost * 10000;
+            var lgCostScale = (typeof SGame !== 'undefined' && SGame.getLateGameCostScale) ? SGame.getLateGameCostScale() : 1;
+            var cost = nextLv.cost * 10000 * lgCostScale; // v1.7 后期档位成本
             if (G.money >= cost * 2) { // 有2倍升级费才建议
               upgradeable.push({
                 name: bizDef.name,
@@ -559,7 +560,8 @@ window.Advisor = (function() {
       } else if (lv < b.levels.length) {
         var next = b.levels[lv];
         if (next && next.cost > 0) {
-          out.push({ type: 'upgrade', target: b.id, name: b.name, detail: 'Lv.' + lv + '→Lv.' + (lv + 1) + '，费用 ' + next.cost * 10000 });
+          var lgScale2 = (typeof SGame !== 'undefined' && SGame.getLateGameCostScale) ? SGame.getLateGameCostScale() : 1;
+          out.push({ type: 'upgrade', target: b.id, name: b.name, detail: 'Lv.' + lv + '→Lv.' + (lv + 1) + '，费用 ' + next.cost * 10000 * lgScale2 });
         }
       }
     });

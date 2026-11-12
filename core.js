@@ -1407,6 +1407,30 @@ window.SGame = (() => {
   }
 
   // 预计算复合乘数（将15+个分散乘法层压缩为6个复合因子）
+  // ========== 后期档位乘数（v1.7）==========
+  // 富豪等级超过 LATEGAME_SCALE.baseTier 后，收入/成本按档位幂次缩放。
+  // 见 config-game.js LATEGAME_SCALE 注释：baseTier 以下全部 ×1，中局数值不变。
+  function getLateGameTier() {
+    if (!G || !G.money || typeof RANK_TIERS === 'undefined' || !RANK_TIERS.length) return 0;
+    let tier = 0;
+    for (let i = RANK_TIERS.length - 1; i >= 0; i--) {
+      if (G.money >= RANK_TIERS[i].minMoney) { tier = i; break; }
+    }
+    return tier;
+  }
+  function _lateGameSteps() {
+    const cfg = (typeof LATEGAME_SCALE !== 'undefined') ? LATEGAME_SCALE : { baseTier: 6 };
+    return Math.max(0, getLateGameTier() - (cfg.baseTier || 0));
+  }
+  function getLateGameIncomeScale() {
+    const cfg = (typeof LATEGAME_SCALE !== 'undefined') ? LATEGAME_SCALE : { incomePerTier: 3 };
+    return Math.pow(cfg.incomePerTier || 3, _lateGameSteps());
+  }
+  function getLateGameCostScale() {
+    const cfg = (typeof LATEGAME_SCALE !== 'undefined') ? LATEGAME_SCALE : { costPerTier: 8 };
+    return Math.pow(cfg.costPerTier || 8, _lateGameSteps());
+  }
+
   function preCalcCompositeMultipliers() {
     if (!G) return {};
 
@@ -1477,6 +1501,9 @@ window.SGame = (() => {
     let comp = preCalcCompositeMultipliers();
     let _achRewardsCache = G._achRewardsCache || comp.achRewards;
 
+    // v1.7 后期档位乘数：baseTier(100亿) 以下恒为 1，中局数值不变
+    const lgInc = getLateGameIncomeScale();
+
     let grandTotal = 0;
     let rawProductionTotal = 0;
 
@@ -1529,8 +1556,8 @@ window.SGame = (() => {
         if (!bState || bState.level === 0) return;
         const lv = bDef.levels[bState.level - 1];
         if (!lv) return;
-        cityRawIncome += Number(lv.income) * WAN;
-        let income = lv.income;
+        cityRawIncome += Number(lv.income) * lgInc * WAN;
+        let income = lv.income * lgInc;
 
         // 市场份额修正
         const share = (G.marketShare && G.marketShare[bDef.id]) || 1.0;
@@ -1862,6 +1889,7 @@ window.SGame = (() => {
     if (!gameState) return 0;
     let bDef = BUSINESS_DEFS.find(function(b) { return b.id === bizId; });
     if (!bDef) return 0;
+    const lgInc = getLateGameIncomeScale(); // v1.7 后期档位乘数
     // 查找该业务在所有城市中的状态
     let totalIncome = 0;
     if (gameState.cities) {
@@ -1871,7 +1899,7 @@ window.SGame = (() => {
         if (!bizState || bizState.level === 0) return;
         let lv = bDef.levels[bizState.level - 1];
         if (!lv) return;
-        totalIncome += lv.income;
+        totalIncome += lv.income * lgInc;
       });
     }
     // 旧格式兼容
@@ -1879,7 +1907,7 @@ window.SGame = (() => {
       let state = gameState.businesses[bizId];
       if (state && state.level > 0) {
         let lv = bDef.levels[state.level - 1];
-        if (lv) totalIncome = lv.income;
+        if (lv) totalIncome = lv.income * lgInc;
       }
     }
     // 应用基础修正系数（简化版，不含全部联动）
@@ -3525,7 +3553,14 @@ window.SGame = (() => {
     if (n == null || isNaN(n)) return '0';
     const sign = n < 0 ? '-' : '';
     n = Math.abs(n);
-    if (n >= 1e16) return sign + (n / 1e16).toFixed(2) + 'e16';
+    // v1.7 中文大数单位链：万亿(1e12)→京(1e16)→秭(1e20)→垓(1e24)→恒河沙(1e28)→极(1e32)→载(1e36)
+    if (n >= 1e40) return sign + n.toExponential(2).replace('e+', 'e');
+    if (n >= 1e36) return sign + (n / 1e36).toFixed(2) + '载';
+    if (n >= 1e32) return sign + (n / 1e32).toFixed(2) + '极';
+    if (n >= 1e28) return sign + (n / 1e28).toFixed(2) + '恒河沙';
+    if (n >= 1e24) return sign + (n / 1e24).toFixed(2) + '垓';
+    if (n >= 1e20) return sign + (n / 1e20).toFixed(2) + '秭';
+    if (n >= 1e16) return sign + (n / 1e16).toFixed(2) + '京';
     if (n >= 1e12) return sign + (n / 1e12).toFixed(2) + '万亿';
     if (n >= 1e8) return sign + (n / 1e8).toFixed(1) + '亿';
     if (n >= 1e4) return sign + (n / 1e4).toFixed(1) + '万';
@@ -3662,7 +3697,7 @@ window.SGame = (() => {
       if (!bDef) return;
       const lv = bDef.levels[bState.level - 1];
       if (!lv) return;
-      total += lv.income * WAN;
+      total += lv.income * WAN * getLateGameIncomeScale(); // v1.7 后期档位乘数（定价与主收入同步）
     });
     const cityDef = (typeof CITIES !== 'undefined' && CITIES[cityId]) || null;
     if (cityDef && cityDef.cityBonus && cityDef.cityBonus.incomeMult) total *= cityDef.cityBonus.incomeMult;
@@ -3805,7 +3840,7 @@ window.SGame = (() => {
         if (!bDef) return;
         const lv = bDef.levels[biz.level - 1];
         if (!lv) return;
-        const baseIncome = lv.income * WAN;
+        const baseIncome = lv.income * WAN * getLateGameIncomeScale(); // v1.7 维护费随产值缩放，保住成本率
         const rate = CONFIG.MAINTENANCE_BASE_RATE + biz.level * CONFIG.MAINTENANCE_LEVEL_SCALE;
         total += baseIncome * rate;
       });
@@ -4216,7 +4251,7 @@ window.SGame = (() => {
           if (!pass) break;
         }
       }
-      const cost = nextLv.cost * WAN;
+      const cost = nextLv.cost * WAN * getLateGameCostScale(); // v1.7 后期档位成本
       if (G.money < cost) break;
       G.money -= cost;
       state.level++;
@@ -5227,6 +5262,7 @@ window.SGame = (() => {
     set pendingDecisions(v) { pendingDecisions = v; },
     calcTotalIncome, calcOfflineIncome, claimOfflineIncome, getNetIncomePerTick,
     addLog, showAchievement, formatMoney: _formatMoney, getEmpMax,
+    getLateGameTier, getLateGameIncomeScale, getLateGameCostScale,
     addConnections,
     calcNpcBonus,
     save, load, reset, getSaveSlots,

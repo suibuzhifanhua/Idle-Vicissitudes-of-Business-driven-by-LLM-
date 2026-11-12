@@ -24,8 +24,12 @@
     g.ventureIpoExits = g.ventureIpoExits || 0;
     g._ventureSnap = g._ventureSnap || { tick: 0, vals: {} };
     g._ventureIpoAnnounced = g._ventureIpoAnnounced || {}; // 未持仓公司的 IPO 宣布记录（防重复宣布→估值反复倍增爆炸）
+    g._ventureScale = g._ventureScale || 1; // v1.7 当前估值档位乘数（富豪等级跃升时统一重定价用）
     _cos().forEach(c => {
-      if (g.ventureValuations[c.id] === undefined) g.ventureValuations[c.id] = c.baseVal;
+      if (g.ventureValuations[c.id] === undefined) {
+        const lg = S.getLateGameCostScale ? S.getLateGameCostScale() : 1;
+        g.ventureValuations[c.id] = c.baseVal * lg;
+      }
     });
   }
 
@@ -57,6 +61,19 @@
     if (!g || !cfg) return;
     initVentures();
 
+    // v1.7 后期档位重定价：富豪等级跃升后，存量估值一次性 ×(新档/旧档)。
+    // 纯确定性缩放（不消耗随机数）；不重定价则风投系统在 500亿+ 资产量级下萎缩为 0.01% 零头。
+    const lgScale = S.getLateGameCostScale ? S.getLateGameCostScale() : 1;
+    if (lgScale !== g._ventureScale) {
+      const ratio = lgScale / g._ventureScale;
+      Object.keys(g.ventureValuations).forEach(id => {
+        const v = g.ventureValuations[id];
+        if (Number.isFinite(v) && v > 0) g.ventureValuations[id] = v * ratio;
+      });
+      g._ventureScale = lgScale;
+      S.addLog('📊 后期档位生效：风投市场估值整体 ×' + (ratio === 1 ? '1' : ratio));
+    }
+
     // 快照滚动（UI/托管策略用）
     if ((g.tickCount || 0) - (g._ventureSnap.tick || 0) >= cfg.CHANGE_WINDOW) {
       g._ventureSnap = { tick: g.tickCount || 0, vals: Object.assign({}, g.ventureValuations) };
@@ -75,7 +92,7 @@
       const growth = c.growth * (0.4 + room);
       const noise = (Math.random() * 2 - 1) * c.vol * (1 - c.moat * 0.5);
       val = val * (1 + growth + noise);
-      val = Math.max(val, c.baseVal * cfg.FLOOR_FACTOR); // 估值下限（破产除外不归零）
+      val = Math.max(val, c.baseVal * lgScale * cfg.FLOOR_FACTOR); // 估值下限（破产除外不归零，v1.7 随档位缩放）
 
       // IPO：达标公司小概率宣布；超过达标线 2 倍强制 IPO；只宣布一次（防重复 bump 爆炸）
       // 注意：宣布标记必须用 undefined 语义判断——记录值可能为 0（tickCount=0 的测试环境），
@@ -100,11 +117,11 @@
           held.ipoCorrected = true;
           S.addLog('📉 ' + c.name + ' 上市后估值修正：回落至 ' + S.formatMoney(val));
         } else if (!held) {
-          val = Math.max(val * 0.9, c.baseVal * 0.5);
+          val = Math.max(val * 0.9, c.baseVal * lgScale * 0.5);
         }
       }
-      // 破产：持仓按入场价、空仓按基础估值为基准，跌破基准 20% 进入风险区
-      const ref = held && held.entryVal > 0 ? held.entryVal : c.baseVal;
+      // 破产：持仓按入场价、空仓按基础估值为基准，跌破基准 20% 进入风险区（v1.7 基础估值随档位缩放）
+      const ref = held && held.entryVal > 0 ? held.entryVal : c.baseVal * lgScale;
       if (val < ref * cfg.BANKRUPT_LINE && Math.random() < cfg.BANKRUPT_PROB) {
         val = 0;
         S.addLog('💥 ' + c.name + ' 破产！估值归零。' + (held ? ' 你的投资血本无归。' : ''));

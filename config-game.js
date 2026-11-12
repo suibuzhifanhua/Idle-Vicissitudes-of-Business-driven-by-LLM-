@@ -190,6 +190,18 @@ const RANK_TIERS = [
   { name:'永恒商神',      icon:'⭐',  minMoney:100000000000000},
 ];
 
+// ---- LATEGAME_SCALE（后期档位乘数，v1.7）----
+// 问题：7 业务×10 级在 ~720h 全部满级后，增长只剩员工线性，500亿→100万亿 5 档头衔无指数增长源。
+// 方案：富豪等级超过 baseTier 后，每上一档：
+//   - 业务基础收入 ×incomePerTier（现有业务产值随档位重定价 → 晚游戏指数引擎）
+//   - 升级成本 / 事件 moneyAbs / 风投估值 ×costPerTier（绝对值系统跟随资产量级，防止晚期归零）
+// baseTier 以下乘数恒为 1 → 前 720h（≤100亿 亚洲巨擘档）数值与旧版完全一致。
+const LATEGAME_SCALE = {
+  baseTier: 6,        // RANK_TIERS 索引：6=亚洲巨擘(100亿) 为基准档(×1)；7=全球富豪(500亿) 起生效
+  incomePerTier: 3,   // 业务基础收入每档 ×3
+  costPerTier: 8      // 成本/绝对值每档 ×8（成本增速>收入 → 回本期逐档拉长，防止无脑连升）
+};
+
 
 
 // ---- MILESTONES ----

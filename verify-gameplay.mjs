@@ -422,6 +422,77 @@ const moneyBeforeLabor = S.G.money;
 sandbox.EventSystem.choose('legal_labor', 1);
 check('legal_labor 实跑抉择后 G.money 仍为数字', typeof S.G.money === 'number' && isFinite(S.G.money), String(S.G.money) + ' (before ' + moneyBeforeLabor.toFixed(0) + ')');
 
+// ---------- v1.7 后期档位乘数 ----------
+const LG_SAVE_MONEY = S.G.money;
+// formatMoney：中文大数单位链（旧版 1e16 直接 e16 穿帮）
+check('formatMoney 1e14 = 100.00万亿（永恒商神顶格）', S.formatMoney(1e14) === '100.00万亿', S.formatMoney(1e14));
+check('formatMoney 1e16 = 1.00京', S.formatMoney(1e16) === '1.00京', S.formatMoney(1e16));
+check('formatMoney 1e20/1e24 = 1.00秭 / 1.00垓', S.formatMoney(1e20) === '1.00秭' && S.formatMoney(1e24) === '1.00垓', S.formatMoney(1e20) + ' / ' + S.formatMoney(1e24));
+check('formatMoney 1e40+ 科学计数兜底', S.formatMoney(2e44).indexOf('e44') >= 0, S.formatMoney(2e44));
+// 档位函数：基准档（亚洲巨擘 100亿）以下乘数恒 1 → 中局数值不变；全球富豪（500亿）起 ×3/×8
+S.G.money = 1e6;
+check('档位1（百万）：乘数 1（中局不变）', S.getLateGameIncomeScale() === 1 && S.getLateGameCostScale() === 1, S.getLateGameIncomeScale() + '/' + S.getLateGameCostScale());
+S.G.money = 9.9e9;
+check('档位5（99亿，未达基准档）：乘数仍 1', S.getLateGameIncomeScale() === 1 && S.getLateGameCostScale() === 1, S.getLateGameTier() + ' 档');
+S.G.money = 1.05e10;
+check('档位6（100亿 基准档）：乘数仍 1（720h 不变性）', S.getLateGameIncomeScale() === 1 && S.getLateGameCostScale() === 1, S.getLateGameTier() + ' 档');
+S.G.money = 6e10;
+check('档位7（500亿 全球富豪）：收入×3 / 成本×8', S.getLateGameIncomeScale() === 3 && S.getLateGameCostScale() === 8, S.getLateGameTier() + ' 档 ' + S.getLateGameIncomeScale() + '/' + S.getLateGameCostScale());
+S.G.money = 2.5e11;
+check('档位8（2000亿）：收入×9 / 成本×64', S.getLateGameIncomeScale() === 9 && S.getLateGameCostScale() === 64, S.getLateGameTier() + ' 档 ' + S.getLateGameIncomeScale() + '/' + S.getLateGameCostScale());
+// 收入函数：现有业务产值 ×3（晚游戏指数引擎）
+{
+  const LG_CITY = S.G.currentCityId || 'xinhai';
+  if (!S.G.cities[LG_CITY]) S.G.cities[LG_CITY] = { unlocked: true, businesses: {} };
+  const lgCityBiz = S.G.cities[LG_CITY].businesses || (S.G.cities[LG_CITY].businesses = {});
+  if (!lgCityBiz.retail) lgCityBiz.retail = { level: 1, region: null, unlocked: true };
+  lgCityBiz.retail.level = 2;
+  S.G.money = 1e6;
+  const incLow = S.calcBizIncome('retail');
+  S.G.money = 6e10;
+  const incHigh = S.calcBizIncome('retail');
+  check('档位7：现有业务收入×3（晚游戏指数引擎）', incLow > 0 && Math.abs(incHigh - incLow * 3) < incLow * 1e-9, 'low=' + incLow.toFixed(2) + ' high=' + incHigh.toFixed(2));
+}
+// 成本函数：升级实扣 = 基准成本 ×8
+{
+  S.G.businesses = S.G.businesses || {};
+  S.G.businesses.retail = S.G.businesses.retail || { level: 2, region: null, unlocked: true };
+  S.G.businesses.retail.level = 2;
+  const lgDef = BUSINESS_DEFS.find(b => b.id === 'retail');
+  const lgNext = lgDef.levels[2]; // retail L3 无 reqCond
+  const lgBase = lgNext.cost * 10000;
+  const lgDiscount = S.G.origin === 'rich2nd' ? 0.8 : 1;
+  const lgExpected = Math.floor(lgBase * 8 * lgDiscount);
+  S.G.money = 6e10;
+  const lgBefore = S.G.money;
+  UI.upgradeBusiness('retail');
+  check('档位7：升级实扣 = 基准成本×8', S.G.businesses.retail.level === 3 && (lgBefore - S.G.money) === lgExpected,
+    'level=' + S.G.businesses.retail.level + ' Δ=' + (lgBefore - S.G.money) + ' 期望=' + lgExpected);
+  S.G.businesses.retail.level = 2; // 还原（askWorld 块还会再升级）
+}
+// 事件 moneyAbs：同乘数 ×8
+{
+  const lgEvt = { id: 'verify_lg_abs', type: 'decision', title: '档位验证', desc: 'x', choices: [{ text: 'A', effect: { moneyAbs: 1000 } }] };
+  sandbox.EventSystem.fireEvent(lgEvt);
+  S.G.money = 6e10;
+  const lgMBefore = S.G.money;
+  sandbox.EventSystem.choose('verify_lg_abs', 0);
+  check('档位7：事件 moneyAbs ×8', S.G.money - lgMBefore === 8000, 'Δ=' + (S.G.money - lgMBefore));
+}
+// 风投：档位跃升时存量估值确定性 ×8 重定价
+{
+  S.G.money = 1e6;
+  S.G._ventureScale = 1;
+  S.G.ventureValuations['v_petlink'] = 3e6;
+  S.G.money = 6e10;
+  const lgVBefore = S.G.ventureValuations['v_petlink'];
+  S.updateVentures();
+  const lgVAfter = S.G.ventureValuations['v_petlink'];
+  check('档位7：风投估值 ×8 重定价（确定性）', S.G._ventureScale === 8 && lgVAfter >= lgVBefore * 8 * 0.9 && lgVAfter <= lgVBefore * 8 * 1.12,
+    'scale=' + S.G._ventureScale + ' ' + lgVBefore.toFixed(0) + ' -> ' + lgVAfter.toFixed(0));
+}
+S.G.money = LG_SAVE_MONEY; // 还原，避免污染后续断言
+
 // ---------- 新成就条件 ----------
 S.G.supplyChain.retail.supplierLv = 3;
 S.G.shortProfitTotal = 200000;
