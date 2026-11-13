@@ -25,7 +25,9 @@
     });
     // AI自动化加成
     if (G.completedResearch && G.completedResearch.ai >= 3) rptGain *= 1.3;
-    var achRewards = typeof S.calcAchievementRewards === 'function' ? S.calcAchievementRewards() : {};
+    // v1.11 P1 修复：calcAchievementRewards 是全局函数（config-achievements.js 顶层声明），从未挂到 SGame，
+    // 旧写法 S.calcAchievementRewards 恒为 undefined → rdBonus（money_50m/tech_leader/bear_tycoon）从未生效。
+    var achRewards = (typeof calcAchievementRewards === 'function') ? calcAchievementRewards() : {};
     if (achRewards.rdBonus) rptGain *= (1 + achRewards.rdBonus);
     // 出身加成：技术极客 techRdSpeed
     if (G.originBonus && G.originBonus.techRdSpeed) rptGain *= G.originBonus.techRdSpeed;

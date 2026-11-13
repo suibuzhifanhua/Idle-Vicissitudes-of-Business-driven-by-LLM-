@@ -30,6 +30,12 @@ window.NPCSystem = (() => {
 
   // ========== 好感度变化（含NPC联动传播） ==========
   function changeFavor(npcId, delta) {
+    // v1.11 favorGain（npc_3/social_butterfly）：放大正向好感获取（衰减/负向不放大，奖励的是"获取"不是"保持"）。
+    // 纯算术无 RNG；全部调用方（对话动作/任务/约谈/送礼/决策效果/人情债）均不在 720h 仿真路径，sim 安全。
+    if (delta > 0 && typeof calcAchievementRewards === 'function') {
+      var _fg = calcAchievementRewards().favorGain || 0;
+      if (_fg > 0) delta = Math.round(delta * (1 + _fg));
+    }
     // 区域人脉加成：connGain 放大正向好感变化
     if (delta > 0 && SGame.G && typeof SGame.getRegionModifiers === 'function') {
       var rm = SGame.getRegionModifiers();
@@ -235,7 +241,9 @@ window.NPCSystem = (() => {
       actions.push({ text: '申请特别信贷额度（声誉>50，获得一笔低息贷款）', fn: () => {
         if (SGame.G.reputation < 50) { EventSystem.addLog('声誉不够，金行长表示按规矩不能破例。'); closeDialog(); return; }
         var loanAmt = 500000;
-        var loan = { id: Date.now(), amount: loanAmt, duration: 24, remaining: 24, interestRate: 6.0, interestPerTick: Math.round(loanAmt * 0.06 / 24), repaid: false };
+        // v1.11 loanInterest（rep_80）：特批贷利率同减（地板 4%），与 applyLoan 消费点一致
+        var _jrRate = Math.max(0.04, 0.06 - ((typeof calcAchievementRewards === 'function') ? (calcAchievementRewards().loanInterest || 0) : 0));
+        var loan = { id: Date.now(), amount: loanAmt, duration: 24, remaining: 24, interestRate: parseFloat((_jrRate * 100).toFixed(1)), interestPerTick: Math.round(loanAmt * _jrRate / 24), repaid: false };
         SGame.G.loans.push(loan); SGame.G.money += loanAmt; changeFavor('jinhangzhang', 5);
         SGame.G.neverLoaned = false;
         EventSystem.addLog('金行长特批：' + SGame.formatMoney(loanAmt) + '低息贷款到账！');
@@ -431,6 +439,13 @@ window.NPCSystem = (() => {
       EventSystem.addLog(`${npc.name}礼貌地收下了${gift.name}。好感 +${favorDelta}`);
     }
 
+    // v1.11 giftEffect（npc_1）：送礼好感收益 +20%（作用于已取随机档，纯算术不新增随机数）。
+    // giveGift 调用方为 UI 送礼与托管 autoGift（autoMode 门控），不在 720h 仿真路径，sim 安全。
+    if (typeof calcAchievementRewards === 'function') {
+      const _ge = calcAchievementRewards().giftEffect || 0;
+      if (_ge > 0) favorDelta = Math.round(favorDelta * (1 + _ge));
+    }
+
     changeFavor(npcId, favorDelta);
     if (!SGame.G.todayGifted) SGame.G.todayGifted = {};
     SGame.G.todayGifted[key] = true;
@@ -456,9 +471,14 @@ window.NPCSystem = (() => {
     }
 
     let result;
+    // v1.11 coopBonus（rep_70，合作收益+10%）+ negotiateBonus（npc_max，约谈成功+20%）：
+    // 均作用于约谈资金收益，乘性叠加；作用于已取随机数，纯算术不新增随机数。
+    // negotiate 调用方为对话框动作与托管 autoNegotiate（autoMode 门控），不在 720h 仿真路径，sim 安全。
+    const _nAch = (typeof calcAchievementRewards === 'function') ? calcAchievementRewards() : {};
+    const _dealMult = 1 + (_nAch.coopBonus || 0) + (_nAch.negotiateBonus || 0);
     if (favor >= 80) {
       // 亲密：永久加成
-      SGame.G.money += Math.floor(Math.random() * 50000) + 20000;
+      SGame.G.money += Math.floor((Math.floor(Math.random() * 50000) + 20000) * _dealMult);
       SGame.addConnections(2); // 深度合作，人脉+2
       changeFavor(npcId, 3);
       EventSystem.addLog(`${npc.name}：「咱们是老朋友了，这个项目稳赚！」（获得资金+人脉加成）`);
@@ -467,20 +487,20 @@ window.NPCSystem = (() => {
       // 友好：可能解锁特殊业务
       const unlock = Math.random() < 0.4;
       if (unlock) {
-        SGame.G.money += Math.floor(Math.random() * 30000) + 10000;
+        SGame.G.money += Math.floor((Math.floor(Math.random() * 30000) + 10000) * _dealMult);
         SGame.G.reputation += 5;
         changeFavor(npcId, 4);
         EventSystem.addLog(`${npc.name}：「我有个特殊项目，要不要一起做？」（解锁特殊收益）`);
         result = { ok: true, msg: '解锁特殊业务机会' };
       } else {
-        SGame.G.money += Math.floor(Math.random() * 10000) + 5000;
+        SGame.G.money += Math.floor((Math.floor(Math.random() * 10000) + 5000) * _dealMult);
         changeFavor(npcId, 2);
         EventSystem.addLog(`${npc.name}：「合作愉快！」`);
         result = { ok: true, msg: '合作顺利，获得小额收益' };
       }
     } else if (favor >= 30) {
       // 中立：小收益
-      SGame.G.money += Math.floor(Math.random() * 8000) + 3000;
+      SGame.G.money += Math.floor((Math.floor(Math.random() * 8000) + 3000) * _dealMult);
       SGame.addConnections(1);
       changeFavor(npcId, 2);
       EventSystem.addLog(`${npc.name}：「可以试试，但别抱太大期望。」`);

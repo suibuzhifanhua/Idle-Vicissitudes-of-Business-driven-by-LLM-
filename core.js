@@ -528,6 +528,10 @@ window.SGame = (() => {
     G._achRewardsCache = _tickAchRewards;
     const stressDecayBonus = 1.0 + (_tickAchRewards.stressDecay || 0);
     G.stress = Math.round(Math.max(0, G.stress - CONFIG.STRESS_NATURAL_DECAY * stressDecayBonus) * 10) / 10;
+    // v1.11 stressCap（stress_never_high）：压力上限 100→100-Σ，统一 clamp 覆盖所有 +stress 来源。
+    // 纯算术无 RNG；sim 全程压力远低于上限，clamp 惰性（不变性安全，见 design/reward-key-design.md §2.9）。
+    const _stressCapMax = 100 - (_tickAchRewards.stressCap || 0);
+    if (G.stress > _stressCapMax) G.stress = _stressCapMax;
     // 林教授被动：声誉衰减降低
     const _npcB = G._npcBonusCache || {};
     const repDecayReduction = _npcB._repGainPassive || 0;
@@ -2492,6 +2496,17 @@ window.SGame = (() => {
         G.unlockedAchievements.push(a.id);
         showAchievement(a.icon, a.name);
         addLog(`🏅 成就解锁：${a.name}`);
+        // v1.11 一次性授予键（statPoints/startMoney）：解锁时刻直接发放，不走 calcAchievementRewards 聚合。
+        // 纯状态写入无 RNG；sim 中 SP 无下游消费（unlockSkill 仅玩家动作）、startMoney 为已知轨迹变更项（重定基线，见 design/reward-key-design.md）。
+        const _aw = ACHIEVEMENT_REWARDS[a.id];
+        if (_aw && _aw.statPoints) {
+          G.statPoints = (G.statPoints || 0) + _aw.statPoints;
+          addLog(`🎁 成就奖励：技能点 +${_aw.statPoints}`);
+        }
+        if (_aw && _aw.startMoney) {
+          G.money += _aw.startMoney;
+          addLog(`🎁 成就奖励：资金 +${_formatMoney(_aw.startMoney)}`);
+        }
         if (typeof AudioFX !== 'undefined') AudioFX.playAchievement();
       }
     });
@@ -5218,7 +5233,9 @@ window.SGame = (() => {
     let maxLoan = totalAssets * 0.5 * (1 + (npcBon._loanCapBonus || 0));
     if (amount > maxLoan) return { ok: false, msg: '贷款额度上限 ' + _formatMoney(maxLoan) + '（总资产50%' + (npcBon._loanCapBonus ? '(+金行长加成)' : '') + '）' };
     if (amount < 10000) return { ok: false, msg: '最低贷款金额 10,000' };
-    const interestRate = Math.max(0.05, 0.15 - (G.reputation / 100) * 0.07 - (npcBon._loanRateBonus || 0));
+    // v1.11 loanInterest（rep_80）：利率 -2 个百分点，受 0.05 地板保护。applyLoan 仅玩家动作调用，sim 安全。
+    const _loanAch = (typeof calcAchievementRewards === 'function') ? calcAchievementRewards() : {};
+    const interestRate = Math.max(0.05, 0.15 - (G.reputation / 100) * 0.07 - (npcBon._loanRateBonus || 0) - (_loanAch.loanInterest || 0));
     const interestPerTick = parseFloat((amount * interestRate / duration).toFixed(2));
     const loan = {
       id: Date.now(), amount, duration, remaining: duration,

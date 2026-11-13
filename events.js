@@ -395,36 +395,45 @@ window.EventSystem = (() => {
   function applyEffects(eff) {
     if (!eff) return;
     const G = SGame.G;
+    // v1.11 决策类成就奖励：decisionBonus（event_100/decision_30，决策资金收益+）
+    // 与 decisionAnalysis（decision_5/decision_10，决策正向非资金效果+）。
+    // 只放大正向收益，负向惩罚不放大；乘数作用于 _effVal 解包后的值，不新增随机数。
+    // applyEffects 仅由 choose（玩家点选）/ autoDecide（托管门控）调用，不在 720h 仿真路径，sim 安全。
+    const _ar = (typeof calcAchievementRewards === 'function') ? calcAchievementRewards() : {};
+    const _decMoneyK = 1 + (_ar.decisionBonus || 0);
+    const _decOtherK = 1 + (_ar.decisionAnalysis || 0);
     // eff.money: 绝对值<1 且不为0 视为乘数，否则视为绝对增减量（数组按区间随机解包）
     const moneyV = _effVal(eff.money);
     if (moneyV) {
       if (Math.abs(moneyV) < 1 && moneyV !== 0) {
-        G.money *= moneyV;
+        G.money *= (moneyV > 1) ? moneyV * _decMoneyK : moneyV;
       } else {
-        G.money += moneyV;
+        G.money += (moneyV > 0) ? moneyV * _decMoneyK : moneyV;
       }
     }
     const moneyAbsV = _effVal(eff.moneyAbs);
     if (moneyAbsV) {
       // v1.7 后期档位：绝对值金额跟随富豪等级缩放（与升级成本同乘数），防止晚期归零
       const lgCost = (typeof SGame !== 'undefined' && SGame.getLateGameCostScale) ? SGame.getLateGameCostScale() : 1;
-      G.money += moneyAbsV * lgCost;
+      G.money += moneyAbsV * lgCost * (moneyAbsV > 0 ? _decMoneyK : 1);
     }
     const repV = _effVal(eff.reputation);
-    if (repV) G.reputation = Math.max(0, Math.min(100, G.reputation + repV));
+    if (repV) G.reputation = Math.max(0, Math.min(100, G.reputation + repV * (repV > 0 ? _decOtherK : 1)));
     const stressV = _effVal(eff.stress);
-    if (stressV) G.stress = Math.max(0, Math.min(100, G.stress + stressV));
+    if (stressV) G.stress = Math.max(0, Math.min(100, G.stress + stressV * (stressV < 0 ? _decOtherK : 1)));
     const connV = _effVal(eff.connections);
     if (connV) {
-      const scaled = Math.floor(connV * (CONFIG.CONNECTIONS_GAIN_SCALE || 0.6));
+      const scaled = Math.floor(connV * (CONFIG.CONNECTIONS_GAIN_SCALE || 0.6) * (connV > 0 ? _decOtherK : 1));
       G.connections = Math.min(CONFIG.MAX_CONNECTIONS || 100, Math.max(0, G.connections + scaled));
     }
     if (eff.reputationMul) G.reputation = Math.max(0, Math.min(100, G.reputation * eff.reputationMul));
     if (eff.stressMul) G.stress = Math.max(0, Math.min(100, G.stress * eff.stressMul));
-    // NPC好感度处理
+    // NPC好感度处理（v1.11：decisionAnalysis 正向好感先放大取整，再经 changeFavor 的 favorGain 链）
     if (eff.npcFavor) {
       Object.entries(eff.npcFavor).forEach(([npcId, delta]) => {
-        if (typeof NPCSystem !== 'undefined') NPCSystem.changeFavor(npcId, delta);
+        if (typeof NPCSystem !== 'undefined') {
+          NPCSystem.changeFavor(npcId, (delta > 0 && _decOtherK > 1) ? Math.round(delta * _decOtherK) : delta);
+        }
       });
     }
     // 出身事件特有字段

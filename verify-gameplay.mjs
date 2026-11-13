@@ -1168,6 +1168,220 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
   }
 }
 
+// ---------- v1.11 成就死奖励键接线（12 键，口径见 design/reward-key-design.md） ----------
+// 本块以 startGame(sprint) 重置全新状态后开始。重要：S.startGame 会替换 S.G 引用，
+// 所有 G 的捕获必须发生在最后一次 startGame 之后，否则操作到已废弃的旧对象。
+// 各检查自行锁定/恢复 G.unlockedAchievements 与相关字段；RNG 用 fixRand 临时固定。
+{
+  const NS = sandbox.NPCSystem;
+  const ES = sandbox.EventSystem;
+  const N11 = evalIn('NPCS');
+  const fixRand = (v) => { const old = sandbox.Math.random; sandbox.Math.random = () => v; return () => { sandbox.Math.random = old; }; };
+
+  // [1][2] statPoints/startMoney 一次性授予 —— 双 startGame 对照实验（消除 act 推进等既有 SP 路径的干扰）：
+  // 控制组：预标 first_biz/skill_1/speed_run 已解锁 → 本 tick 无成就授予，sp 增量仅来自既有路径（act 推进等）
+  // 实验组：全新同态状态自然解锁 → 唯一差异 = 一次性授予（first_biz +2 / skill_1 +1 / speed_run startMoney +500k）
+  const _origin11 = S.G.origin;
+  S.startGame(_origin11, 'v111ctl', { difficulty: 'sprint' });
+  let spCtrl = 0, moneyCtrl = 0;
+  {
+    const GC = S.G;
+    GC.unlockedSkills = ['verify_test_skill'];
+    GC.unlockedAchievements = ['first_biz', 'skill_1', 'speed_run'];
+    runIntervals(1);
+    spCtrl = GC.statPoints || 0; moneyCtrl = GC.money;
+  }
+  S.startGame(_origin11, 'v111exp', { difficulty: 'sprint' });
+  const G = S.G; // 重新捕获：startGame 后 S.G 指向全新对象
+  const setUn = (ids) => { G.unlockedAchievements = (ids || []).slice(); };
+  G.unlockedSkills = ['verify_test_skill'];
+  runIntervals(1);
+  const spExp = G.statPoints || 0, moneyExp = G.money;
+  const spDelta = spExp - spCtrl, moneyDelta = Math.round(moneyExp - moneyCtrl);
+  G.unlockedSkills = []; // 清理：后续断言沿用空技能列表口径
+  check('v1.11 statPoints 授予（对照组差分 = first_biz +2 / skill_1 +1，净增 3）',
+    G.unlockedAchievements.includes('skill_1') && G.unlockedAchievements.includes('first_biz') && spDelta === 3,
+    'un=' + G.unlockedAchievements.filter(id => ['skill_1', 'first_biz', 'speed_run'].includes(id)).join(',') + ' spCtrl=' + spCtrl + ' spExp=' + spExp);
+  // [2] startMoney：speed_run 解锁发放 +50 万（唯一轨迹变更项→重定基线）
+  check('v1.11 startMoney 发放（speed_run 解锁时刻 +500000，对照组差分精确 500000）',
+    G.unlockedAchievements.includes('speed_run') && moneyDelta === 500000,
+    'moneyCtrl=' + Math.round(moneyCtrl) + ' moneyExp=' + Math.round(moneyExp) + ' delta=' + moneyDelta);
+
+  // [3] loanInterest：rep_80 利率 -2pp（rep=50：0.115→11.5%；减后 9.5%；地板 0.05）
+  {
+    setUn([]);
+    G.money = 1e7; G.reputation = 50;
+    if (!G.npcFavor.jinhangzhang || G.npcFavor.jinhangzhang > 60) G.npcFavor.jinhangzhang = 0; // 排除金行长利率/额度加成
+    const l0 = S.applyLoan(1e6, 24);
+    G.loans = [];
+    setUn(['rep_80']);
+    G.loans = [];
+    const l1 = S.applyLoan(1e6, 24);
+    G.loans = [];
+    setUn([]);
+    check('v1.11 loanInterest（rep_80 贷款利率 -2pp，11.5%→9.5%，地板 0.05）',
+      l0 && l0.ok && l1 && l1.ok && l0.loan.interestRate === 11.5 && l1.loan.interestRate === 9.5,
+      (l0 && l0.ok) + '/' + (l1 && l1.ok) + ' rate=' + (l0 && l0.loan.interestRate) + '→' + (l1 && l1.loan.interestRate));
+  }
+
+  // [4] coopBonus+negotiateBonus：约谈收益 ×1.30（favor≥80 档，rand=0.5 → base 45000 → 58500）
+  {
+    const favSave = JSON.parse(JSON.stringify(G.npcFavor));
+    G.npcFavor.zhaolei = 80;
+    G.money = 1e7;
+    setUn([]);
+    let u = fixRand(0.5); const r0 = NS.negotiate('zhaolei', 'business'); u();
+    const d0 = G.money - 1e7;
+    setUn(['rep_70', 'npc_max']);
+    G.money = 1e7;
+    u = fixRand(0.5); const r1 = NS.negotiate('zhaolei', 'business'); u();
+    const d1 = G.money - 1e7;
+    setUn([]);
+    G.npcFavor = favSave;
+    check('v1.11 coopBonus+negotiateBonus（negotiate 资金 ×1.30：45000→58500）',
+      r0.ok && r1.ok && d0 === 45000 && d1 === 58500, 'd0=' + d0 + ' d1=' + d1);
+  }
+
+  // [5] giftEffect：送礼 love 档 rand=0.5 → base 12 → ×1.2 → 14
+  {
+    const gnp = Object.values(N11).find(n => n.giftPreferences && n.giftPreferences.love && n.giftPreferences.love.length > 0);
+    const gt = gnp.giftPreferences.love[0];
+    const favSave = JSON.parse(JSON.stringify(G.npcFavor));
+    G.npcFavor[gnp.id] = 50;
+    G.money = 1e7; G.todayGifted = {};
+    setUn([]);
+    let u = fixRand(0.5); NS.giveGift(gnp.id, gt); u();
+    const d0 = G.npcFavor[gnp.id] - 50;
+    G.npcFavor[gnp.id] = 50; G.money = 1e7; G.todayGifted = {};
+    setUn(['npc_1']);
+    u = fixRand(0.5); NS.giveGift(gnp.id, gt); u();
+    const d1 = G.npcFavor[gnp.id] - 50;
+    setUn([]);
+    G.npcFavor = favSave;
+    check('v1.11 giftEffect（npc_1 送礼好感 +20%：12→14）', d0 === 12 && d1 === 14, 'd0=' + d0 + ' d1=' + d1);
+  }
+
+  // [6] favorGain：changeFavor 正向 +15%（5→6），负向不放大（-4→-4）
+  {
+    const favSave = JSON.parse(JSON.stringify(G.npcFavor));
+    G.npcFavor.chenzong = 30;
+    setUn(['npc_3']);
+    NS.changeFavor('chenzong', 5);
+    const dPos = G.npcFavor.chenzong - 30;
+    G.npcFavor.chenzong = 30;
+    NS.changeFavor('chenzong', -4);
+    const dNeg = G.npcFavor.chenzong - 30;
+    setUn([]);
+    G.npcFavor = favSave;
+    check('v1.11 favorGain（npc_3 正向好感获取 +15%：5→6；负向不放大 -4→-4）',
+      dPos === 6 && dNeg === -4, 'pos=' + dPos + ' neg=' + dNeg);
+  }
+
+  // [7] decisionBonus：applyEffects 正向资金 +15%（100000→115000），负向不变（-100000）
+  {
+    G.reputation = 50;
+    setUn(['event_100']);
+    G.money = 1e7;
+    ES.applyEffects({ moneyAbs: 100000 });
+    const dPos = Math.round(G.money - 1e7);
+    G.money = 1e7;
+    ES.applyEffects({ moneyAbs: -100000 });
+    const dNeg = Math.round(G.money - 1e7);
+    setUn([]);
+    check('v1.11 decisionBonus（event_100 决策正向资金 +15%：100000→115000；负向不放大）',
+      dPos === 115000 && dNeg === -100000, 'pos=' + dPos + ' neg=' + dNeg);
+  }
+
+  // [8] decisionAnalysis：正向非资金 +10%（rep 2→2.2；conn 40→floor(40×0.45×1.1)=19；stress -2→-2.2）
+  {
+    const repB = 50, connB = 10, strB = 50;
+    G.reputation = repB; G.connections = connB; G.stress = strB;
+    setUn(['decision_5']);
+    ES.applyEffects({ reputation: 2, connections: 40, stress: -2 });
+    const dRep = G.reputation - repB;
+    const dConn = G.connections - connB;
+    const dStr = G.stress - strB;
+    setUn([]);
+    check('v1.11 decisionAnalysis（decision_5 正向非资金 +10%：rep 2.2 / conn 19 / stress -2.2）',
+      Math.abs(dRep - 2.2) < 1e-9 && dConn === 19 && Math.abs(dStr + 2.2) < 1e-9,
+      'rep=' + dRep + ' conn=' + dConn + ' str=' + dStr);
+  }
+
+  // [9] eventPredict：autoDecide 资金项评分 ×1.05 翻转选择
+  // moneyRatio=0（money=0/moneyPeak=1e6）→ repWeight=2：A=290×predK，B=150×2=300 → 无预判 B 胜，+5% 后 A 胜
+  {
+    const mkEv = () => ({ id: 'vp_pred_test', title: '预判测试', choices: [
+      { text: 'A_money', effect: { moneyAbs: 2900000 } },
+      { text: 'B_rep', effect: { reputation: 150 } } ] });
+    const pick = () => {
+      const h0 = (G.decisionHistory || []).length;
+      S.autoDecide(mkEv());
+      const last = G.decisionHistory[G.decisionHistory.length - 1];
+      return last ? last.choice : ('len ' + h0 + '->' + G.decisionHistory.length);
+    };
+    G.money = 0; G.moneyPeak = 1e6; G.stress = 0;
+    if (G.autoMode) G.autoMode.eventPreference = 'balanced';
+    setUn([]);
+    const p0 = pick();
+    setUn(['event_10']);
+    const p1 = pick();
+    setUn([]);
+    G.money = 1e7;
+    check('v1.11 eventPredict（event_10 托管自动决策资金权重 +5% 翻转选择 B→A）',
+      p0 === 'B_rep' && p1 === 'A_money', 'no=' + p0 + ' with=' + p1);
+  }
+
+  // [10] stressCap：压力上限 100→90（tickDecay clamp；decay 0.05 后 95→94.9 未触线，解锁后触线收 90）
+  {
+    setUn([]);
+    G.stress = 95;
+    runIntervals(1);
+    const ctl = G.stress;
+    setUn(['stress_never_high']);
+    G.stress = 95;
+    runIntervals(1);
+    const cap = G.stress;
+    setUn([]);
+    G.stress = 25;
+    check('v1.11 stressCap（stress_never_high 压力上限 100→90：对照 95→' + ctl + ' 未触线 / 解锁后→90）',
+      ctl > 90 && cap === 90, 'ctl=' + ctl + ' cap=' + cap);
+  }
+
+  // [11] rdBonus：generateRPT 增速 ×1.10（core-research.js 死引用修复；tech 业务 Lv3 保证 rpt>0）
+  {
+    const cityId = Object.keys(G.cities || {})[0];
+    const bizSave = G.cities[cityId] && G.cities[cityId].businesses ? JSON.parse(JSON.stringify(G.cities[cityId].businesses.tech || null)) : null;
+    if (G.cities[cityId] && G.cities[cityId].businesses) G.cities[cityId].businesses.tech = { level: 3, region: null, unlocked: true };
+    setUn([]);
+    G.rpt = 0;
+    S.generateRPT();
+    const r0 = G.rpt;
+    setUn(['money_50m']);
+    G.rpt = 0;
+    S.generateRPT();
+    const r1 = G.rpt;
+    setUn([]);
+    if (G.cities[cityId] && G.cities[cityId].businesses) G.cities[cityId].businesses.tech = bizSave;
+    G.rpt = 0;
+    check('v1.11 rdBonus（money_50m 研发 +10%，core-research.js S.calcAchievementRewards 死引用修复）',
+      r0 > 0 && Math.abs(r1 - r0 * 1.1) < 0.01, 'r0=' + r0 + ' r1=' + r1);
+  }
+
+  // [12] 聚合不变量：calcAchievementRewards 对 12 键求和正确（防回归）
+  {
+    setUn(['first_biz', 'skill_1', 'skill_10', 'venture_first', 'rep_70', 'rep_80', 'event_10', 'event_100', 'decision_5',
+      'npc_1', 'npc_3', 'npc_max', 'stress_never_high', 'money_50m', 'speed_run']);
+    const T = evalIn('calcAchievementRewards()');
+    // statPoints：first_biz 2 + skill_1 1 + skill_10 3 + venture_first 1 = 7
+    const ok = T.statPoints === 7 && T.startMoney === 500000 && T.coopBonus === 0.10 && T.loanInterest === 0.02 &&
+      T.eventPredict === 0.05 && T.decisionBonus === 0.15 && T.decisionAnalysis === 0.10 && T.giftEffect === 0.20 &&
+      T.favorGain === 0.15 && T.negotiateBonus === 0.20 && T.stressCap === 10 && T.rdBonus === 0.10;
+    setUn([]);
+    check('v1.11 聚合不变量（12 键求和：statPoints 7 / startMoney 5e5 / 各乘数正确）', ok,
+      JSON.stringify({ sp: T.statPoints, sm: T.startMoney, cb: T.coopBonus, li: T.loanInterest, ep: T.eventPredict, db: T.decisionBonus, da: T.decisionAnalysis, ge: T.giftEffect, fg: T.favorGain, nb: T.negotiateBonus, sc: T.stressCap, rd: T.rdBonus }));
+  }
+}
+
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;
 const failCount = results.filter(r => r.startsWith('FAIL')).length;

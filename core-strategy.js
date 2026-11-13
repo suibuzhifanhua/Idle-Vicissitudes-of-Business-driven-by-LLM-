@@ -100,17 +100,21 @@
     const npcWeight = 0.6 * (1 + moneyRatio);
 
     // 评分每个选项
+    // v1.11 eventPredict（event_10/event_30，事件预判+5%/+8%）：放大自动决策评分中的资金项
+    //（正负两向——预判让托管对资金后果的评估更敏锐）。纯算术不新增随机数；
+    // autoDecide 仅 autoMode 开启时执行（720h 仿真 autoMode 关闭），sim 安全。
+    const _predK = 1 + ((typeof calcAchievementRewards === 'function') ? (calcAchievementRewards().eventPredict || 0) : 0);
     const scored = choices.map((c, i) => {
       const eff = c.effect || {};
       let score = 0;
 
       // 资金效果
       if (eff.money) {
-        if (eff.money > 1) score += (eff.money - 1) * moneyWeight;
-        else if (eff.money < 1 && eff.money > 0) score -= (1 - eff.money) * moneyLossWeight;
+        if (eff.money > 1) score += (eff.money - 1) * moneyWeight * _predK;
+        else if (eff.money < 1 && eff.money > 0) score -= (1 - eff.money) * moneyLossWeight * _predK;
       }
       if (eff.moneyAbs) {
-        score += eff.moneyAbs / WAN;
+        score += (eff.moneyAbs / WAN) * _predK;
       }
 
       // 声誉

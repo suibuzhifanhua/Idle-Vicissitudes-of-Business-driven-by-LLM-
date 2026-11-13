@@ -115,6 +115,16 @@ const ACHIEVEMENTS = [
 
 // ========== 成就奖励映射（策略核心） ==========
 // 每个成就解锁后提供永久加成。这些加成是游戏的核心成长来源。
+//
+// v1.11 奖励消费地图（全部 12 键已接线，详见 design/reward-key-design.md）：
+//   实时 tick 键（calcAchievementRewards 聚合消费）：incomeMult/opCost/stressDecay/loyaltyDecay/
+//     empEfficiency/skillCostReduce/empMaxBonus/unlockCost/regionCost/hireCost/citySynergy 等
+//   一次性授予键（checkAchievements 解锁时刻发放）：statPoints、startMoney
+//   tick clamp 键（tickDecay 内消费）：stressCap
+//   玩家/托管动作键（对应函数内消费，sim 不触达）：
+//     loanInterest→applyLoan/金行长特批贷 · coopBonus+negotiateBonus→negotiate ·
+//     giftEffect→giveGift · favorGain→changeFavor · decisionBonus+decisionAnalysis→applyEffects ·
+//     eventPredict→autoDecide 评分 · rdBonus→generateRPT（core-research.js，v1.11 修复死引用）
 const ACHIEVEMENT_REWARDS = {
   // 资产类 — 越富有越有杠杆
   first_income: { desc:'员工招聘成本-3%',  hireCost:0.97 },
