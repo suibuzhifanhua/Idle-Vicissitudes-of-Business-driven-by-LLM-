@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 
 const GAME_DIR = process.argv[2]
   ? path.resolve(process.argv[2]) + path.sep
-  : path.dirname(fileURLToPath(import.meta.url)) + '/';
+  : path.dirname(fileURLToPath(import.meta.url)) + path.sep;
 
 const SEED = Number(process.env.SEED) || 1;
 const HORizons = process.env.SIM_HOURS
