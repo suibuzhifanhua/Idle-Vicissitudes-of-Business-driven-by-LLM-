@@ -2895,7 +2895,8 @@ window.UI = (() => {
     var rep = Math.round(G.reputation || 0);
     var repClass = rep > 80 ? 'success' : (rep > 40 ? '' : 'warning');
     var actLabel = G.act || 1;
-    var diffLabel = { easy: '🟢 简单', standard: '🟡 标准', hard: '🔴 困难' }[G.difficulty] || G.difficulty;
+    // v1.10：补全难度键映射（原 easy/hard 与实际键 fast/slow/sprint/sandbox 不匹配，非 standard 均回退裸键）
+    var diffLabel = { fast: '⚡ 快速', standard: '🟡 标准', slow: '🐢 慢速', sprint: '⏱️ 冲刺', sandbox: '🏖️ 沙盒', easy: '🟢 简单', hard: '🔴 困难' }[G.difficulty] || G.difficulty;
 
     html += '<div class="balance-overview">';
     html += '<div class="balance-stat"><div class="stat-value">' + fm(G.money || 0) + '</div><div class="stat-label">💰 当前资金</div></div>';

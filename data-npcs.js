@@ -804,4 +804,187 @@ var NPCS = {
     npcLinks: { jinhangzhang: 0.25, wanglvshi: 0.2, chenzong: 0.1, lichu: 0.1 },
   },
 
+  // ===== v1.10 晚期专属 NPC（3位）=====
+  // 注意：lazyFavor=true 表示好感度延迟初始化（首次交互时由 changeFavor 自建键），
+  // 避免新增 NPC 键进入 G.npcFavor 后扰动固定种子的随机数序列（720h 逐位不变性硬约束）。
+  // 因此 actUnlock 必须 > 720h 窗口最高幕（act5），好感衰减/随机来访池均按 actUnlock 门控。
+
+  sumingyuan: {
+    id:'sumingyuan', name:'苏明远', title:'央行首席经济学家',
+    actUnlock:6, initFavor:0, lazyFavor:true,
+    desc:'55岁，《流动性逻辑》作者，他的每一句判断都能掀起资本市场的巨浪，只尊重真正的长期主义',
+    ...NPC_DEFAULTS,
+    dialogTypes:['greeting','insight','warning','cooperation'],
+    giftPreferences: { love:['book','art'], like:['wine'], neutral:['tech','luxury'] },
+    giftQuote: '苏明远是学术派，好书和名家字画才入得了他的眼，送礼不如送观点。',
+    dialogs:{
+      greeting:['苏明远放下手中的茶杯，目光平静："小林总，坐。我很少见企业家，但你让我破例了。"','"你的公司我研究过。数据很漂亮，但我想听听数据背后的判断。"'],
+      insight:['"流动性是有潮汐的。现在的水位，只是下一次退潮前最后的温柔。"','"市场永远为两种人定价：看见未来的人，和解释过去的人。"'],
+      warning:['"我给你提个醒：你报表里有一个结构性的雷，六个月后会爆。现在拆，代价最小。"','"别被连续三个季度的增长麻痹了。我见过太多企业死在巅峰的前夜。"'],
+    },
+    questLines: [
+      {
+        id: 'sumingyuan_q1', name: '流动性潮汐', desc: '苏明远邀请你参加央行的小范围闭门会',
+        reqFavor: 20,
+        steps: [
+          { text: '苏明远把你带进央行闭门会，他的一句话让全场安静："六个月内，会有流动性浪潮拍打岸边。"', reward: { stress: 5 } },
+          { text: '你提前调整资金结构，精准抓住了那波流动性浪潮', reward: { money: 300000000, npcFavor: { sumingyuan: 12 } } },
+          { text: '苏明远在新书里写了一段话："资本浪潮里，能看见岸边的人才配谈航行。"', reward: { reputation: 10, connections: 8, npcFavor: { sumingyuan: 10 } } },
+        ]
+      },
+      {
+        id: 'sumingyuan_q2', name: '专项信贷通道', desc: '央行设立"长期主义企业信贷通道"，苏明远提名你的公司',
+        reqFavor: 40,
+        steps: [
+          { text: '央行"长期主义企业信贷通道"启动，苏明远提名你的公司作为首批样本企业', reward: { stress: 8 } },
+          { text: '迎接一系列穿透式审查，你的财务数据被翻得底朝天', reward: { money: -50000000, stress: 10 } },
+          { text: '专项授信获批，利率远低于市场水平', reward: { money: 800000000, reputation: 8, npcFavor: { sumingyuan: 15 } } },
+        ]
+      },
+      {
+        id: 'sumingyuan_q3', name: '数字资产白皮书', desc: '央行数字货币战略需要企业侧的参与样板',
+        reqFavor: 60,
+        steps: [
+          { text: '央行数字货币战略需要企业侧样板，苏明远直接点出了你的名字', reward: { stress: 10 } },
+          { text: '联合起草白皮书，你在跨境结算场景的章节上卡了整整两周', reward: { stress: 8, connections: 5 } },
+          { text: '白皮书发布，你的公司成为行业首批试点', reward: { money: 500000000, reputation: 15, statPoints: 2, npcFavor: { sumingyuan: 15 } } },
+        ]
+      },
+      {
+        id: 'sumingyuan_q4', name: '宏观拐点', desc: '苏明远透露一个即将到来的宏观拐点',
+        reqFavor: 75,
+        steps: [
+          { text: '苏明远私下告诉你："宏观拐点要来了，下一个周期和以前完全不同。"', reward: { stress: 12 } },
+          { text: '你提前六个月重构集团资产负债结构', reward: { money: -200000000, stress: 15 } },
+          { text: '拐点如期而至，全行业措手不及，而你早已轻装上阵', reward: { money: 1500000000, reputation: 20, statPoints: 3, npcFavor: { sumingyuan: 20 } } },
+        ]
+      },
+    ],
+    relations: [
+      {npcId:'jinhangzhang',type:'ally',intensity:0.9},
+      {npcId:'lichu',type:'neutral',intensity:0.5},
+      {npcId:'chenzong',type:'rival',intensity:0.6},
+      {npcId:'shenyidong',type:'neutral',intensity:0.4}
+    ],
+    npcLinks: { jinhangzhang: 0.3, lichu: 0.15, shenyidong: 0.2, guxuan: 0.1 },
+  },
+
+  shenyidong: {
+    id:'shenyidong', name:'沈亦东', title:'深空联合体秘书长',
+    actUnlock:7, initFavor:0, lazyFavor:true,
+    desc:'48岁，工程师出身的航天官僚，推动太空经济落地，相信商业资本是人类走出地球的唯一燃料',
+    ...NPC_DEFAULTS,
+    dialogTypes:['greeting','project','resource','vision'],
+    giftPreferences: { love:['tech','book'], like:['art'], neutral:['wine','luxury'] },
+    giftQuote: '沈亦东还保持着工程师的习惯，航天纪录片和芯片白皮书比任何年份酒都让他兴奋。',
+    dialogs:{
+      greeting:['沈亦东站在发射场模型前，头也不回："来了？正好，我给你看个东西。"','"坐。太空经济这个盘子，需要你们这样的地面资本来点火。"'],
+      project:['"轨道数据网络的方案，我看了三版，只有你这版的成本模型是真的。"','"深空项目容不得虚。你的报价里有多少水分，我一眼就能看出来。"'],
+      vision:['"一百年后回看今天，我们会发现：第一批把名字送上轨道的企业，改变了历史的写法。"','"地球是摇篮，但人类不可能永远待在摇篮里。资本就是燃料。"'],
+    },
+    questLines: [
+      {
+        id: 'shenyidong_q1', name: '轨道数据网络', desc: '深空联合体的地面站网络需要商业资本参与',
+        reqFavor: 20,
+        steps: [
+          { text: '沈亦东带队来访："轨道数据网络的地面站，需要商业资本入局。"', reward: { stress: 5 } },
+          { text: '你带队评估项目，回报率模型比预想的更扎实', reward: { connections: 6, npcFavor: { shenyidong: 12 } } },
+          { text: '你的公司成为地面站项目的首批基石投资人', reward: { money: 400000000, reputation: 10, npcFavor: { shenyidong: 12 } } },
+        ]
+      },
+      {
+        id: 'shenyidong_q2', name: '太空算力计划', desc: '联合体的"太空算力"计划遭遇资金缺口',
+        reqFavor: 40,
+        steps: [
+          { text: '联合体"太空算力"计划告急：轨道计算集群的资金缺口需要填补', reward: { stress: 10 } },
+          { text: '你承接了基础设施部分的投资，技术团队整体进驻你的园区', reward: { money: -600000000, stress: 12 } },
+          { text: '首个轨道数据中心上线，你的公司获得优先算力配额', reward: { money: 900000000, reputation: 12, connections: 10, npcFavor: { shenyidong: 18 } } },
+        ]
+      },
+      {
+        id: 'shenyidong_q3', name: '月球基建联盟', desc: '联合体启动月球基地建设工程，需要企业侧总承建方',
+        reqFavor: 60,
+        steps: [
+          { text: '联合体启动月球基地建设，寻找企业侧总承建联盟', reward: { stress: 8 } },
+          { text: '竞标激烈，你的工程能力和供应链体系拿下最高分', reward: { connections: 8, stress: 10 } },
+          { text: '你拿下月基能源供给子系统承建权', reward: { money: 700000000, reputation: 15, statPoints: 2, npcFavor: { shenyidong: 18 } } },
+        ]
+      },
+      {
+        id: 'shenyidong_q4', name: '地外文明计划', desc: '沈亦东邀请你的集团签署"企业文明公约"',
+        reqFavor: 75,
+        steps: [
+          { text: '沈亦东说："有一天，你们集团的名字会同时刻在地球和星空上。"', reward: { reputation: 5 } },
+          { text: '你签署联合体首份"企业文明公约"，承诺长期投入地外基建', reward: { money: -300000000, stress: 10 } },
+          { text: '首艘商用飞船升空，船身上印着你的公司Logo', reward: { money: 2000000000, reputation: 25, statPoints: 3, npcFavor: { shenyidong: 20 } } },
+        ]
+      },
+    ],
+    relations: [
+      {npcId:'sumingyuan',type:'neutral',intensity:0.4},
+      {npcId:'zhaolei',type:'ally',intensity:0.5},
+      {npcId:'guxuan',type:'neutral',intensity:0.3}
+    ],
+    npcLinks: { sumingyuan: 0.2, zhaolei: 0.15, guxuan: 0.15 },
+  },
+
+  guxuan: {
+    id:'guxuan', name:'顾璇', title:'家族基金会受托人',
+    actUnlock:8, initFavor:0, lazyFavor:true,
+    desc:'42岁，老钱家族基金会的受托人，管理着跨越三代的财富，她看中的从来不是回报率，而是你这个人能走多远',
+    ...NPC_DEFAULTS,
+    dialogTypes:['greeting','inheritance','ethics','legacy'],
+    giftPreferences: { love:['art','book'], like:['wine'], neutral:['tech','luxury'] },
+    giftQuote: '顾璇代表老钱，一件艺术品的价值不在标价，而在它背后的故事和传承。',
+    dialogs:{
+      greeting:['顾璇翻着你的年报，抬头时眼神平静："数字都看完了。现在说说你自己。"','"我祖父说过：看企业先看数字，看人再看数字。你两者我都想看看。"'],
+      inheritance:['"财富最大的敌人不是亏损，是下一代。我们基金会的每一笔钱，都在为一百年后做打算。"','"你打算把你的公司传给谁？这个问题，比你的增长曲线重要得多。"'],
+      legacy:['"真正的护城河，是别人抄不走的文化和故事。"','"等你的公司走到第三代，希望他们还记得今天坐在这间屋子里的人。"'],
+    },
+    questLines: [
+      {
+        id: 'guxuan_q1', name: '初次受托', desc: '顾璇邀请你作为外部观察员参加基金会年度评审',
+        reqFavor: 20,
+        steps: [
+          { text: '顾璇递来邀请函："基金会年度评审，想请你以外部观察员身份列席。"', reward: { stress: 5 } },
+          { text: '你提交的观察报告让评审团眼前一亮，你的资产配置建议被全票采纳', reward: { reputation: 8, connections: 6, npcFavor: { guxuan: 12 } } },
+          { text: '基金会决定将一部分资金交由你的集团资管部门管理', reward: { money: 500000000, npcFavor: { guxuan: 14 } } },
+        ]
+      },
+      {
+        id: 'guxuan_q2', name: '跨代资本', desc: '基金会正在研究一项跨越百年的"跨代资本"计划',
+        reqFavor: 40,
+        steps: [
+          { text: '顾璇告诉你，基金会正在研究一项跨越百年的"跨代资本"计划', reward: { stress: 8 } },
+          { text: '你负责设计长期收益曲线模型，过程枯燥但意义非凡', reward: { stress: 12, connections: 5 } },
+          { text: '计划通过，你的集团获得百年期战略投资授权', reward: { money: 1200000000, reputation: 15, statPoints: 2, npcFavor: { guxuan: 16 } } },
+        ]
+      },
+      {
+        id: 'guxuan_q3', name: '老钱传承', desc: '基金会第三代即将接棒，老派成员蠢蠢欲动',
+        reqFavor: 60,
+        steps: [
+          { text: '传闻基金会第三代即将接棒，老派成员蠢蠢欲动', reward: { stress: 10 } },
+          { text: '顾璇请你出面斡旋，你在两派之间走钢丝', reward: { stress: 12, reputation: 8 } },
+          { text: '交接顺利完成，新一代的第一个决定就是加大对你们集团的合作', reward: { money: 1000000000, connections: 12, npcFavor: { guxuan: 18 } } },
+        ]
+      },
+      {
+        id: 'guxuan_q4', name: '商业世家', desc: '顾璇提议共建"商业传承博物馆"，把你的故事写进历史',
+        reqFavor: 75,
+        steps: [
+          { text: '顾璇说："真正的企业护城河，是能把故事传给下一代的东西。"', reward: { reputation: 8 } },
+          { text: '你与基金会共建"商业传承博物馆"，收藏新海商界创业史', reward: { money: -400000000, stress: 8 } },
+          { text: '博物馆开馆，你的名字被刻在了历代商帮名人墙上', reward: { money: 3000000000, reputation: 30, statPoints: 3, npcFavor: { guxuan: 20 } } },
+        ]
+      },
+    ],
+    relations: [
+      {npcId:'qianlaoban',type:'ally',intensity:0.8},
+      {npcId:'sumingyuan',type:'neutral',intensity:0.3},
+      {npcId:'chenzong',type:'neutral',intensity:0.5}
+    ],
+    npcLinks: { qianlaoban: 0.25, sumingyuan: 0.1, chenzong: 0.1 },
+  },
+
 };

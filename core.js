@@ -318,8 +318,11 @@ window.SGame = (() => {
 
   function _initStatePost(G, o) {
     // 初始化NPC好感
+    // v1.10：lazyFavor NPC（晚期专属）延迟初始化——解锁前不占 G.npcFavor 键位，
+    // 好感衰减块按 G.npcFavor 键无条件逐键消耗随机数，提前建键会位移固定种子序列（720h 不变性硬约束）
     Object.values(NPCS).forEach(npc => {
-      G.npcFavor[npc.id] = npc.initFavor;
+      if (npc.lazyFavor && G.act < npc.actUnlock) return;
+      G.npcFavor[npc.id] = npc.initFavor || 0;
       G.npcTriggers[npc.id] = [];
     });
     // 初始化城市天气
@@ -3605,6 +3608,11 @@ window.SGame = (() => {
   function triggerActEvent(act) {
     // 按幕次触发NPC对话
     Object.values(NPCS).forEach(npc => {
+      // v1.10：lazyFavor NPC 防御性补建（旧存档无此键）+ 解锁幕回填 initFavor
+      if (!G.npcTriggers[npc.id]) G.npcTriggers[npc.id] = [];
+      if (npc.lazyFavor && G.npcFavor[npc.id] === undefined && npc.actUnlock <= act) {
+        G.npcFavor[npc.id] = npc.initFavor || 0;
+      }
       if (npc.actUnlock <= act - 1 && !G.npcTriggers[npc.id].includes(`act_${act}`)) {
         G.npcTriggers[npc.id].push(`act_${act}`);
         // 触发对话

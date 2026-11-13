@@ -262,6 +262,16 @@ const DIFFICULTY_PRESETS = {
     growthMult: 0.7,
     decayMult: 0.5,
   },
+  // v1.10 限时挑战：资金×3 起跑，200 小时内冲 100 亿达成「极速传奇」
+  // 注：eventFreqMult 保持 1.0——事件带正负方差，限时模式要的是确定性提速
+  sprint: {
+    name: '⚡ 冲刺挑战',
+    desc: '限时挑战：初始资金×3，200 小时内资产冲上 100 亿',
+    startFundsMult: 3.0,
+    eventFreqMult: 1.0,
+    growthMult: 1.0,
+    decayMult: 1.0,
+  },
   sandbox: {
     name: '沙盒模式',
     desc: '无限资金，无随机事件，自由建造商业帝国',

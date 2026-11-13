@@ -74,7 +74,7 @@
     const presets = typeof DIFFICULTY_PRESETS !== 'undefined' ? DIFFICULTY_PRESETS : {};
     if (!Object.keys(presets).length) return;
 
-    const keys = ['fast', 'standard', 'slow', 'sandbox'];
+    const keys = ['fast', 'standard', 'slow', 'sprint', 'sandbox'];
     const diffHtml = keys.filter(k => presets[k]).map(k => {
       const p = presets[k];
       const isDefault = k === 'standard';

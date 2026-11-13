@@ -1082,6 +1082,92 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
   }
 }
 
+// ---------- v1.10 晚期专属 NPC + 限时挑战冲刺模式 ----------
+{
+  const N = evalIn('NPCS');
+  const ids = Object.keys(N);
+  check('v1.10 NPC 总数 14→17', ids.length === 17, 'len=' + ids.length);
+  check('v1.10 3 晚期 NPC 存在（苏明远/沈亦东/顾璇，actUnlock 6/7/8 高于 720h 窗口最高幕 5）',
+    N.sumingyuan && N.shenyidong && N.guxuan &&
+    N.sumingyuan.actUnlock === 6 && N.shenyidong.actUnlock === 7 && N.guxuan.actUnlock === 8,
+    [N.sumingyuan, N.shenyidong, N.guxuan].map(n => n && n.actUnlock).join('/'));
+  check('v1.10 晚期 NPC lazyFavor=true 且 initFavor=0（好感键延迟自建，720h 随机序列不被扰动）',
+    [N.sumingyuan, N.shenyidong, N.guxuan].every(n => n.lazyFavor === true && n.initFavor === 0), '');
+  const structOk = ['sumingyuan', 'shenyidong', 'guxuan'].every(k => {
+    const n = N[k];
+    if (!n || !n.questLines || n.questLines.length !== 4) return false;
+    if (!n.questLines.every(q => q.steps && q.steps.length === 3 && q.steps.every(s => s && s.text && s.reward))) return false;
+    if (JSON.stringify(n.questLines.map(q => q.reqFavor)) !== JSON.stringify([20, 40, 60, 75])) return false;
+    if (!n.dialogTypes || !n.giftPreferences || !n.giftQuote || !n.desc || !n.title) return false;
+    return true;
+  });
+  check('v1.10 晚期 NPC 结构完整（4 任务线×3 步 / 好感阶梯 20/40/60/75 / 对话与礼物配置齐全）', structOk, '');
+  const refsOk = ['sumingyuan', 'shenyidong', 'guxuan'].every(k => {
+    const n = N[k];
+    return (n.relations || []).every(r => N[r.npcId]) && Object.keys(n.npcLinks || {}).every(id => N[id]);
+  });
+  check('v1.10 relations/npcLinks 全部指向存在的 NPC', refsOk, '');
+  const rewardOk = ['sumingyuan', 'shenyidong', 'guxuan'].every(k => {
+    const steps = N[k].questLines.flatMap(q => q.steps);
+    return steps.some(s => s.reward.money >= 1e8) && steps.some(s => (s.reward.statPoints || 0) >= 2);
+  });
+  check('v1.10 晚期 NPC 奖励晚期量级（含 money≥1e8 步骤与末期技能点奖励）', rewardOk, '');
+  // lazyFavor 门控：新游戏 G.npcFavor 不含晚期 NPC 键（doPrestige 后 G 为全新 NG+ 状态，act=1）
+  {
+    const G = S.G;
+    const keys = Object.keys(G.npcFavor);
+    check('v1.10 新游戏 G.npcFavor=14 键（lazyFavor NPC 未预注册，衰减块随机消耗序列不变）',
+      keys.length === 14 && G.npcFavor.sumingyuan === undefined && G.npcFavor.shenyidong === undefined && G.npcFavor.guxuan === undefined,
+      'keys=' + keys.length);
+    const NS = sandbox.NPCSystem;
+    check('v1.10 getFavor(晚期NPC) 解锁前返回 0', NS.getFavor('sumingyuan') === 0, '');
+    NS.changeFavor('sumingyuan', 5);
+    check('v1.10 changeFavor 为 lazyFavor NPC 自建好感键', G.npcFavor.sumingyuan === 5, 'fav=' + G.npcFavor.sumingyuan);
+    delete G.npcFavor.sumingyuan; // 复原
+  }
+  // 冲刺预设 + 成就
+  const D = evalIn('DIFFICULTY_PRESETS');
+  check('v1.10 sprint 预设（资金×3 / 事件频率中性 / growth/decay 1.0）',
+    D.sprint && D.sprint.startFundsMult === 3.0 && D.sprint.eventFreqMult === 1.0 && D.sprint.growthMult === 1.0 && D.sprint.decayMult === 1.0,
+    JSON.stringify(D.sprint));
+  const ACH = evalIn('ACHIEVEMENTS');
+  const s10 = ACH.find(a => a.id === 'sprint_10b');
+  check('v1.10 sprint_10b 成就（speed_run 1e10 / 720000s → 24000 tick = 200h）',
+    s10 && s10.cond.type === 'speed_run' && s10.cond.value === 1e10 && s10.cond.time === 720000 &&
+    Math.floor(s10.cond.time / (CONFIG.TICK_MS / 1000)) === 24000,
+    s10 ? JSON.stringify(s10.cond) : 'missing');
+  const S10R = evalIn('ACHIEVEMENT_REWARDS').sprint_10b;
+  check('v1.10 sprint_10b 奖励条目（skillCostReduce 仅玩家动作消费；禁止实时键 incomeMult 等 → 720h 仿真安全）',
+    S10R && S10R.skillCostReduce === 1 && !('incomeMult' in S10R) && !('opCost' in S10R), '');
+  // 行为边界：speed_run 恰在 24000 tick 解锁 / 24001 不解锁
+  // 注意：游戏 tick 先 G.tickCount++ 再 doTick（含 checkAchievements），故预置 23999/24000
+  {
+    const G = S.G;
+    const save = { money: G.money, tick: G.tickCount, un: G.unlockedAchievements ? [...G.unlockedAchievements] : [] };
+    G.money = 1.05e10;
+    G.unlockedAchievements = save.un.filter(id => id !== 'sprint_10b');
+    G.tickCount = 23999;
+    runIntervals(1);
+    const at = G.unlockedAchievements.includes('sprint_10b');
+    G.unlockedAchievements = save.un.filter(id => id !== 'sprint_10b');
+    G.tickCount = 24000;
+    runIntervals(1);
+    const over = G.unlockedAchievements.includes('sprint_10b');
+    G.money = save.money; G.tickCount = save.tick; G.unlockedAchievements = save.un;
+    check('v1.10 speed_run 边界（24000 tick=整 200h 解锁 / 24001 不解锁）', at && !over, 'at=' + at + ' over=' + over);
+  }
+  // startGame sprint：初始资金×3（NG+ 2 传承点仍生效 → 再×1.5）；G 重置发生在末，放块尾
+  {
+    const o = sandbox.ORIGINS.find(x => x.id === S.G.origin);
+    S.startGame(S.G.origin, 'v110test', { difficulty: 'sprint' });
+    const expMoney = Math.round(Math.round(o.money * 3.0) * 1.5); // 难度×3 × 传承2点×1.5
+    check('v1.10 startGame sprint 初始资金×3（叠加 NG+ ×1.5）', S.G.difficulty === 'sprint' && S.G.money === expMoney,
+      'diff=' + S.G.difficulty + ' money=' + S.G.money + ' 期望=' + expMoney);
+    check('v1.10 sprint 新游戏 G.npcFavor=14 键（lazyFavor 未注册）',
+      Object.keys(S.G.npcFavor).length === 14, 'keys=' + Object.keys(S.G.npcFavor).length);
+  }
+}
+
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;
 const failCount = results.filter(r => r.startsWith('FAIL')).length;

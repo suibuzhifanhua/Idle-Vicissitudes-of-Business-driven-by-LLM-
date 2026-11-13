@@ -1138,7 +1138,8 @@ var EVENTS = [
     acts:[2,3,4], cooldown:130, weight:3,
     title:'信任破裂',
     getDesc:()=>{
-      const npcs=Object.values(NPCS); const n=npcs.length>0?npcs[Math.floor(Math.random()*npcs.length)]:{name:'一位重要伙伴'};
+      // v1.10：排除未解锁的晚期NPC，保证中期文案不出现超幕角色（720h窗口内池序与基线一致）
+      const npcs=Object.values(NPCS).filter(n=>!(SGame.G&&n.actUnlock>SGame.G.act)); const n=npcs.length>0?npcs[Math.floor(Math.random()*npcs.length)]:{name:'一位重要伙伴'};
       return `${n.name||'一位重要伙伴'}突然对你冷脸。后来你才知道，有人在中间传话挑拨。信任一旦破裂，修复需要时间和诚意。`;
     },
     effects:{ money:[0.9,1.05], reputation:[-15,5], stress:[20,40] },
@@ -1845,7 +1846,7 @@ var EVENTS = [
     acts:[1,2,3,4,5], cooldown:50, weight:6,
     title:'午间商务午餐',
     getDesc:()=>{
-      const npcs = Object.values(NPCS);
+      const npcs = Object.values(NPCS).filter(n=>!(SGame.G&&n.actUnlock>SGame.G.act));
       const npc = npcs[Math.floor(Math.random() * npcs.length)];
       return `中午时分，你在CBD的一家精致餐厅与${npc ? npc.name : '一位行业伙伴'}共进午餐。轻松的氛围中，聊起了行业近况和未来的合作可能。`;
     },

@@ -107,6 +107,9 @@ const ACHIEVEMENTS = [
   { id:'venture_first',   name:'天使投资人',     icon:'🎯', desc:'完成首次初创公司投资', cond:{ type:'venture_invest', count:1 } },
   { id:'venture_ipo',     name:'敲钟时刻',       icon:'🔔', desc:'完成一次 IPO 溢价退出', cond:{ type:'venture_ipo_exit', count:1 } },
   { id:'venture_100m',    name:'风投大亨',       icon:'💸', desc:'风投累计盈利达到1亿', cond:{ type:'venture_profit', value:100000000 } },
+  // ---- v1.10 限时挑战成就（sprint 冲刺模式）----
+  // speed_run：G.money >= value 且 G.tickCount <= time/(TICK_MS/1000)（200h = 24000 tick @TICK_MS=30s）
+  { id:'sprint_10b',      name:'极速传奇',       icon:'⏱️', desc:'200 小时内资产达到100亿（推荐冲刺模式）', cond:{ type:'speed_run', value:10000000000, time:720000 } },
 ];
 
 
@@ -202,7 +205,12 @@ const ACHIEVEMENT_REWARDS = {
   // 风投线 (#14)
   venture_first:      { desc:'解锁技能点+1',           statPoints:1 },
   venture_ipo:        { desc:'全局收入+3%',           incomeMult:0.03 },
-  venture_100m:       { desc:'全局收入+8%',           incomeMult:0.08 }};
+  venture_100m:       { desc:'全局收入+8%',           incomeMult:0.08 },
+  // v1.10 限时挑战
+  // 注：奖励必须避开实时消费键（incomeMult/opCost/loyaltyDecay/rdBonus/empEfficiency 等每 tick 生效），
+  // 否则标准模式仿真在窗口内解锁后会改变轨迹，破坏 720h 逐位不变性。
+  // skillCostReduce 仅在玩家手动学技能时消费（unlockSkill 仅由 ui.js 调用），sim 安全。
+  sprint_10b:         { desc:'技能解锁消耗-1（最低1）', skillCostReduce:1 }};
 
 // 计算所有已解锁成就的总奖励
 function calcAchievementRewards() {

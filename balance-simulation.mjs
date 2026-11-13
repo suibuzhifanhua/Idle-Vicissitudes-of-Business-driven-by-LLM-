@@ -184,7 +184,10 @@ function createScenario(label) {
   G.money = 500000;
   G.reputation = 90;
   G.completedResearch = { digital: 9, ai: 9, blockchain: 9 };
-  Object.keys(NPCS || {}).forEach((id) => { G.npcFavor[id] = 100; });
+  // v1.10：只把游戏实际已注册的好感键置满。lazyFavor 晚期 NPC 开局不占键位（act≥6 才由
+  // triggerActEvent 补建），若按 Object.keys(NPCS) 强建键，衰减块每 3 tick 每键无条件耗 1 次
+  // Math.random → 固定种子序列位移 → 720h 逐位不变性被 harness 自身破坏（非游戏逻辑问题）。
+  Object.keys(G.npcFavor || {}).forEach((id) => { G.npcFavor[id] = 100; });
   BUSINESS_DEFS.forEach((definition) => {
     G.businesses[definition.id] = { level: 1, region: definition.regions ? definition.regions[0] : null, unlocked: true };
   });
