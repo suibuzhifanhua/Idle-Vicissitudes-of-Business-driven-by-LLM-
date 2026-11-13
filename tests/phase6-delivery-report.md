@@ -93,7 +93,7 @@
 
 | 项 | 级别 | 说明 |
 |----|------|------|
-| push 至 GitHub | P1 遗留 | v1.10（131d59c）+ 本轮 2 commit + 12 tag 均未推送（用户未授权 + 网络此前失败）；网络恢复后经用户授权执行 `git push origin main && git push --tags` |
+| ~~push 至 GitHub~~ | ✅ 已关闭（2026-11-13） | 用户授权后执行：先 merge 远端独有 commit 309f314（balance-simulation 相对路径修复，唯一冲突取 path.sep 版本）→ push main（309f314..8556598）+ 12 tag（v1.0~v1.11）；本地/远端 0/0 同步 |
 | 晚期 NPC 长仿真 | P2 | 4320h+ 仿真或人工晚局 playtest 覆盖 act≥6 任务线运行时路径（Phase 7 候选） |
 | 多种子基线 | P2 | 如需量化再平衡幅度，SEED=1..5 均值对比 |
 | 团队子代理平台故障 | 环境 | 会话级 400（effort 档位），建议后续会话先做探针再启用团队模式 |
