@@ -375,6 +375,16 @@ window.SGame = (() => {
       const preset = DIFFICULTY_PRESETS[diffKey] || DIFFICULTY_PRESETS.standard;
       G.money = Math.round(G.money * (preset.startFundsMult || 1.0));
     }
+    // v1.9 传承基业 NG+：上一纪元加成（初代无 legacy，零影响）
+    const _legacyData = _loadLegacy();
+    if (_legacyData.generations > 0 && _legacyData.points > 0) {
+      const pCfg = (typeof PRESTIGE_CFG !== 'undefined') ? PRESTIGE_CFG : {};
+      const lpts = Math.min(_legacyData.points, pCfg.maxPoints || 20);
+      G.legacy = { generations: _legacyData.generations, points: lpts };
+      G.money = Math.round(G.money * (1 + (pCfg.startFundsPerPoint || 0.25) * lpts));
+      G.reputation = Math.min(100, (G.reputation || 0) + (pCfg.repPerPoint || 5) * lpts);
+      addLog('🏛️ 第 ' + _legacyData.generations + ' 纪元：传承点 ' + lpts + '（收入 ×' + (1 + (pCfg.incomePerPoint || 0.1) * lpts).toFixed(1) + '，初始资金加成已生效）');
+    }
     // 初始化竞争对手
     if (typeof RIVALS !== 'undefined') {
       G.rivals = RIVALS.map(r => ({
@@ -1431,6 +1441,79 @@ window.SGame = (() => {
     return Math.pow(cfg.costPerTier || 8, _lateGameSteps());
   }
 
+  // ===================================================
+  //  传承基业（Prestige / New Game+，v1.9）
+  // ===================================================
+  // 资产达 PRESTIGE_CFG.minAsset（10T 万亿财阀）可「传承基业」：纪元重启、剧情重历，
+  // 传承点永久保留（收入加成/初始资金/初始声誉）。4320h 实测永恒商神后无新内容，
+  // 转生让第二局更快且保留爽感，同时把 9 幕剧情完整重走一遍。
+  const _LEGACY_KEY = 'shfc_legacy';
+  let _legacyMem = null; // 内存兜底（Storage 不可用，如沙箱/离线）
+  function _defaultLegacy() {
+    return { generations: 0, points: 0, totalPoints: 0, bestMoney: 0, history: [] };
+  }
+  function _loadLegacy() {
+    if (_legacyMem) return _legacyMem;
+    try {
+      if (typeof Storage !== 'undefined' && Storage.isReady && Storage.isReady()) {
+        const raw = Storage.get(_LEGACY_KEY);
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (p && Number.isFinite(p.points)) { _legacyMem = Object.assign(_defaultLegacy(), p); return _legacyMem; }
+        }
+      }
+    } catch (e) { /* 加载失败按初代处理 */ }
+    return _legacyMem = _defaultLegacy();
+  }
+  function _saveLegacy(data) {
+    _legacyMem = data;
+    try {
+      if (typeof Storage !== 'undefined' && Storage.isReady && Storage.isReady()) {
+        Storage.saveFinal(_LEGACY_KEY, JSON.stringify(data), Math.floor(Date.now() / 1000));
+      }
+    } catch (e) { /* 内存兜底，丢失不致命 */ }
+  }
+  function getLegacyPoints(money) {
+    const pCfg = (typeof PRESTIGE_CFG !== 'undefined') ? PRESTIGE_CFG : { minAsset: 1e13, baseLog: 12, pointsPerLog: 2, maxPoints: 20 };
+    const m = Number(money) || 0;
+    if (m < (pCfg.minAsset || 1e13)) return 0;
+    const p = Math.floor((pCfg.pointsPerLog || 2) * (Math.log10(m) - (pCfg.baseLog || 12)));
+    return Math.max(1, Math.min(p, pCfg.maxPoints || 20));
+  }
+  function canPrestige() {
+    if (!G) return false;
+    const pCfg = (typeof PRESTIGE_CFG !== 'undefined') ? PRESTIGE_CFG : { minAsset: 1e13 };
+    return G.money >= (pCfg.minAsset || 1e13);
+  }
+  function getLegacyIncomeScale() {
+    if (!G || !G.legacy || !(G.legacy.points > 0)) return 1;
+    const pCfg = (typeof PRESTIGE_CFG !== 'undefined') ? PRESTIGE_CFG : { incomePerPoint: 0.1, maxPoints: 20 };
+    const pts = Math.min(G.legacy.points, pCfg.maxPoints || 20);
+    return 1 + (pCfg.incomePerPoint || 0.1) * pts;
+  }
+  function getLegacy() { return _loadLegacy(); }
+  function doPrestige() {
+    if (!G) return { ok: false, msg: '游戏未开始' };
+    if (!canPrestige()) return { ok: false, msg: '资产未达到传承门槛（万亿财阀）' };
+    const pCfg = (typeof PRESTIGE_CFG !== 'undefined') ? PRESTIGE_CFG : {};
+    const pts = getLegacyPoints(G.money);
+    const legacy = _loadLegacy();
+    legacy.generations = (legacy.generations || 0) + 1;
+    legacy.points = pts;
+    legacy.totalPoints = (legacy.totalPoints || 0) + pts;
+    legacy.bestMoney = Math.max(legacy.bestMoney || 0, G.money);
+    legacy.history = legacy.history || [];
+    legacy.history.push({ gen: legacy.generations, money: Math.round(G.money), points: pts, at: Date.now() });
+    if (legacy.history.length > 20) legacy.history = legacy.history.slice(-20);
+    _saveLegacy(legacy);
+    // 进程内重启（NG+）：沿用出身/姓名/难度，不依赖 location.reload
+    const origin = G.origin, name = G.name, diff = G.difficulty || 'standard';
+    startGame(origin, name, { difficulty: diff });
+    addLog('🏛️ 传承基业：第 ' + legacy.generations + ' 纪元开始，传承点 ' + pts +
+      '（收入 ×' + getLegacyIncomeScale().toFixed(1) + '，初始资金 ×' + (1 + (pCfg.startFundsPerPoint || 0.25) * pts).toFixed(2) + '）');
+    return { ok: true, points: pts, generations: legacy.generations };
+  }
+
   function preCalcCompositeMultipliers() {
     if (!G) return {};
 
@@ -1501,8 +1584,8 @@ window.SGame = (() => {
     let comp = preCalcCompositeMultipliers();
     let _achRewardsCache = G._achRewardsCache || comp.achRewards;
 
-    // v1.7 后期档位乘数：baseTier(100亿) 以下恒为 1，中局数值不变
-    const lgInc = getLateGameIncomeScale();
+    // v1.7 后期档位乘数：baseTier(100亿) 以下恒为 1，中局数值不变；v1.9 × 传承乘数
+    const lgInc = getLateGameIncomeScale() * getLegacyIncomeScale();
 
     let grandTotal = 0;
     let rawProductionTotal = 0;
@@ -1889,7 +1972,7 @@ window.SGame = (() => {
     if (!gameState) return 0;
     let bDef = BUSINESS_DEFS.find(function(b) { return b.id === bizId; });
     if (!bDef) return 0;
-    const lgInc = getLateGameIncomeScale(); // v1.7 后期档位乘数
+    const lgInc = getLateGameIncomeScale() * getLegacyIncomeScale(); // v1.7 后期档位 × v1.9 传承
     // 查找该业务在所有城市中的状态
     let totalIncome = 0;
     if (gameState.cities) {
@@ -3697,7 +3780,7 @@ window.SGame = (() => {
       if (!bDef) return;
       const lv = bDef.levels[bState.level - 1];
       if (!lv) return;
-      total += lv.income * WAN * getLateGameIncomeScale(); // v1.7 后期档位乘数（定价与主收入同步）
+      total += lv.income * WAN * getLateGameIncomeScale() * getLegacyIncomeScale(); // v1.7 档位 × v1.9 传承（定价与主收入同步）
     });
     const cityDef = (typeof CITIES !== 'undefined' && CITIES[cityId]) || null;
     if (cityDef && cityDef.cityBonus && cityDef.cityBonus.incomeMult) total *= cityDef.cityBonus.incomeMult;
@@ -3840,7 +3923,7 @@ window.SGame = (() => {
         if (!bDef) return;
         const lv = bDef.levels[biz.level - 1];
         if (!lv) return;
-        const baseIncome = lv.income * WAN * getLateGameIncomeScale(); // v1.7 维护费随产值缩放，保住成本率
+        const baseIncome = lv.income * WAN * getLateGameIncomeScale() * getLegacyIncomeScale(); // v1.7 维护费随产值缩放，保住成本率
         const rate = CONFIG.MAINTENANCE_BASE_RATE + biz.level * CONFIG.MAINTENANCE_LEVEL_SCALE;
         total += baseIncome * rate;
       });
@@ -5269,6 +5352,7 @@ window.SGame = (() => {
     addLog, showAchievement, formatMoney: _formatMoney, getEmpMax,
     getLateGameTier, getLateGameIncomeScale, getLateGameCostScale,
     triggerOperationalRisk, // v1.8 导出（运营风险档位衰减回归测试用）
+    getLegacyPoints, canPrestige, doPrestige, getLegacyIncomeScale, getLegacy, // v1.9 传承基业
     addConnections,
     calcNpcBonus,
     save, load, reset, getSaveSlots,

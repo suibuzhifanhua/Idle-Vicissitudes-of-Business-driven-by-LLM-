@@ -857,7 +857,7 @@ var EVENTS = [
     acts:[4], cooldown:0, weight:10,
     title:'里程碑：100亿！',
     getDesc:()=>{
-      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了100亿！你已经是商界传奇，新海市的地标建筑有你的名字。但你是否还记得，当初那个在大厂离职后决定创业的自己？\n\n所有幕次完成！`;
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到了100亿！你已经是商界传奇，新海市的地标建筑有你的名字。但你是否还记得，当初那个在大厂离职后决定创业的自己？\n\n第五幕《浮沉》完成——而商海没有尽头，新的篇章才刚刚翻开。`;
     },
     effects:{ reputation:[30,50], stress:[-40,-10] },
     choices:[
@@ -866,6 +866,70 @@ var EVENTS = [
     ],
     milestone:10000000000, isEnding:true,
     fallbacks:['100亿！你已经完成了大多数人无法想象的成就。'],
+  },
+
+  // ===== 里程碑·帝国篇 (v1.9 剧情延展) =====
+  {
+    id:'milestone_100b', type:'milestone', category:'narrative',
+    // acts 只对齐自身幕次：里程碑由 checkMilestones 直接 fireEvent（不查 acts），
+    // 随机池按 acts 过滤——收窄避免提前进入低 act 池改变中局事件流（720h 不变性实测教训）
+    acts:[6], cooldown:0, weight:10,
+    title:'里程碑：1000亿！',
+    getDesc:()=>{
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产突破了1000亿。财经杂志的封面是你的侧脸，标题写着：「规则重写者」。晚宴上，三位昔日你仰望的商界前辈举杯向你致意。\n\n第六幕《教父》开启：你不再参与竞争——你制定竞争。`;
+    },
+    effects:{ reputation:[25,40], stress:[-30,0], connections:[10,25] },
+    choices:[
+      { text:'成立产业基金，孵化下一代创业者', effect:{ reputation:20, connections:15, stress:-10 }, label:'执掌生态' },
+      { text:'低调退居幕后，培养接班人', effect:{ reputation:10, stress:-30 }, label:'静水深流' },
+    ],
+    milestone:100000000000,
+    fallbacks:['1000亿。你从竞争者变成了规则本身。'],
+  },
+  {
+    id:'milestone_1t', type:'milestone', category:'narrative',
+    acts:[7], cooldown:0, weight:10,
+    title:'里程碑：1万亿！',
+    getDesc:()=>{
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到1万亿。国家级的商业史书籍里，用了一整章写你的故事。国际财团的 CEO 们开始用「我们的朋友」来称呼你。\n\n第七幕《帝国》开启：你的帝国不再有对手，只有盟友与规则。`;
+    },
+    effects:{ reputation:[30,45], stress:[-35,-5], connections:[10,25] },
+    choices:[
+      { text:'主导跨境产业联盟，把标准写进全球贸易', effect:{ reputation:30, connections:20, stress:5 }, label:'全球标准' },
+      { text:'设立百亿科研基金，赌下一个时代的技术', effect:{ reputation:20, stress:-10 }, label:'押注未来' },
+    ],
+    milestone:1000000000000,
+    fallbacks:['1万亿。帝国的边界，开始由你划线。'],
+  },
+  {
+    id:'milestone_10t', type:'milestone', category:'narrative',
+    acts:[8], cooldown:0, weight:10,
+    title:'里程碑：10万亿！',
+    getDesc:()=>{
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到10万亿。你的家族办公室横跨六大金融中心，供应链上的每一个港口都有你的名字。媒体开始讨论「后${name}时代」——仿佛你已经超越了时代本身。\n\n第八幕《财阀》开启：财富的规模，开始改变世界运转的方式。`;
+    },
+    effects:{ reputation:[25,40], stress:[-30,0], connections:[15,30] },
+    choices:[
+      { text:'推动全球供应链韧性计划，与各国政府合作', effect:{ reputation:35, connections:20, stress:10 }, label:'世界棋手' },
+      { text:'把家族资产的一半注入永续公益信托', effect:{ reputation:40, stress:-20 }, label:'百年承诺' },
+    ],
+    milestone:10000000000000,
+    fallbacks:['10万亿。你的一举一动，都是全球宏观变量。'],
+  },
+  {
+    id:'milestone_100t', type:'milestone', category:'narrative',
+    acts:[9], cooldown:0, weight:10,
+    title:'里程碑：100万亿！永恒商神',
+    getDesc:()=>{
+      const name=(SGame.G&&SGame.G.playerName)||'你'; return `${name}的资产达到100万亿——这个数字超过了许多国家的 GDP。你的名字成了「成功」的同义词，商学院把你的一生做成了案例。\n\n但你站在大厦顶层，俯瞰着这座因你而改变的城市，忽然想起最初那个小小的门店。第九幕《永恒》开启：故事到这里，可以由你来决定了。`;
+    },
+    effects:{ reputation:[30,50], stress:[-40,-10] },
+    choices:[
+      { text:'功成身退：把帝国交给职业经理人，开启第二人生', ending:'永恒商神', label:'功成身退' },
+      { text:'继续经营（无尽模式），直到数值溢出宇宙', effect:{ reputation:20, stress:-10 }, label:'无尽征途' },
+    ],
+    milestone:100000000000000, isEnding:true,
+    fallbacks:['100万亿。财富的尽头，是传奇的开始。'],
   },
 
   // ===== 商业竞争 (8) =====
@@ -2792,6 +2856,124 @@ var EVENTS = [
       { text:'双管齐下：起诉做空机构+向监管实名举报', effect:{ expense:350000, moneyAbs:[-100000,300000], stress:[30,50], reputation:[0,15] }, label:'法律追诉' },
     ],
     fallbacks:['做空报告可以炮制，但信任一旦做空，再融资就是天价。','资本市场里，最大的做空是人心。'],
+  },
+
+  // ===== 帝国篇·晚期专属 (v1.9 剧情延展) =====
+  // 门槛阶梯（720h 实测校准，保证中局事件池/事件流零扰动）：
+  //   1e11×2 主权基金/行业标准（千亿）→ 2e11×2 并购大战/家族委员会（2千亿）
+  //   → 1e12×2 央行圆桌/全球供应链（万亿）→ 1e13×2 深空联合体/百年基业（10万亿）
+  // moneyAbs 基准值 1e8，由 v1.7 档位 costScale 自动放大到资产量级。
+  {
+    id:'lg_sovereign', type:'market', category:'decision',
+    acts:[5,6,7,8,9], cooldown:300, weight:6,
+    conditionTags:{ assetThreshold:100000000000 },
+    title:'主权基金入局',
+    getDesc:()=>`某海湾主权基金主动提出，希望以溢价收购你集团旗下核心板块 15% 的少数股权——报价高得离谱。随行代表递来一份意向书，最后一行写着：「我们看中的不是报表，是下一代产业格局。」`,
+    effects:{ stress:[10,25] },
+    choices:[
+      { text:'接受入股，换长期弹药', effect:{ moneyAbs:200000000, reputation:8, stress:10 }, label:'开门迎金' },
+      { text:'只接受战略咨询合作，不开放股权', effect:{ moneyAbs:80000000, reputation:5, connections:8, stress:5 }, label:'合作不卖身' },
+      { text:'婉拒：帝国的股权从不对外', effect:{ reputation:10, stress:5 }, label:'拒绝' },
+    ],
+    fallbacks:['主权基金的报价单，比你的资产负债表还厚。','当国家队级别的资本找上门，说明你已经不在同一张牌桌上了。'],
+  },
+  {
+    id:'lg_standard', type:'career', category:'decision',
+    acts:[5,6,7,8,9], cooldown:280, weight:6,
+    conditionTags:{ assetThreshold:100000000000 },
+    title:'行业标准委员会',
+    getDesc:()=>`国家级行业标准化委员会正式发函：邀请你出任首届标准编制组长。这意味着你集团的技术路线将成为行业规范——同行们的产品，将来都要按你的图纸验收。`,
+    effects:{ stress:[15,30] },
+    choices:[
+      { text:'出任组长，把自家标准推向行业', effect:{ reputation:20, moneyAbs:100000000, stress:15, connections:10 }, label:'执笔标准' },
+      { text:'只派技术副总裁参与，自己不当出头鸟', effect:{ reputation:8, stress:5 }, label:'幕后参与' },
+      { text:'推辞：标准是公器，不想背上绑架行业的骂名', effect:{ reputation:15, stress:5 }, label:'功成弗居' },
+    ],
+    fallbacks:['当标准由你执笔，整个行业都会按你的节奏呼吸。','标准之争，是最高维度的商战。'],
+  },
+  {
+    id:'lg_mega_merger', type:'crisis', category:'decision',
+    acts:[5,6,7,8,9], cooldown:320, weight:5,
+    conditionTags:{ assetThreshold:200000000000 },
+    title:'世纪并购大战',
+    getDesc:()=>`一家掌握核心专利的老牌集团突然宣布私有化退出，估值 3000 亿。你和他的竞价函在同一天发出。对方 CEO 在董事会上说：「这场仗，关系到下一个二十年的行业话语权。」你的战投团队连夜推演了 47 种竞价剧本。`,
+    effects:{ stress:[25,45] },
+    choices:[
+      { text:'加价 20% 正面碾压，拿下就是拿下', effect:{ moneyAbs:-300000000, reputation:15, stress:25 }, label:'豪赌话语权' },
+      { text:'联合两家盟友共同举牌，摊薄成本', effect:{ moneyAbs:-120000000, reputation:8, connections:10, stress:15 }, label:'联盟举牌' },
+      { text:'放弃标的，转头收购他的上游', effect:{ moneyAbs:-80000000, reputation:5, stress:10 }, label:'围魏救赵' },
+    ],
+    fallbacks:['世纪并购的谈判桌上，没有生意，只有战争。','买下的不只是专利，是行业未来二十年的叙事权。'],
+  },
+  {
+    id:'lg_family', type:'personal', category:'decision',
+    acts:[5,6,7,8,9], cooldown:400, weight:5,
+    conditionTags:{ assetThreshold:200000000000 },
+    title:'家族委员会',
+    getDesc:()=>`你的家族第一次正式召开「基业会议」。叔伯们、堂兄弟们围坐一桌，话题只有一个：这座千亿帝国，将来姓什么、归谁管。老管家递上三版章程草案——家族控股、职业经理人制、还是信托基金会制。窗外，集团的直升机正在降落。`,
+    effects:{ stress:[20,40] },
+    choices:[
+      { text:'家族控股：血浓于水，利益一致才能走得远', effect:{ reputation:5, stress:15, connections:5 }, label:'家天下' },
+      { text:'职业经理人制：家族只出钱，不插手经营', effect:{ reputation:15, stress:10 }, label:'现代治理' },
+      { text:'信托基金会：资产归家族信托，收益回馈社会', effect:{ reputation:25, stress:-5 }, label:'百年信托' },
+    ],
+    fallbacks:['富不过三代——这句话，今天摆上了你的餐桌。','帝国真正的对手，从来是人性。'],
+  },
+  {
+    id:'lg_centralbank', type:'career', category:'decision',
+    acts:[6,7,8,9], cooldown:360, weight:5,
+    conditionTags:{ assetThreshold:1000000000000 },
+    title:'央行金融稳定圆桌',
+    getDesc:()=>`中央银行发出罕见邀约：作为唯一的企业界代表，出席金融稳定圆桌会议。议程只有一个话题——你集团主导的供应链金融体系，是否已经大到「大而不能倒」。行长开场第一句：「今天不是来监管你的，是来请教你的。」`,
+    effects:{ stress:[15,30] },
+    choices:[
+      { text:'主动提出压力测试框架，接受穿透式监管', effect:{ reputation:25, connections:15, stress:10 }, label:'主动透明' },
+      { text:'建议设立系统性风险缓冲池，共担责任', effect:{ moneyAbs:150000000, reputation:20, stress:15 }, label:'共担风险' },
+      { text:'强调市场化自律，婉拒制度化安排', effect:{ reputation:5, stress:5 }, label:'轻舟侧帆' },
+    ],
+    fallbacks:['当央行开始研究你，你就成了宏观体系的一部分。','大而不能倒，是荣耀，也是枷锁。'],
+  },
+  {
+    id:'lg_supply_global', type:'crisis', category:'decision',
+    acts:[6,7,8,9], cooldown:340, weight:5,
+    conditionTags:{ assetThreshold:1000000000000 },
+    title:'全球供应链断裂',
+    getDesc:()=>`一条国际航运大动脉因地区冲突中断，你集团全球供应链的 38% 产能停摆。七个国家的工厂在同一天向你求助。危机公关、物流重组、政治斡旋三线作战，你的作战室灯火通明——而华尔街正在赌你会倒。`,
+    effects:{ money:[0.92,0.98], stress:[30,50] },
+    choices:[
+      { text:'豪掷百亿启动备用航线+近岸备份产能', effect:{ moneyAbs:-400000000, reputation:20, stress:20 }, label:'铁壁重筑' },
+      { text:'与竞争对手临时共享运力，化敌为援', effect:{ moneyAbs:-100000000, reputation:10, connections:12, stress:15 }, label:'化敌为援' },
+      { text:'收缩战线：保核心市场，弃边缘区域', effect:{ moneyAbs:-60000000, reputation:-5, stress:10 }, label:'断臂求生' },
+    ],
+    fallbacks:['供应链的韧性，平时是成本，战时是命。','全球棋局落下这一步，华尔街在看你的脸色。'],
+  },
+  {
+    id:'lg_space', type:'tech', category:'decision',
+    acts:[7,8,9], cooldown:420, weight:4,
+    conditionTags:{ assetThreshold:10000000000000 },
+    title:'深空产业联合体',
+    getDesc:()=>`三家航天巨头联合发出邀请：出资组建「深空产业联合体」，研发轨道资源开发平台，首期投入 5000 亿。邀请信里有一句让你动容的话：「地面经济的天花板，我们替你看到了；而上面，还是一片海。」`,
+    effects:{ stress:[20,35] },
+    choices:[
+      { text:'领投 2000 亿，把下一代写在星图上', effect:{ moneyAbs:-500000000, reputation:20, stress:20 }, label:'星际下注' },
+      { text:'跟投 800 亿，保留战略灵活性', effect:{ moneyAbs:-200000000, reputation:10, stress:10 }, label:'稳健入局' },
+      { text:'资助基础研究即可，不碰重资产', effect:{ moneyAbs:-80000000, reputation:8, stress:5 }, label:'灯塔角色' },
+    ],
+    fallbacks:['当年你从门店起步，如今有人邀请你出海——海的尽头是星空。','万亿之后，投资标的开始以光年计。'],
+  },
+  {
+    id:'lg_foundation', type:'personal', category:'decision',
+    acts:[7,8,9], cooldown:480, weight:4,
+    conditionTags:{ assetThreshold:10000000000000 },
+    title:'百年基业',
+    getDesc:()=>`一位历史学家送来手写信：「您的故事，已经被写进本世纪的通史。」信中提议，由你发起「百年基金会」——以千亿级初始资金，定向支持基础科学、公共医疗与青少年教育。落款只有一句话：「财富会过期，但基业可以百年。」`,
+    effects:{ stress:[10,20] },
+    choices:[
+      { text:'当场拍板：首期投入 1000 亿', effect:{ moneyAbs:-250000000, reputation:30, stress:-10 }, label:'百年承诺' },
+      { text:'设立专项委员会，一年内给出方案', effect:{ moneyAbs:-50000000, reputation:15, stress:5 }, label:'郑重其事' },
+      { text:'个人捐赠一部分，其余交给基金会市场化运作', effect:{ moneyAbs:-100000000, reputation:20, stress:5 }, label:'公私分明' },
+    ],
+    fallbacks:['当你开始规划一百年后的事，你就不再是一个商人，而是一座文明的地标。','百年基业，从一笔今天就动心的捐款开始。'],
   },
 
 ]

@@ -477,11 +477,24 @@ window.UI = (() => {
     _lastTimeOfDay = timeOfDay;
   }
 
+  // v1.9 传承基业：达标后顶栏按钮出现（状态缓存，仅变化时碰 DOM）
+  let _prestigeBtnState = null;
+  function _updatePrestigeBtn() {
+    var G = SGame.G;
+    var show = !!(G && SGame.canPrestige && SGame.canPrestige());
+    if (show === _prestigeBtnState) return;
+    _prestigeBtnState = show;
+    var btn = document.getElementById('prestige-btn');
+    if (btn) btn.style.display = show ? '' : 'none';
+  }
+
   function renderAll() {
     if (!SGame.G) return;
 
     // 每帧同步昼夜主题到 body
     applyTimeOfDayTheme(SGame.G);
+
+    _updatePrestigeBtn();
 
     // 已有一个 rAF 在队列中，跳过本次调用（合并渲染）
     if (_renderPending) return;
@@ -4941,6 +4954,14 @@ window.UI = (() => {
           intel:        function() { switchPanel('intel'); },
           advisor:      function() { openAdvisor(); },
           retire:       function() { retireGame(); },
+          prestige:     function() {
+            if (!SGame.doPrestige) return;
+            var G = SGame.G;
+            if (!G) return;
+            var pts = (SGame.getLegacyPoints ? SGame.getLegacyPoints(G.money) : 0);
+            if (!confirm('🏛️ 传承基业：纪元重启、剧情重历。\n本次传承获得 ' + pts + ' 传承点（收入 ×' + (1 + pts * 0.1).toFixed(1) + '，初始资金 ×' + (1 + pts * 0.25).toFixed(2) + '）。\n\n确定开启新纪元吗？当前进度将重开。')) return;
+            SGame.doPrestige();
+          },
         };
         if (map[act]) { map[act](); e.preventDefault(); }
       });

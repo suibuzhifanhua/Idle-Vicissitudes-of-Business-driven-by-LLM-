@@ -205,6 +205,8 @@ const LATEGAME_SCALE = {
 
 
 // ---- MILESTONES ----
+// v1.9 剧情延展：原 5 幕止于百亿（10B），而资产体系到 100万亿（1e14）——后 1/10000 旅程没有剧情。
+// 扩至 9 幕，与 RANK_TIERS 后段对齐；rep 上限 100，bizSum 为所有城市业务等级总和（单城满级=70）。
 const MILESTONES = [
   // money, repMin, bizSumMin（所有城市业务等级总和）, act, ...
   { money: 1000000,      repMin: 15, bizSumMin: 3,  act: 1, name: '第一桶金',   icon:'💰', desc:'资产突破百万，你捞到了商海中的第一桶金。', eventId: 'milestone_1m'},
@@ -212,7 +214,26 @@ const MILESTONES = [
   { money: 100000000,    repMin: 50, bizSumMin: 15, act: 3, name: '事业有成',   icon:'🏢', desc:'亿万身家在手，但你深知这只是一个开始。更大的棋局还在后面。', eventId: 'milestone_100m'},
   { money: 1000000000,   repMin: 65, bizSumMin: 25, act: 4, name: '商业帝国',   icon:'👑', desc:'十亿级企业集团已经成形。你的名字正在被写进本地商业史。', eventId: 'milestone_1b'},
   { money: 10000000000,  repMin: 80, bizSumMin: 40, act: 5, name: '传奇人物',   icon:'🏆', desc:'百亿商业帝国，你已经成为一个时代的符号。', eventId: 'milestone_10b'},
+  { money: 100000000000, repMin: 90, bizSumMin: 50, act: 6, name: '商业教父',   icon:'💎', desc:'千亿资产，业界尊称一声「教父」。游戏规则开始由你执笔。', eventId: 'milestone_100b'},
+  { money: 1000000000000, repMin: 95, bizSumMin: 60, act: 7, name: '千亿帝国',  icon:'🌟', desc:'万亿身家。你的名字被写进国家级商业史，每一个决定都在牵动全球市场。', eventId: 'milestone_1t'},
+  { money: 10000000000000, repMin: 100, bizSumMin: 70, act: 8, name: '万亿财阀', icon:'🔥', desc:'10万亿财阀。你的家族办公室设在多个金融中心，一句话可以重塑全球供应链。', eventId: 'milestone_10t'},
+  { money: 100000000000000, repMin: 100, bizSumMin: 80, act: 9, name: '永恒商神', icon:'⭐', desc:'100万亿。财富对你已失去意义——你是这个时代的神话，也是下一代人的起点。', eventId: 'milestone_100t'},
 ];
+
+
+// ---- PRESTIGE_CFG（传承基业 · Prestige / New Game+，v1.9）----
+// 4320h 实测：永恒商神（100T）约 155 天可达，之后无新内容。
+// 方案：资产达万亿财阀（10T）解锁「传承基业」——纪元重启、剧情重历，传承点永久保留：
+//   每点 +10% 收入（与档位乘数相乘）/ +25% 初始资金 / +5 初始声誉。资产越高得点越多（每数量级 2 点）。
+const PRESTIGE_CFG = {
+  minAsset: 1e13,          // 解锁门槛：10万亿（万亿财阀）
+  baseLog: 12,             // 点数 = floor(pointsPerLog × (log10(资产) − baseLog))
+  pointsPerLog: 2,         // 10T=2 / 100T=4 / 1000T=6 ...
+  maxPoints: 20,           // 单次传承点数上限
+  incomePerPoint: 0.1,     // 每点 +10% 收入
+  startFundsPerPoint: 0.25,// 每点 +25% 初始资金
+  repPerPoint: 5           // 每点 +5 初始声誉
+};
 
 
 // ---- DIFFICULTY_PRESETS ----

@@ -1027,6 +1027,61 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
   G.money = _origMoney;
 }
 
+// ---------- v1.9 剧情延展 + 传承基业（NG+） ----------
+{
+  const MILESTONES_ALL = evalIn('MILESTONES');
+  check('v1.9 MILESTONES 扩至 9 幕', MILESTONES_ALL.length === 9, 'len=' + MILESTONES_ALL.length);
+  check('v1.9 新增 4 幕（千亿/万亿/10万亿/100万亿，act 6-9 对齐资产量级）',
+    ['milestone_100b', 'milestone_1t', 'milestone_10t', 'milestone_100t'].every(id => MILESTONES_ALL.some(m => m.eventId === id)) &&
+    MILESTONES_ALL[5].act === 6 && MILESTONES_ALL[6].act === 7 && MILESTONES_ALL[7].act === 8 && MILESTONES_ALL[8].act === 9 &&
+    MILESTONES_ALL[5].money === 1e11 && MILESTONES_ALL[8].money === 1e14,
+    'acts=' + MILESTONES_ALL.slice(5).map(m => m.act).join(',') + ' money=' + MILESTONES_ALL[8].money);
+  const evAll = sandbox.EVENTS;
+  check('v1.9 里程碑叙事事件 ×4 存在（100t 为真结局）',
+    ['milestone_100b', 'milestone_1t', 'milestone_10t', 'milestone_100t'].every(id => evAll.some(e => e.id === id)) &&
+    evAll.find(e => e.id === 'milestone_100t').isEnding === true, '');
+  check('v1.9 晚期专属事件 ×8（assetThreshold 量级门槛 1e10+）',
+    ['lg_sovereign', 'lg_standard', 'lg_mega_merger', 'lg_family', 'lg_centralbank', 'lg_supply_global', 'lg_space', 'lg_foundation'].every(id => {
+      const e = evAll.find(x => x.id === id);
+      return e && e.conditionTags && e.conditionTags.assetThreshold >= 1e10;
+    }), '');
+  // 传承点公式（不碰 G）
+  check('v1.9 getLegacyPoints 公式（1e6→0 / 1e13→2 / 1e14→4 / 5e13→3 / 1e25 封顶 20）',
+    S.getLegacyPoints(1e6) === 0 && S.getLegacyPoints(1e13) === 2 && S.getLegacyPoints(1e14) === 4 &&
+    S.getLegacyPoints(5e13) === 3 && S.getLegacyPoints(1e25) === 20,
+    [1e6, 1e13, 1e14, 5e13, 1e25].map(v => S.getLegacyPoints(v)).join('/'));
+  // canPrestige 门槛 + 收入乘数（状态先存后还原）
+  {
+    const SAVE_M = S.G.money, SAVE_LG = S.G.legacy;
+    S.G.money = 1e12;
+    const notYet = !S.canPrestige();
+    S.G.money = 1e13;
+    const yes = S.canPrestige();
+    S.G.legacy = { generations: 1, points: 4 };
+    const mul = S.getLegacyIncomeScale();
+    S.G.legacy = SAVE_LG;
+    S.G.money = SAVE_M;
+    check('v1.9 canPrestige 门槛（1e12 否 / 1e13 是）', notYet && yes, '1e12=' + notYet + ' 1e13=' + yes);
+    check('v1.9 传承收入乘数（4 点 → ×1.4，初代 → ×1）', Math.abs(mul - 1.4) < 1e-9 && S.getLegacyIncomeScale() === 1, '×' + mul);
+  }
+  // doPrestige 全流程（startGame 会重置 G，必须放本块末尾）
+  {
+    const o = sandbox.ORIGINS.find(x => x.id === S.G.origin);
+    const diffKey = S.G.difficulty || 'standard';
+    const pMult = (sandbox.DIFFICULTY_PRESETS && (sandbox.DIFFICULTY_PRESETS[diffKey] || sandbox.DIFFICULTY_PRESETS.standard).startFundsMult) || 1.0;
+    S.G.money = 1e13;
+    const res = S.doPrestige();
+    const expMoney = Math.round(Math.round(o.money * pMult) * (1 + 0.25 * 2));
+    check('v1.9 doPrestige 返回（ok / 2 点 / 第 1 纪元）', res && res.ok === true && res.points === 2 && res.generations === 1, JSON.stringify(res));
+    check('v1.9 NG+ 新纪元 G 重置（act1/tick0）且携带 2 传承点', S.G.act === 1 && S.G.tickCount === 0 && S.G.legacy && S.G.legacy.points === 2,
+      'act=' + S.G.act + ' tick=' + S.G.tickCount + ' legacy=' + JSON.stringify(S.G.legacy));
+    check('v1.9 NG+ 初始资金 = 出身×难度×(1+25%×2 点)', S.G.money === expMoney, 'money=' + S.G.money + ' 期望=' + expMoney);
+    check('v1.9 NG+ 收入乘数 ×1.2 生效', Math.abs(S.getLegacyIncomeScale() - 1.2) < 1e-9, '×' + S.getLegacyIncomeScale());
+    check('v1.9 传承记录持久化（内存兜底 generations=1/history=1）', S.getLegacy().generations === 1 && S.getLegacy().history.length === 1,
+      JSON.stringify(S.getLegacy().history));
+  }
+}
+
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;
 const failCount = results.filter(r => r.startsWith('FAIL')).length;
