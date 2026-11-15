@@ -271,6 +271,53 @@
     }
   }
 
+  // 托管：NPC 任务线自动开启/推进（v1.12）
+  // 节奏：策略 interval=12 tick（12 游戏小时）一次，每次至多推进 1 步 / 每 NPC 至多 1 条在跑任务线。
+  // 守卫：步骤奖励含负资金且付不起时跳过（等下一轮冷却）；尊重既有 autoAdvanced 一次性标记（checkNPCQuests 机制）。
+  // 确定性：路径零 Math.random，全部走真实 startQuest/advanceQuest API（奖励结算/日志与手动一致）。
+  function autoQuestStrategy(bLog) {
+    if (!G || !G.tickCount) return;
+    if (typeof NPCSystem === 'undefined' || typeof NPCSystem.getAvailableQuests !== 'function') return;
+    if (typeof NPCS === 'undefined') return;
+    // 1) 推进在跑任务（每轮至多 1 步/任务，由 interval 控制节奏）
+    const progAll = G.questProgress || {};
+    Object.keys(progAll).forEach(function(npcId) {
+      const quests = progAll[npcId] || {};
+      Object.keys(quests).forEach(function(questId) {
+        const prog = quests[questId];
+        if (!prog || !prog.started || prog.autoAdvanced) return;
+        const npc = NPCS[npcId];
+        if (!npc || !npc.questLines) return;
+        const quest = npc.questLines.find(q => q.id === questId);
+        if (!quest) return;
+        const step = quest.steps[prog.stepIndex];
+        if (!step) return;
+        if (step.reward && step.reward.money < 0 && (G.money || 0) + step.reward.money < 0) return; // 付不起，等下轮
+        const r = NPCSystem.advanceQuest(npcId, questId);
+        if (r && r.ok) G.autoStats.questsAdvanced = (G.autoStats.questsAdvanced || 0) + 1;
+      });
+    });
+    // 2) 开启新任务（每 NPC 同时在跑 ≤1 条，按配置顺序取第一条可用）
+    Object.keys(NPCS).forEach(function(npcId) {
+      const npc = NPCS[npcId];
+      if (!npc || !npc.questLines || !npc.questLines.length) return;
+      const prog = (G.questProgress && G.questProgress[npcId]) || {};
+      let inProg = 0;
+      Object.keys(prog).forEach(function(qid) { if (prog[qid] && prog[qid].started) inProg++; });
+      if (inProg >= 1) return;
+      const avail = NPCSystem.getAvailableQuests(npcId);
+      if (!avail || !avail.length) return;
+      const q = avail[0];
+      const s0 = q.steps && q.steps[0];
+      if (s0 && s0.reward && s0.reward.money < 0 && (G.money || 0) + s0.reward.money < 0) return; // 首步支出付不起，等下轮
+      const r = NPCSystem.startQuest(npcId, q.id);
+      if (r && r.ok) {
+        G.autoStats.questsStarted = (G.autoStats.questsStarted || 0) + 1;
+        bLog('与' + npc.name + '开启新任务「' + q.name + '」');
+      }
+    });
+  }
+
   // ========== 托管策略注册表 ==========
   const STRATEGIES = [
     { name:'自动决策',   key:'eventDecide',  interval:1,                 guard:() => S.pendingDecisions.length > 0, action:(bLog) => { let evt = S.pendingDecisions[0]; if (evt) autoDecide(evt); } },
@@ -291,6 +338,7 @@
     { name:'员工休息',   key:'rest',         interval:10,                action:(bLog) => autoRestStrategy(bLog) },
     { name:'供应链维护', key:'autoSupplier', interval:12,                action:(bLog) => autoSupplierStrategy(bLog) },
     { name:'子公司设立', key:'autoSubsidiary', interval:40,              action:(bLog) => autoSubsidiaryStrategy(bLog) },
+    { name:'任务线',     key:'autoQuest',    interval:12,              action:(bLog) => autoQuestStrategy(bLog) },
   ];
 
   function autoManager() {
@@ -316,13 +364,14 @@
     if (am.autoSupplier === undefined) am.autoSupplier = true;
     if (am.autoSubsidiary === undefined) am.autoSubsidiary = true;
     if (am.autoVenture === undefined) am.autoVenture = false; // 风投高风险，默认关
+    if (am.autoQuest === undefined) am.autoQuest = true; // v1.12 托管任务线，默认开
     am.cooldowns = am.cooldowns || {};
     const now = G.tickCount;
     const cd = (key, interval) => (am.cooldowns[key] && (now - am.cooldowns[key]) < interval);
     const setCd = (key) => { am.cooldowns[key] = now; };
 
     // 初始化统计（兜底初始化，字段名必须与 initState 中的 autoStats 保持一致，否则计数器累计到未定义的字段将产生 NaN）
-    if (!G.autoStats) G.autoStats = { startedAt:Date.now(), totalTicks:0, totalIncome:0, totalExpense:0, decisions:0, businessesOpened:0, businessesUpgraded:0, employeesHired:0, employeesFired:0, regionsUnlocked:0, researchesStarted:0, stocksBought:0, stocksSold:0, giftsGiven:0, loansTaken:0, loansRepaid:0, manualWorks:0, venturesInvested:0, venturesExited:0 };
+    if (!G.autoStats) G.autoStats = { startedAt:Date.now(), totalTicks:0, totalIncome:0, totalExpense:0, decisions:0, businessesOpened:0, businessesUpgraded:0, employeesHired:0, employeesFired:0, regionsUnlocked:0, researchesStarted:0, stocksBought:0, stocksSold:0, giftsGiven:0, loansTaken:0, loansRepaid:0, manualWorks:0, venturesInvested:0, venturesExited:0, questsStarted:0, questsAdvanced:0 };
     G.autoStats.totalTicks++;
 
     // 阶段自适应冷却倍率

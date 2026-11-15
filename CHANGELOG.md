@@ -2,6 +2,27 @@
 
 《商海浮沉》版本变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号与 git tag 一一对应。
 
+## [1.12] — 2026-11-15
+
+**修复轮：幕 9 真结局可达 + 托管任务线 + 子公司打平。** 全量修复（设计分析 →「全修」授权）。
+
+### Fixed
+- **P1**：幕 9「永恒商神」`bizSumMin: 80` 超出系统硬上限（7 业务 × 10 级 = 70），真结局数学上不可达；双仿真证实 4320h / 1.98e14 资产下仍卡幕 8。降为 **70**（语义 = 全部业务满级）。4320h SEED=1 自然仿真实测真结局达成、0 错误（`tests/act9-4320h-sim-v1.12.md`）
+- **P2**：子公司纯现金流净亏（让出 20~40% 单城收入 vs 免维护约值 7%）→ `SUBSIDIARY_SHARE_BASE` 0.60→**0.65**（玩家保留 65~80%）、`SUBSIDIARY_GROUP_INCOME_BONUS` 0.02→**0.03**（全局协同 2%→3%/家），「让分成换托管」模型收窄至打平
+
+### Added
+- **托管任务线** `autoQuest` 策略（默认开）：托管时自动开启/推进 NPC 任务线——每 NPC 在跑任务 ≤1、尊重 `autoAdvanced`、步奖励为负资金且付不起时跳过；成功计入 `autoStats.questsStarted/questsAdvanced`
+- `balance-simulation.mjs` 增加 `actTimes`（act → 首次达成 tick/h 时）逐场景追踪，供终局可达性验收
+- `verify-gameplay.mjs` 新增 6 条 v1.12 断言（幕 9 门槛 ≤70 / 子公司参数 / 分成率下限 / 新档 40 tick 真跑托管任务线：q1 完成 + q2 推进 + 统计计数）→ **215 PASS / 0 FAIL**
+
+### Verified
+- 720h SEED=1 scheduled 终值 **44,186,077,984 与 v1.11 基线逐位一致**（三改动对前段全为 no-op：autoQuest 需托管开、sim 未开；sim 未设子公司；bizSumMin 仅影响 late-game）
+- 4320h SEED=1 自然仿真：**act 9 @ 3792h**、rank=永恒商神 @ 3790h、4320h 终值 **179,461,989,555,922**（~1.79e14）、bizSum=70、`errors: []`、`haltedAt: null`（`tests/act9-4320h-sim-v1.12.md`）
+
+### Decisions（记录为显式决策，不视为缺陷）
+- 并购回本期**保持现状**：回本 ~120h 相对晚期资产量级健康，无通胀风险
+- 全托管薄资金新档 ~33 tick 破产（`TimerManager.clearAll` 冻结 tick）为既有经济行为，列为 P2 观察项（候选「最低现金守卫」策略），本轮不改
+
 ## [1.11] — 2026-11-13（ba862f7）
 
 成就死奖励键完整接线 + P1 死引用修复 + 720h 经济基线重定。**Phase 6 打磨轮交付。**

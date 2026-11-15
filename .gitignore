@@ -13,3 +13,6 @@ __pycache__/
 # 系统杂项
 .DS_Store
 Thumbs.db
+
+# 本地仿真工作区（balance-simulation 哨兵/日志）
+.sim-run/

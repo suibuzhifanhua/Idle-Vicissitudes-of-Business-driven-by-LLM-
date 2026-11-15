@@ -1382,6 +1382,48 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
   }
 }
 
+// ---------- v1.12：幕9 可达性 + 托管任务线 autoQuest + 子公司打平调参 ----------
+{
+  // [1] 幕9 门槛须在系统上限内（7 业务 × Lv10 = 70），真结局可达
+  const M9 = evalIn('MILESTONES')[8];
+  check('v1.12 幕9 bizSumMin ≤ 系统上限 70（7 业务×Lv10，真结局可达）',
+    M9 && M9.act === 9 && M9.bizSumMin <= 70 && M9.money === 1e14 && M9.repMin === 100,
+    M9 ? JSON.stringify({ money: M9.money, rep: M9.repMin, biz: M9.bizSumMin }) : 'missing');
+
+  // [2] 托管任务线 autoQuest + 子公司分成：新档 + 垫 500 万现金（40 tick 内全托管消耗不会触破产清算——
+  //     实测 40 万裸资金 33 tick 即烧穿，bankruptTicks 满 8 触发 TimerManager.clearAll 冻结 tick，属既有经济行为非本轮改动）
+  //     李处好感置 90，开托管跑 40 tick（真跑 doTick，RNG 全局种子确定）。
+  //     interval 12：tick1 开 q1 / 13 进 step1 / 25 完成+开 q2 / 37 进 q2 step1
+  S.startGame('tech', 'v112quest', { difficulty: 'standard' });
+  const G12 = S.G;
+  G12.money = 5000000;
+  const savedFav12 = G12.npcFavor.lichu;
+  G12.npcFavor.lichu = 90;
+  G12.autoMode.enabled = true;
+
+  // [3] 子公司打平调参：分成下限 0.60→0.65 / 集团协同 0.02→0.03（5e6 资产 < 1000万 → scaleBonus=0 → 恰为下限）
+  check('v1.12 子公司参数（分成下限 0.65 / 上限 0.80 / 集团协同 0.03）',
+    CONFIG.SUBSIDIARY_SHARE_BASE === 0.65 && CONFIG.SUBSIDIARY_SHARE_MAX === 0.80 && CONFIG.SUBSIDIARY_GROUP_INCOME_BONUS === 0.03,
+    'base=' + CONFIG.SUBSIDIARY_SHARE_BASE + ' max=' + CONFIG.SUBSIDIARY_SHARE_MAX + ' group=' + CONFIG.SUBSIDIARY_GROUP_INCOME_BONUS);
+  const share0 = S.getSubsidiaryShareRate();
+  check('v1.12 getSubsidiaryShareRate（5e6 资产 < 1000万档）= 0.65', Math.abs(share0 - 0.65) < 1e-9, String(share0));
+
+  runIntervals(40);
+  const completed12 = (G12.questCompleted && G12.questCompleted.lichu) || [];
+  const inProg12 = (G12.questProgress && G12.questProgress.lichu) || {};
+  check('v1.12 托管任务线：40 tick 内自动开启并完成 李处_q1（reqFavor 10）',
+    completed12.includes('lichu_q1'),
+    'completed=' + JSON.stringify(completed12) + ' inProg=' + JSON.stringify(inProg12));
+  check('v1.12 托管任务线：李处_q2（reqFavor 30）40 tick 内自动开启且在跑（每 NPC ≤1 条在跑）',
+    !!(inProg12.lichu_q2 && inProg12.lichu_q2.started && inProg12.lichu_q2.stepIndex >= 1),
+    'q2=' + JSON.stringify(inProg12.lichu_q2));
+  check('v1.12 autoStats 任务计数（started ≥2 / advanced ≥3）',
+    G12.autoStats.questsStarted >= 2 && G12.autoStats.questsAdvanced >= 3,
+    'qS=' + G12.autoStats.questsStarted + ' qA=' + G12.autoStats.questsAdvanced);
+  G12.npcFavor.lichu = savedFav12;
+  G12.autoMode.enabled = false;
+}
+
 console.log('\n' + results.join('\n'));
 const passCount = results.filter(r => r.startsWith('PASS')).length;
 const failCount = results.filter(r => r.startsWith('FAIL')).length;

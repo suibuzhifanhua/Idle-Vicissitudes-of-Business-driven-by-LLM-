@@ -231,6 +231,7 @@ function runScenario(label, withScheduler) {
 
   const horizons = {};
   const rankTimes = {};
+  const actTimes = {}; // v1.12：幕推进首次达成时点（真跑 doTick 口径，供真结局可达性验证）
 
   function refreshEconomy() {
     S.invalidateIncomeCache();
@@ -279,6 +280,9 @@ function runScenario(label, withScheduler) {
         rankTimes[tier.name] = { tick: G.tickCount, hours: Math.round((G.tickCount / hourTicks) * 10) / 10 };
       }
     });
+    if (typeof G.act === 'number' && G.act > 1 && !actTimes[G.act]) {
+      actTimes[G.act] = { tick: G.tickCount, hours: Math.round((G.tickCount / hourTicks) * 10) / 10 };
+    }
     HORizons.forEach((hours) => {
       const target = hours * hourTicks;
       if (!horizons[hours] && G.tickCount >= target) {
@@ -288,6 +292,7 @@ function runScenario(label, withScheduler) {
           expensePerTick: Math.round(economy.expense),
           netPerTick: Math.round(economy.income - economy.expense),
           rank: G.rank,
+          act: G.act,
           employees: (G.employees || []).length,
           businessLevels: BUSINESS_DEFS.reduce((sum, definition) => sum + ((G.businesses[definition.id] || {}).level || 0), 0),
         };
@@ -344,6 +349,7 @@ function runScenario(label, withScheduler) {
     ticks: G.tickCount,
     horizons,
     rankTimes,
+    actTimes,
     offline24h,
     haltedAt,
     heapUsedMB: Math.round(process.memoryUsage().heapUsed / 1048576),

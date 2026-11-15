@@ -225,6 +225,8 @@ window.SGame = (() => {
         researchesStarted: 0,
         stocksBought: 0,
         stocksSold: 0,
+        questsStarted: 0,
+        questsAdvanced: 0,
         giftsGiven: 0,
         loansTaken: 0,
         loansRepaid: 0,

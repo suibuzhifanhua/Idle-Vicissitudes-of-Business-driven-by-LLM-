@@ -81,12 +81,12 @@ const CONFIG = {
   // ---- 子公司（本轮新增：启用原本没有任何入口的子公司系统） ----
   SUBSIDIARY_MIN_LEVEL_SUM: 5,        // 城市内业务等级总和达标才能设立
   SUBSIDIARY_SETUP_TICKS: 45,         // 设立费 = 该城市每Tick收入 × 此值
-  SUBSIDIARY_SHARE_BASE: 0.60,        // 子公司收入分成下限（沿用原公式常数）
+  SUBSIDIARY_SHARE_BASE: 0.65,        // 子公司收入分成下限（v1.12 0.60→0.65：玩家保留 65~80%，让出 20~35%，缓解纯现金流净亏）
   SUBSIDIARY_SHARE_STEP: 0.02,        // 每1000万集团资产提高的分成
   SUBSIDIARY_SHARE_MAX: 0.80,         // 分成上限
   SUBSIDIARY_REP_PER_TICK: 0.02,      // 每家子公司每Tick声望增益
   SUBSIDIARY_RD_BONUS: 0.08,          // 每家子公司研发点数加成
-  SUBSIDIARY_GROUP_INCOME_BONUS: 0.02, // 每家子公司带来的集团全局收入协同
+  SUBSIDIARY_GROUP_INCOME_BONUS: 0.03, // 每家子公司带来的集团全局收入协同（v1.12 0.02→0.03：让出分成的现金补偿之一）
   SUBSIDIARY_MA_DISCOUNT: 0.05,       // 每家子公司并购成本折扣
   SUBSIDIARY_MA_DISCOUNT_MAX: 0.25,   // 并购折扣上限
   // ---- 员工深度 ----
@@ -206,7 +206,9 @@ const LATEGAME_SCALE = {
 
 // ---- MILESTONES ----
 // v1.9 剧情延展：原 5 幕止于百亿（10B），而资产体系到 100万亿（1e14）——后 1/10000 旅程没有剧情。
-// 扩至 9 幕，与 RANK_TIERS 后段对齐；rep 上限 100，bizSum 为所有城市业务等级总和（单城满级=70）。
+// 扩至 9 幕，与 RANK_TIERS 后段对齐；rep 上限 100，bizSum 为所有城市业务等级总和（系统上限=7业务×Lv10=70）。
+// v1.12 修复：幕9 原 bizSumMin=80 超出系统上限（720h 与 4320h 双仿真证实 4320h/1.98e14 资产下仍卡幕8），
+// 真结局数学不可达 → 降为 70（语义=全部业务满级，与 money 100T/rep 100 构成三重终局门槛）。
 const MILESTONES = [
   // money, repMin, bizSumMin（所有城市业务等级总和）, act, ...
   { money: 1000000,      repMin: 15, bizSumMin: 3,  act: 1, name: '第一桶金',   icon:'💰', desc:'资产突破百万，你捞到了商海中的第一桶金。', eventId: 'milestone_1m'},
@@ -217,7 +219,7 @@ const MILESTONES = [
   { money: 100000000000, repMin: 90, bizSumMin: 50, act: 6, name: '商业教父',   icon:'💎', desc:'千亿资产，业界尊称一声「教父」。游戏规则开始由你执笔。', eventId: 'milestone_100b'},
   { money: 1000000000000, repMin: 95, bizSumMin: 60, act: 7, name: '千亿帝国',  icon:'🌟', desc:'万亿身家。你的名字被写进国家级商业史，每一个决定都在牵动全球市场。', eventId: 'milestone_1t'},
   { money: 10000000000000, repMin: 100, bizSumMin: 70, act: 8, name: '万亿财阀', icon:'🔥', desc:'10万亿财阀。你的家族办公室设在多个金融中心，一句话可以重塑全球供应链。', eventId: 'milestone_10t'},
-  { money: 100000000000000, repMin: 100, bizSumMin: 80, act: 9, name: '永恒商神', icon:'⭐', desc:'100万亿。财富对你已失去意义——你是这个时代的神话，也是下一代人的起点。', eventId: 'milestone_100t'},
+  { money: 100000000000000, repMin: 100, bizSumMin: 70, act: 9, name: '永恒商神', icon:'⭐', desc:'100万亿。财富对你已失去意义——你是这个时代的神话，也是下一代人的起点。', eventId: 'milestone_100t'},
 ];
 
 
