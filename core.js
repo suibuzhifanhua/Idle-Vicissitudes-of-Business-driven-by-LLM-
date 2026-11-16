@@ -3649,7 +3649,7 @@ window.SGame = (() => {
 
     // 使用缓存：先筛选当前幕次可用事件（预缓存），再检查冷却
     const actEvents = getActEvents();
-    const available = actEvents.filter(e => {
+    const available0 = actEvents.filter(e => {
       if (e.cooldown && G.eventCooldowns[e.id] && G.tickCount - G.eventCooldowns[e.id] < e.cooldown) return false;
       // 条件标签过滤：检查地区/行业/资产门槛（委托给 EventSystem）
       if (e.conditionTags && typeof EventSystem !== 'undefined' && EventSystem._checkConditionTags) {
@@ -3657,6 +3657,13 @@ window.SGame = (() => {
       }
       return true;
     });
+    // v1.14：后期小池死锁修复。幕6-9 事件池 7/9/11/13 < 50 槽 dedup 集 → 集饱和后加权选单
+    // 100% 命中「近期已触发」被 fireEvent 静默浪费（8640h 实测后期仅 34 随机事件）。
+    // 仅当候选数 ≤50（dedup 集容量，死锁必要条件）时启用过滤+破缺；前段池 102/148/168/155/96 恒 >50
+    // 走原路径 → 前段 RNG 序列与事件流逐位不变（720h 基线免重定）
+    const available = (available0.length <= 50 && typeof EventSystem !== 'undefined' && EventSystem.getFireable)
+      ? EventSystem.getFireable(available0)
+      : available0;
     if (available.length === 0) return;
 
     // === 联动增强：压力/声誉影响事件概率 ===

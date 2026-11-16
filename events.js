@@ -108,6 +108,10 @@ window.EventSystem = (() => {
     SGame.G.eventCooldowns[event.id] = SGame.G.tickCount;
     SGame.G.eventHistory.push(event.id);
     if (SGame.G.eventHistory.length > 500) SGame.G.eventHistory = SGame.G.eventHistory.slice(-200);
+    // v1.14 P1 修复：G.eventCount 此前只在 core.js 不可达 fallback 自增（EventSystem 漏斗漏计数）→
+    // event_10/30/50/100 四成就永不可达、event_100 的 decisionBonus 奖励键从未生效、统计面板恒 0。
+    // 计数收拢到唯一漏斗此处（纯状态写入，零新增 Math.random）。
+    SGame.G.eventCount = (SGame.G.eventCount || 0) + 1;
 
     const desc = typeof event.getDesc === 'function' ? event.getDesc() : event.desc;
 
@@ -575,9 +579,32 @@ window.EventSystem = (() => {
     });
   }
 
+  // ========== 候选去重过滤 + 后期小池死锁破缺（v1.14） ==========
+  // 幕6-9 事件池仅 7/9/11/13 条 < 50 槽 dedup 集 → 集被池占满后加权选单 100% 命中
+  // 「近期已触发」而被 fireEvent 静默浪费，后期随机事件通道死锁（8640h 实测后期仅 34 事件）。
+  // 破缺规则：仅当全部候选被阻塞时，按「最早触发时刻」逐个释放（调用方已先做 cooldown 过滤，
+  // 被释放者冷却必已完整过期，重触发安全）。注意：调用方（core.js tryFireEvent）仅在候选数 ≤50
+  // （dedup 集容量、死锁必要条件）时才调用本函数——过滤本身会重归一化加权选单，若前段（池 ≥96）
+  // 也走过滤，事件流会从首个被阻塞事件起分叉、720h 基线漂移（v1.14 实测 83.94B→88.52B 已证）。
+  function getFireable(candidates) {
+    let fireable = candidates.filter(e => e.id && !_firedEventIds.has(e.id));
+    if (fireable.length === 0) {
+      const G = SGame.G;
+      const cds = (G && G.eventCooldowns) || {};
+      const ordered = candidates.slice().sort((a, b) => (cds[a.id] || 0) - (cds[b.id] || 0));
+      for (const e of ordered) {
+        _firedEventIds.delete(e.id);
+        fireable = candidates.filter(c => c.id && !_firedEventIds.has(c.id));
+        if (fireable.length > 0) break;
+      }
+    }
+    return fireable;
+  }
+
   // ========== 公开API ==========
   return {
     fireEvent,
+    getFireable,
     choose,
     applyEffects,
     addLog,

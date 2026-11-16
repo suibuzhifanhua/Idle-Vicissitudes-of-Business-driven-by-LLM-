@@ -298,6 +298,7 @@ function runScenario(label, withScheduler) {
           midActEcon: !!G.midActEconDone,
           employees: (G.employees || []).length,
           businessLevels: BUSINESS_DEFS.reduce((sum, definition) => sum + ((G.businesses[definition.id] || {}).level || 0), 0),
+          events: G.eventCount || 0,
         };
       }
     });
@@ -306,6 +307,9 @@ function runScenario(label, withScheduler) {
   S.startTick();
   let haltedAt = null;
   let _progress = 0;
+  // v1.14 永恒篇事件触发计数：日志头变更检测（unshift 头部、time+text 作唯一键，零新增 RNG）
+  const eternalEvents = { '世界经济秩序理事会': 0, '奇点突破联合体': 0, '接班人': 0, '名字成为历史': 0 };
+  let _lastLogKey = '';
   while (G.tickCount < finalHorizon) {
     const steps = Math.min(hourTicks, finalHorizon - G.tickCount);
     const errAtBlockStart = errors.length;
@@ -313,6 +317,15 @@ function runScenario(label, withScheduler) {
       advance();
       runTick();
       if (errors.length > errAtBlockStart) { haltedAt = { tick: G.tickCount, at: i, error: errors.slice(-1)[0].slice(0, 200) }; break; }
+      const _el0 = G.eventLog && G.eventLog[0];
+      if (_el0) {
+        const _k = _el0.time + '|' + (_el0.text || '');
+        if (_k !== _lastLogKey) {
+          _lastLogKey = _k;
+          const _t = _el0.text || '';
+          for (const _ek in eternalEvents) if (_t.indexOf(_ek) >= 0) eternalEvents[_ek]++;
+        }
+      }
     }
     if (haltedAt) break;
     if (!Number.isFinite(G.money) || G.money < 0) G.money = 0;
@@ -354,6 +367,7 @@ function runScenario(label, withScheduler) {
     rankTimes,
     actTimes,
     offline24h,
+    eternalEvents,
     haltedAt,
     heapUsedMB: Math.round(process.memoryUsage().heapUsed / 1048576),
     errors: errors.slice(bootErrors, bootErrors + 8),

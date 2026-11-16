@@ -2977,4 +2977,66 @@ var EVENTS = [
     fallbacks:['当你开始规划一百年后的事，你就不再是一个商人，而是一座文明的地标。','百年基业，从一笔今天就动心的捐款开始。'],
   },
 
+// ===== 永恒篇·真结局后专属 (v1.14：补 1e13~1e14+ 事件真空区) =====
+  // 门槛阶梯（帝国篇续档）：3e13 世界经济秩序理事会（30万亿）→ 5e13 奇点突破联合体（50万亿）
+  //   → 1e14×2 接班人 / 名字（100万亿，真结局档，仅幕9）
+  // moneyAbs 基准由 v1.7 costScale 自动放大（1e14 档 ×262144），正负均按「~10% 资产」口径校准：
+  //   3e13 档 ×4096：±6e8~7e8 基准 ≈ 2500~2900 亿；5e13 档 ×32768：1.2e8 基准 ≈ 3900 亿；
+  //   1e14 档 ×262144：3.5e7~4e7 基准 ≈ 9200 亿~1.05 万亿。720h 前段（资产 <1e11）零扰动。
+  {
+    id:'lg_eternal_council', type:'career', category:'decision',
+    acts:[8,9], cooldown:72000, weight:5, // v1.14：冷却单位=tick（1h=120tick）；72000tick=600h 终局尺度→罕见传承收束（非 440tick≈3.7h 高频循环）
+    conditionTags:{ assetThreshold:30000000000000 },
+    title:'世界经济秩序理事会',
+    getDesc:()=>`世界经济论坛第一次以你为唯一企业界代表，发出「世界经济秩序理事会」闭门会议邀请。议题不是任何具体行业，而是货币、能源与数据的全球分配。主持人的开场白只有一句：「上一世纪的规则是旧巨头们写的，今天，我们想请你共签。」`,
+    effects:{ stress:[15,30] },
+    choices:[
+      { text:'接受共签：把你的产业格局写进新规则', effect:{ moneyAbs:700000000, reputation:25, connections:15, stress:15 }, label:'共签新规则' },
+      { text:'出资设立全球公益基金，资源分配交给第三方', effect:{ moneyAbs:-600000000, reputation:30, stress:10 }, label:'先公后私' },
+      { text:'婉拒：规则是让大家遵守的，签字的人担责最重', effect:{ reputation:12, stress:5 }, label:'旁观者' },
+    ],
+    fallbacks:['上一世纪规则书的最后一行，签上了你的名字。','当规则开始征求你的签名，你就不再是玩家——你就是规则本身。'],
+  },
+  {
+    id:'lg_eternal_breakthrough', type:'tech', category:'decision',
+    acts:[8,9], cooldown:90000, weight:5, // 90000tick=750h 终局尺度→罕见传承收束
+    conditionTags:{ assetThreshold:50000000000000 },
+    title:'奇点突破联合体',
+    getDesc:()=>`三家实验室——AGI 研究、可控核聚变、轨道基建——同时递来同一份邀请：以你为锚定出资方，组建「奇点突破联合体」，首期投入 4000 亿，押注「二十年内的技术奇点」。邀请信最后一行写着：「我们这次赌的不是下一个行业，是下一个时代。」`,
+    effects:{ stress:[20,35] },
+    choices:[
+      { text:'领投：为下一个时代全额下注', effect:{ moneyAbs:-120000000, reputation:20, stress:20 }, label:'时代下注' },
+      { text:'跟投换核心专利授权，保留退路', effect:{ moneyAbs:-30000000, reputation:12, connections:10, stress:10 }, label:'授权换筹码' },
+      { text:'只资助基础研究，不碰重资产奇点', effect:{ moneyAbs:-10000000, reputation:10, stress:5 }, label:'灯塔角色' },
+    ],
+    fallbacks:['奇点没有估值，它只问你敢不敢签字。','万亿之后，资本市场讨论的不再是产品，是时代。'],
+  },
+  {
+    id:'lg_eternal_succession', type:'personal', category:'decision',
+    acts:[9], cooldown:108000, weight:4, // 108000tick=900h 终局尺度→罕见传承收束
+    conditionTags:{ assetThreshold:100000000000000 },
+    title:'接班人',
+    getDesc:()=>`资产破 100 万亿的当天，董事会第一次把「你」列为第一议题。三位候选继承人各自交上一份「未来五十年」方案：一位要把版图铺到轨道，一位要拆分控股回馈社会，一位只问你——「您退休以后，想做什么？」老管家把三版章程摊在桌上，窗外，集团的直升机列队等待。`,
+    effects:{ stress:[15,30] },
+    choices:[
+      { text:'扶正接班人：让下一代重写规则', effect:{ reputation:20, connections:10, stress:-10 }, label:'交棒' },
+      { text:'自己留任「永恒合伙人」，只保留否决权', effect:{ moneyAbs:10000000, reputation:15, stress:5 }, label:'永恒合伙人' },
+      { text:'把控股股份移交给基金会，集团进入公益时代', effect:{ moneyAbs:-35000000, reputation:30, stress:-5 }, label:'归还世界' },
+    ],
+    fallbacks:['帝国不再是你的对手——传承才是你最后一门生意。','100 万亿之后，最难的估值对象，是你自己。'],
+  },
+  {
+    id:'lg_eternal_name', type:'personal', category:'decision',
+    acts:[9], cooldown:126000, weight:4, // 126000tick=1050h 终局尺度→罕见传承收束
+    conditionTags:{ assetThreshold:100000000000000 },
+    title:'名字成为历史',
+    getDesc:()=>`一本世纪经济学通史的新版把你的商战生涯写进终章，章节标题只有你的名字两个字。你的中学老师、也是本书编者，寄来样书，在扉页问：「『遗产』一节，你想写什么？」窗外，整座城市的天际线，都是你集团的灯。`,
+    effects:{ stress:[5,15] },
+    choices:[
+      { text:'写下「初学者」：没有人是从结局开始的', effect:{ reputation:25, stress:-10 }, label:'初学者' },
+      { text:'设立以你命名的奖学金，资助下一个「初学者」', effect:{ moneyAbs:-20000000, reputation:20, stress:5 }, label:'点灯' },
+      { text:'留白——遗产一栏，交给历史自己填', effect:{ reputation:15, connections:5 }, label:'留白' },
+    ],
+    fallbacks:['终章的标题是你，终章的正文还没写完。','当名字被写进教材，财富就不再是目标——它是脚注。'],
+  },
 ]

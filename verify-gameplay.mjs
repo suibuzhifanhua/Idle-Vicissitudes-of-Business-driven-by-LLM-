@@ -421,6 +421,7 @@ sandbox.EventSystem.fireEvent(laborEvt);
 const moneyBeforeLabor = S.G.money;
 sandbox.EventSystem.choose('legal_labor', 1);
 check('legal_labor 实跑抉择后 G.money 仍为数字', typeof S.G.money === 'number' && isFinite(S.G.money), String(S.G.money) + ' (before ' + moneyBeforeLabor.toFixed(0) + ')');
+check('v1.14 P1：EventSystem.fireEvent 漏斗自增 G.eventCount（此前恒 0，event_10/30/50/100 死成就）', (S.G.eventCount || 0) >= 1, 'eventCount=' + (S.G.eventCount || 0));
 
 // ---------- v1.7 后期档位乘数 ----------
 const LG_SAVE_MONEY = S.G.money;
@@ -1514,6 +1515,56 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
   const lv1 = Object.values(S.G.businesses).reduce((s, b) => s + (b.level || 0), 0);
   check('v1.13 自动轮转：纯放置 1000 tick 自动升级（业务总级 ' + lv0 + '→' + lv1 + '）', lv1 > lv0,
     'lv0=' + lv0 + ' lv1=' + lv1 + ' money=' + S.G.money);
+}
+
+// ---------- v1.14：永恒篇终局事件（补 1e13~1e14+ 事件真空区）----------
+{
+  const EV = evalIn('EVENTS');
+  const pick = (id) => EV.find(e => e.id === id);
+  const ec = pick('lg_eternal_council'), eb = pick('lg_eternal_breakthrough'),
+        es = pick('lg_eternal_succession'), en = pick('lg_eternal_name');
+  // [1] 四事件齐备：门槛阶梯 3e13 / 5e13 / 1e14 / 1e14，幕次 8-9 / 8-9 / 9 / 9
+  check('v1.14 永恒篇 ×4 事件门槛阶梯（3e13/5e13/1e14/1e14，acts 8-9/8-9/9/9）',
+    !!ec && !!eb && !!es && !!en &&
+    ec.conditionTags.assetThreshold === 3e13 && eb.conditionTags.assetThreshold === 5e13 &&
+    es.conditionTags.assetThreshold === 1e14 && en.conditionTags.assetThreshold === 1e14 &&
+    JSON.stringify(ec.acts) === '[8,9]' && JSON.stringify(eb.acts) === '[8,9]' &&
+    JSON.stringify(es.acts) === '[9]' && JSON.stringify(en.acts) === '[9]',
+    'th=' + [ec, eb, es, en].map(e => e && e.conditionTags.assetThreshold).join('/'));
+  // [2] 冷却/权重/选项结构完整（3 选项、含正负 moneyAbs、无重复 id）
+  //     cooldown 单位=tick（1h=120tick）；永恒篇为终局尺度（600~1050h→72000~126000tick）
+  //     罕见传承收束，刻意区别于常规晚期业务事件（280~520tick）
+  check('v1.14 永恒篇结构完整（3 选项 / cooldown 72000-126000tick 终局尺度 / weight 4-5 / 含正负 moneyAbs / id 唯一）',
+    [ec, eb, es, en].every(e => e.choices.length === 3 && e.cooldown >= 72000 && e.cooldown <= 126000 && e.weight >= 4 && e.weight <= 5) &&
+    [ec, eb, es, en].some(e => e.choices.some(c => (c.effect.moneyAbs || 0) > 0)) &&
+    [ec, eb, es, en].some(e => e.choices.some(c => (c.effect.moneyAbs || 0) < 0)) &&
+    new Set(EV.map(e => e.id)).size === EV.length,
+    'n=' + EV.length);
+  // [3] 真空区覆盖：assetThreshold ≥1e13 的晚期事件从 2 条增至 6 条（1e13×2 + 3e13 + 5e13 + 1e14×2）
+  const late = EV.filter(e => (e.conditionTags || {}).assetThreshold >= 1e13);
+  check('v1.14 晚期事件真空区覆盖（≥1e13 门槛事件 2→6 条，覆盖 1e13/3e13/5e13/1e14 四档）',
+    late.length === 6 && new Set(late.map(e => e.conditionTags.assetThreshold)).size === 4,
+    'late=' + late.length + ' tiers=' + [...new Set(late.map(e => e.conditionTags.assetThreshold))].join('/'));
+  // [4] 720h 前段零扰动：新事件门槛 3e13 远高于 720h scheduled 终值（8.4e10），不可能入池
+  check('v1.14 前段零扰动（新事件门槛 3e13 ≫ 720h 终值量级 1e11，事件池零变化）',
+    [ec, eb, es, en].every(e => e.conditionTags.assetThreshold >= 3e13),
+    'minTh=' + Math.min(ec.conditionTags.assetThreshold, eb.conditionTags.assetThreshold, es.conditionTags.assetThreshold, en.conditionTags.assetThreshold));
+  // [5] 后期小池死锁破缺：dedup 集占满候选后 getFireable 必须返回非空子集（此前幕6-9 池 7~13 < 50 槽 dedup 集，
+  //     饱和后加权选单 100% 被静默浪费，8640h 实测后期仅 34 随机事件、永恒篇 4 条仅触发 3 次）
+  const ES = evalIn('EventSystem');
+  const _savedMoney = S.G.money;
+  S.G.money = 5e14; // 四永恒事件全部过条件（assetThreshold ≤1e14），保证 fireEvent 能进 dedup 集
+  [ec, eb, es, en].forEach(e => ES.fireEvent(e)); // 确保 4 个 id 全部在 _firedEventIds 内
+  const f = ES.getFireable([ec, eb, es, en]);
+  S.G.money = _savedMoney;
+  check('v1.14 死锁破缺：候选全部 dedup 阻塞时 getFireable 按最早触发时刻释放，返回非空子集',
+    typeof ES.getFireable === 'function' && f.length >= 1 && f.length <= 4 && f.every(e => [ec, eb, es, en].includes(e)),
+    'fireable=' + f.map(e => e.id).join(','));
+  // [6] 活性不变式：任何非空候选集 getFireable 必非空（全阻塞路径走破缺），且结果为输入子集
+  const pool1 = EV.filter(e => !e.acts || (Array.isArray(e.acts) && e.acts.includes(1)));
+  const f1 = ES.getFireable(pool1);
+  check('v1.14 getFireable 活性不变式（act1 池 ' + pool1.length + ' 条：非空输入 → 非空输出 ⊆ 输入）',
+    f1.length >= 1 && f1.every(e => pool1.includes(e)), 'fireable=' + f1.length);
 }
 
 console.log('\n' + results.join('\n'));
