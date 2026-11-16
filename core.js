@@ -390,6 +390,8 @@ window.SGame = (() => {
       G.reputation = Math.min(100, (G.reputation || 0) + (pCfg.repPerPoint || 5) * lpts);
       addLog('🏛️ 第 ' + _legacyData.generations + ' 纪元：传承点 ' + lpts + '（收入 ×' + (1 + (pCfg.incomePerPoint || 0.1) * lpts).toFixed(1) + '，初始资金加成已生效）');
     }
+    // v1.13：真结局标记跨纪元携带（转世不丢，NG+ 开局可见）
+    G.endingSeen = !!_legacyData.endingSeen;
     // 初始化竞争对手
     if (typeof RIVALS !== 'undefined') {
       G.rivals = RIVALS.map(r => ({
@@ -454,6 +456,7 @@ window.SGame = (() => {
     try { sandboxRefill(); } catch(e) { SGame.DEBUG && console.error('[doTick] sandboxRefill error:', e); }
     try { tickIncome(); } catch(e) { SGame.DEBUG && console.error('[doTick] tickIncome error:', e); }
     try { tickEmployees(); } catch(e) { SGame.DEBUG && console.error('[doTick] tickEmployees error:', e); }
+    try { tickAutoRotate(); } catch(e) { SGame.DEBUG && console.error('[doTick] tickAutoRotate error:', e); }
     // 第 8 阶段：事件管线（内含 autoManager，确保始终执行）
     try { tickEvents(); } catch(e) { SGame.DEBUG && console.error('[doTick] tickEvents error:', e); }
     try { tickPostCalc(); } catch(e) { SGame.DEBUG && console.error('[doTick] tickPostCalc error:', e); }
@@ -794,6 +797,8 @@ window.SGame = (() => {
     // 5. 检查里程碑
     const prevAct = G.act;
     checkMilestones();
+    // 5.1 v1.13 中期幕：全球经济体系（30T 一次性里程碑）
+    checkMidActEcon();
     if (G.act > prevAct && typeof UI !== 'undefined' && UI.showMilestone) {
       UI.showMilestone('🎉 第 ' + G.act + ' 幕');
     }
@@ -1459,7 +1464,7 @@ window.SGame = (() => {
   const _LEGACY_KEY = 'shfc_legacy';
   let _legacyMem = null; // 内存兜底（Storage 不可用，如沙箱/离线）
   function _defaultLegacy() {
-    return { generations: 0, points: 0, totalPoints: 0, bestMoney: 0, history: [] };
+    return { generations: 0, points: 0, totalPoints: 0, bestMoney: 0, endingSeen: false, history: [] };
   }
   function _loadLegacy() {
     if (_legacyMem) return _legacyMem;
@@ -1827,6 +1832,12 @@ window.SGame = (() => {
     if (comp.achOpCost < 1.0) grandTotal *= (1.0 + (1.0 - comp.achOpCost) * 0.5);
     // 刘会计被动：运营成本 -5%（等效收入加成）
     if (comp.npcBonusForCalc._opsCostReduction) grandTotal *= (1 + comp.npcBonusForCalc._opsCostReduction * 0.5);
+
+    // v1.13 中期幕：全球经济体系——总资产达 30T 后永久 +15% 收入（棘轮，见 checkMidActEcon）
+    if (G.midActEconDone) {
+      const mCfg = (typeof MIDACT_ECON !== 'undefined') ? MIDACT_ECON : { ongoingIncomeMul: 1 };
+      grandTotal *= (mCfg.ongoingIncomeMul || 1);
+    }
 
     // 全局乘数预算：超过起始阈值的部分只保留有限边际收益，防止各系统倍率组合爆炸。
     if (rawProductionTotal > 0) {
@@ -2454,6 +2465,15 @@ window.SGame = (() => {
         G.milestone = i + 1;
         const oldAct = G.act;
         G.act = Math.max(G.act, m.act);
+        // v1.13：幕 9 = 真结局，标记跨纪元持久化（传承记录），并触发 epilogue 叙事
+        if (m.act === 9 && !G.endingSeen) {
+          G.endingSeen = true;
+          const _leg = _loadLegacy();
+          if (!_leg.endingSeen) { _leg.endingSeen = true; _saveLegacy(_leg); }
+          addLog('⭐ 真结局「永恒商神」达成——结局标记已跨纪元持久化，转世将保留此印记。');
+          if (typeof UI !== 'undefined' && UI.showMilestone) UI.showMilestone('⭐ 真结局 · 永恒商神');
+          _fireEndingEpilogue();
+        }
         addLog('🎉 综合里程碑达成：' + m.name + '！' + (m.desc || '') + '！');
         addLog('   ' + getCompositeDesc(m));
         showAchievement('🏆', m.name);
@@ -2488,6 +2508,91 @@ window.SGame = (() => {
         }
       }
     });
+  }
+
+  // ========== v1.13 中期幕：全球经济体系（10T→100T 真空区唯一系统里程碑） ==========
+  function checkMidActEcon() {
+    const mCfg = (typeof MIDACT_ECON !== 'undefined') ? MIDACT_ECON : null;
+    if (!mCfg || !G || G.midActEconDone) return;
+    const stockVal = (typeof window !== 'undefined' && window.SGame && typeof window.SGame.getStockPortfolioValue === 'function')
+      ? window.SGame.getStockPortfolioValue() : 0;
+    const totalAssets = (G.money || 0) + (stockVal || 0);
+    if (totalAssets < (mCfg.minAsset || 0)) return;
+    G.midActEconDone = true;
+    G.money += (mCfg.oneTimeReward || 0);
+    const bonusPct = Math.round(((mCfg.ongoingIncomeMul || 1) - 1) * 100);
+    addLog('🌐 全球经济体系启动：你的资本已嵌入全球金融管道，一次性体系分红 ' + _formatMoney(mCfg.oneTimeReward) + '，此后全部收入永久 +' + bonusPct + '%。');
+    showAchievement('🌐', '全球经济体系');
+    if (typeof LLM !== 'undefined' && typeof LLM.generateMilestoneNarrative === 'function') {
+      LLM.generateMilestoneNarrative('全球经济体系', '资产突破 30 万亿：你超越了单一市场的边界，世界经济开始跟随你的节奏波动。').then(function(narrative) {
+        if (narrative) addLog('📜 ' + narrative);
+      }).catch(function(e) { SGame.DEBUG && console.error('[core] midact narrative failed:', e && e.message); });
+    }
+    save();
+  }
+
+  // ========== v1.13 真结局 epilogue：按本局统计生成定制化叙事（LLM 优先，模板兜底） ==========
+  function _fireEndingEpilogue() {
+    try {
+      const cities = Object.values(G.cities || {}).filter(function(c) { return c && c.unlocked; }).length;
+      const favor = Object.entries(G.npcFavor || {});
+      favor.sort(function(a, b) { return (b[1] || 0) - (a[1] || 0); });
+      const bestNpcId = favor[0] && favor[0][0];
+      const bestNpcName = (typeof NPCS !== 'undefined' && NPCS[bestNpcId] && NPCS[bestNpcId].name) || '风云本身';
+      const genTag = (G.legacy && G.legacy.generations) ? '第 ' + G.legacy.generations + ' 纪元' : '初代纪元';
+      const statsLine = genTag + '，历时 ' + G.tickCount + ' 游戏小时，从百万到十万亿，版图 ' + cities + ' 城，最深处的人间羁绊——' + bestNpcName + '。';
+      const fire = function(text) { if (text) addLog('📜 终章 · ' + text); };
+      if (typeof LLM !== 'undefined' && typeof LLM.generateMilestoneNarrative === 'function') {
+        LLM.generateMilestoneNarrative('永恒商神', statsLine + ' 请为这位商业之神写一段终章叙事。').then(fire).catch(function() { fire(statsLine + ' 从此，商海只记得你的名字。'); });
+      } else {
+        fire(statsLine + ' 从此，商海只记得你的名字。');
+      }
+    } catch (e) { SGame.DEBUG && console.error('[core] epilogue failed:', e && e.message); }
+  }
+
+  // ========== v1.13 业务自动轮转（常开：纯放置地板，不依赖托管主开关） ==========
+  // 托管开启时让位托管系统（避免双头升级）；每 120 tick（5 游戏小时）检查一次：
+  // 选「每成本收入增益」最高的未满分业务，成本 ≤ 现金 40% 才动手（升级后仍留 60% 现金）。
+  // 前置条件（techLv/rep/npcFavor）与 upgradeBusinessMax 对齐。
+  function tickAutoRotate() {
+    if (!G || G.tickCount === 0) return;
+    if (G.autoMode && G.autoMode.enabled) return;
+    if (G.tickCount % 120 !== 0) return;
+    const cs = getLateGameCostScale();
+    let best = null;
+    BUSINESS_DEFS.forEach(function(bDef) {
+      const st = G.businesses && G.businesses[bDef.id];
+      if (!st || !st.level) return;
+      const next = bDef.levels[st.level];
+      if (!next) return;
+      // 前置条件（与 upgradeBusinessMax 同口径）
+      if (next.reqCond) {
+        if (next.reqCond.techLv) {
+          const treeId = bDef.techTree ? bDef.techTree : 'digital';
+          if (((G.completedResearch && G.completedResearch[treeId]) || 0) < next.reqCond.techLv) return;
+        }
+        if (next.reqCond.rep && G.reputation < next.reqCond.rep) return;
+        if (next.reqCond.npcFavor) {
+          let pass = true;
+          Object.entries(next.reqCond.npcFavor).forEach(function(e) { if ((G.npcFavor[e[0]] || 0) < e[1]) pass = false; });
+          if (!pass) return;
+        }
+      }
+      const cost = next.cost * WAN * cs;
+      if (G.money < cost * 2.5) return; // 成本 > 现金 40%，不动
+      const cur = bDef.levels[st.level - 1];
+      const gain = Number(next.income || 0) - Number((cur && cur.income) || 0);
+      const ratio = gain / cost;
+      if (!best || ratio > best.ratio) best = { bDef: bDef, cost: cost, ratio: ratio };
+    });
+    if (!best) return;
+    const bDef = best.bDef;
+    const st = G.businesses[bDef.id];
+    G.money -= best.cost;
+    st.level++;
+    addLog('🔄 业务自动轮转：' + bDef.icon + ' ' + bDef.name + ' → Lv' + st.level + '（放置地板，无需托管）');
+    save();
+    if (typeof UI !== 'undefined' && UI.markDirty) UI.markDirty('businesses');
   }
 
   // ========== 成就检查 ==========
@@ -2590,6 +2695,11 @@ window.SGame = (() => {
       case 'never_loan': return (G.loans || []).length === 0 && G.tickCount > 200;
       case 'all_tech_max': return BUSINESS_DEFS.filter(b => b.id === 'tech').every(bDef => getAllCitiesBizMaxLevel(bDef.id) >= a.cond.level);
       case 'total_income_earned': return (G.totalIncomeEarned || 0) >= a.cond.value;
+      // v1.13 新纪元（NG+）系列：只在携带传承点的新纪元成立（sim 永不 doPrestige → 720h 基线安全）
+      case 'legacy_gen': return ((G.legacy && G.legacy.generations) || 0) >= (a.cond.value || 1);
+      case 'legacy_act': return !!(G.legacy && G.legacy.points > 0) && G.act >= (a.cond.value || 3);
+      case 'legacy_money': return !!(G.legacy && G.legacy.points > 0) && G.money >= (a.cond.value || 1e13);
+      case 'legacy_ending': return G.endingSeen === true && !!(G.legacy && G.legacy.points > 0);
       default: return false;
     }
   }
@@ -5380,6 +5490,7 @@ window.SGame = (() => {
     getLateGameTier, getLateGameIncomeScale, getLateGameCostScale,
     triggerOperationalRisk, // v1.8 导出（运营风险档位衰减回归测试用）
     getLegacyPoints, canPrestige, doPrestige, getLegacyIncomeScale, getLegacy, // v1.9 传承基业
+    checkMilestones, checkMidActEcon, tickAutoRotate, checkAchievements, // v1.13 中期幕/自动轮转（verify 直测入口）
     addConnections,
     calcNpcBonus,
     save, load, reset, getSaveSlots,

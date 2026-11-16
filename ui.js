@@ -4960,7 +4960,8 @@ window.UI = (() => {
             var G = SGame.G;
             if (!G) return;
             var pts = (SGame.getLegacyPoints ? SGame.getLegacyPoints(G.money) : 0);
-            if (!confirm('🏛️ 传承基业：纪元重启、剧情重历。\n本次传承获得 ' + pts + ' 传承点（收入 ×' + (1 + pts * 0.1).toFixed(1) + '，初始资金 ×' + (1 + pts * 0.25).toFixed(2) + '）。\n\n确定开启新纪元吗？当前进度将重开。')) return;
+            var endingNote = G.endingSeen ? '\n⭐ 真结局「永恒商神」印记将跨纪元保留。' : '';
+            if (!confirm('🏛️ 传承基业：纪元重启、剧情重历。\n本次传承获得 ' + pts + ' 传承点（收入 ×' + (1 + pts * 0.1).toFixed(1) + '，初始资金 ×' + (1 + pts * 0.25).toFixed(2) + '）。\n' + endingNote + '\n确定开启新纪元吗？当前进度将重开。')) return;
             SGame.doPrestige();
           },
         };

@@ -110,6 +110,11 @@ const ACHIEVEMENTS = [
   // ---- v1.10 限时挑战成就（sprint 冲刺模式）----
   // speed_run：G.money >= value 且 G.tickCount <= time/(TICK_MS/1000)（200h = 24000 tick @TICK_MS=30s）
   { id:'sprint_10b',      name:'极速传奇',       icon:'⏱️', desc:'200 小时内资产达到100亿（推荐冲刺模式）', cond:{ type:'speed_run', value:10000000000, time:720000 } },
+  // ---- v1.13 新纪元（NG+）系列：只在携带传承点的新纪元解锁，给转世非数值理由 ----
+  { id:'ng_first_rebirth', name:'第二黎明',      icon:'🌅', desc:'完成首次传承基业（开启新纪元）', cond:{ type:'legacy_gen', value:1 } },
+  { id:'ng_act3',         name:'重走老路',        icon:'🚶', desc:'新纪元内推进到第 3 幕', cond:{ type:'legacy_act', value:3 } },
+  { id:'ng_10t',          name:'再造万亿',        icon:'💠', desc:'新纪元内资产达到 10 万亿', cond:{ type:'legacy_money', value:10000000000000 } },
+  { id:'ng_act9',         name:'永恒神话',        icon:'🌌', desc:'新纪元内达成真结局「永恒商神」', cond:{ type:'legacy_ending' } },
 ];
 
 
@@ -220,7 +225,12 @@ const ACHIEVEMENT_REWARDS = {
   // 注：奖励必须避开实时消费键（incomeMult/opCost/loyaltyDecay/rdBonus/empEfficiency 等每 tick 生效），
   // 否则标准模式仿真在窗口内解锁后会改变轨迹，破坏 720h 逐位不变性。
   // skillCostReduce 仅在玩家手动学技能时消费（unlockSkill 仅由 ui.js 调用），sim 安全。
-  sprint_10b:         { desc:'技能解锁消耗-1（最低1）', skillCostReduce:1 }};
+  sprint_10b:         { desc:'技能解锁消耗-1（最低1）', skillCostReduce:1 },
+  // v1.13 新纪元系列：一次性技能点（NG+ 局 sim 永不触达，720h 基线安全）
+  ng_first_rebirth:   { desc:'解锁技能点+2',           statPoints:2 },
+  ng_act3:            { desc:'解锁技能点+2',           statPoints:2 },
+  ng_10t:             { desc:'解锁技能点+3',           statPoints:3 },
+  ng_act9:            { desc:'解锁技能点+5',           statPoints:5 }};
 
 // 计算所有已解锁成就的总奖励
 function calcAchievementRewards() {

@@ -395,6 +395,21 @@
       catch(e) { SGame.DEBUG && console.error('[托管] ' + label + ' 异常:', e); }
     }
 
+    // === v1.13 最低现金守卫 ===
+    // 薄资金新档+全托管实测 33 tick 即破产（money<-50万 连续 8 tick → TimerManager.clearAll 冻结 tick）。
+    // 现金 < max(50万, 10×每tick支出) 时只保留保命策略（事件决策/贷款还款/资产典当），
+    // 暂停一切支出类策略——托管的契约是"帮你经营"，不是"帮你破产"。
+    const _guardExp = (typeof SGame.calcTotalExpense === 'function') ? SGame.calcTotalExpense() : 0;
+    const _guardLine = Math.max(500000, (_guardExp || 0) * 10);
+    const inCashGuard = (G.money || 0) < _guardLine;
+    if (inCashGuard && am._guardWas !== true) {
+      am._guardWas = true;
+      bLog('💰 现金守卫启动（现金 ' + ((G.money || 0) / 10000).toFixed(0) + '万 < 安全线 ' + (_guardLine / 10000).toFixed(0) + '万），暂停支出类策略');
+    } else if (!inCashGuard && am._guardWas === true) {
+      am._guardWas = false;
+      bLog('💰 现金守卫解除，恢复全部策略');
+    }
+
     // === 就绪堆调度：首次调用时用 STRATEGIES 初始化堆 ===
     if (S._strategyHeap.length === 0) {
       for (var i = 0; i < STRATEGIES.length; i++) {
@@ -424,6 +439,14 @@
         if (STRATEGIES[k].key === heapTop.key) { s = STRATEGIES[k]; break; }
       }
       if (!s) continue;
+
+      // v1.13 最低现金守卫：白名单外策略统一推迟（不执行、不清 CD）
+      if (inCashGuard && s.key !== 'eventDecide' && s.key !== 'repay' && s.key !== 'assetPawn') {
+        heapTop.nextTick = now + 5;
+        S._strategyHeap.push(heapTop);
+        S._strategyHeap.sort(function(a, b) { return a.nextTick - b.nextTick; });
+        continue;
+      }
 
       // 检查是否启用（映射 s.key → am 字段名）
       var keyMap = { hire:'autoHire',fire:'autoFire',repay:'autoRepay',unlock:'autoUnlockRegion',openBiz:'autoOpenBusiness',upgrade:'autoUpgradeBusiness',research:'autoResearch',invest:'autoInvest',gift:'autoGift',manualWork:'autoManualWork',negotiate:'autoNegotiate',assetBuy:'autoAssetBuy',assetPawn:'autoAssetPawn',rest:'autoRest',venture:'autoVenture' };

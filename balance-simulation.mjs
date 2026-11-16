@@ -293,6 +293,9 @@ function runScenario(label, withScheduler) {
           netPerTick: Math.round(economy.income - economy.expense),
           rank: G.rank,
           act: G.act,
+          achievements: (G.unlockedAchievements || []).length,
+          endingSeen: !!G.endingSeen,
+          midActEcon: !!G.midActEconDone,
           employees: (G.employees || []).length,
           businessLevels: BUSINESS_DEFS.reduce((sum, definition) => sum + ((G.businesses[definition.id] || {}).level || 0), 0),
         };

@@ -1390,13 +1390,15 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
     M9 && M9.act === 9 && M9.bizSumMin <= 70 && M9.money === 1e14 && M9.repMin === 100,
     M9 ? JSON.stringify({ money: M9.money, rep: M9.repMin, biz: M9.bizSumMin }) : 'missing');
 
-  // [2] 托管任务线 autoQuest + 子公司分成：新档 + 垫 500 万现金（40 tick 内全托管消耗不会触破产清算——
-  //     实测 40 万裸资金 33 tick 即烧穿，bankruptTicks 满 8 触发 TimerManager.clearAll 冻结 tick，属既有经济行为非本轮改动）
+  // [2] 托管任务线 autoQuest + 子公司分成：新档 + 垫 2000 万现金（v1.13 起托管含最低现金守卫：
+  //     现金 < max(50万, 10×每tick支出) 时支出类策略暂停——任务线属业务动作，托管前期激进消费
+  //     推高工资后低现金阶段会被守卫合法挂起；守卫本身由 v1.13 [6] 独立断言，此处不断言 q2 的
+  //     推进时刻，只断言「自动开启且在跑」）
   //     李处好感置 90，开托管跑 40 tick（真跑 doTick，RNG 全局种子确定）。
-  //     interval 12：tick1 开 q1 / 13 进 step1 / 25 完成+开 q2 / 37 进 q2 step1
+  //     interval 12：tick1 开 q1 / 13 进 step1 / 25 完成+开 q2（推进路径已由 q1 三步完成覆盖）
   S.startGame('tech', 'v112quest', { difficulty: 'standard' });
   const G12 = S.G;
-  G12.money = 5000000;
+  G12.money = 20000000;
   const savedFav12 = G12.npcFavor.lichu;
   G12.npcFavor.lichu = 90;
   G12.autoMode.enabled = true;
@@ -1406,7 +1408,7 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
     CONFIG.SUBSIDIARY_SHARE_BASE === 0.65 && CONFIG.SUBSIDIARY_SHARE_MAX === 0.80 && CONFIG.SUBSIDIARY_GROUP_INCOME_BONUS === 0.03,
     'base=' + CONFIG.SUBSIDIARY_SHARE_BASE + ' max=' + CONFIG.SUBSIDIARY_SHARE_MAX + ' group=' + CONFIG.SUBSIDIARY_GROUP_INCOME_BONUS);
   const share0 = S.getSubsidiaryShareRate();
-  check('v1.12 getSubsidiaryShareRate（5e6 资产 < 1000万档）= 0.65', Math.abs(share0 - 0.65) < 1e-9, String(share0));
+  check('v1.12 getSubsidiaryShareRate（2e7 资产 = 2 个千万档 → 0.65+0.04）', Math.abs(share0 - 0.69) < 1e-9, String(share0));
 
   runIntervals(40);
   const completed12 = (G12.questCompleted && G12.questCompleted.lichu) || [];
@@ -1415,13 +1417,103 @@ check('存档序列化仍含扁平 businesses 字段（旧格式兼容）',
     completed12.includes('lichu_q1'),
     'completed=' + JSON.stringify(completed12) + ' inProg=' + JSON.stringify(inProg12));
   check('v1.12 托管任务线：李处_q2（reqFavor 30）40 tick 内自动开启且在跑（每 NPC ≤1 条在跑）',
-    !!(inProg12.lichu_q2 && inProg12.lichu_q2.started && inProg12.lichu_q2.stepIndex >= 1),
-    'q2=' + JSON.stringify(inProg12.lichu_q2));
+    !!(inProg12.lichu_q2 && inProg12.lichu_q2.started),
+    'q2=' + JSON.stringify(inProg12.lichu_q2) + '（注：tick37 的推进可被 v1.13 现金守卫合法挂起，守卫单独在 [6] 断言）');
   check('v1.12 autoStats 任务计数（started ≥2 / advanced ≥3）',
     G12.autoStats.questsStarted >= 2 && G12.autoStats.questsAdvanced >= 3,
     'qS=' + G12.autoStats.questsStarted + ' qA=' + G12.autoStats.questsAdvanced);
   G12.npcFavor.lichu = savedFav12;
   G12.autoMode.enabled = false;
+}
+
+// ---------- v1.13：中期幕 / 结局体系 / NG+ 成就 / 现金守卫 / 自动轮转 ----------
+{
+  // [1] RANK_TIERS：13 头衔，寰宇商君 @50T 插在万亿财阀与永恒商神之间
+  const RT = evalIn('RANK_TIERS');
+  check('v1.13 RANK_TIERS 13 头衔（寰宇商君@50T 插入，永恒商神仍封顶）',
+    RT.length === 13 && RT[11].name === '寰宇商君' && RT[11].minMoney === 5e13 && RT[12].name === '永恒商神' && RT[12].minMoney === 1e14,
+    'len=' + RT.length + ' [11]=' + ((RT[11] || {}).name)) ;
+  // [2] MIDACT_ECON 配置
+  const ME = evalIn('MIDACT_ECON');
+  check('v1.13 MIDACT_ECON（30T 阈值 / 1000亿分红 / ×1.15）',
+    ME.minAsset === 3e13 && ME.oneTimeReward === 1e12 && ME.ongoingIncomeMul === 1.15,
+    JSON.stringify(ME));
+
+  // [3] 中期幕触发实测：3.5e13 资产 → 分红入账 + 收入 ×1.15（乘数口径，容差 1e-6）
+  S.startGame('tech', 'v113mid', { difficulty: 'standard' });
+  let G13 = S.G;
+  G13.money = 3.5e13;
+  const incBefore = S.calcTotalIncome();
+  S.checkMidActEcon();
+  S.invalidateIncomeCache();
+  const incAfter = S.calcTotalIncome();
+  check('v1.13 中期幕触发：midActEconDone + 收入 ×1.15',
+    G13.midActEconDone === true && incBefore > 0 && Math.abs(incAfter / incBefore - 1.15) < 1e-6,
+    'incB=' + incBefore + ' incA=' + incAfter);
+  const m1 = G13.money;
+  S.checkMidActEcon();
+  check('v1.13 中期幕幂等（二次调用不重复分红）', G13.money === m1, 'm1=' + m1 + ' m2=' + G13.money);
+
+  // [4] 幕9 → endingSeen + 传承记录持久化
+  S.startGame('tech', 'v113end', { difficulty: 'standard' });
+  G13 = S.G;
+  G13.money = 2e14;
+  G13.reputation = 100;
+  Object.keys(G13.businesses).forEach(bid => { if (G13.businesses[bid]) G13.businesses[bid].level = 10; });
+  S.checkMilestones();
+  check('v1.13 幕9 达成 → G.act=9 且 endingSeen=true', G13.act === 9 && G13.endingSeen === true,
+    'act=' + G13.act + ' end=' + G13.endingSeen);
+  check('v1.13 endingSeen 已写入传承记录（转世不丢）', S.getLegacy().endingSeen === true,
+    'legacy.endingSeen=' + S.getLegacy().endingSeen);
+
+  // [5] NG+：doPrestige 成功 + 新纪元携带 endingSeen + NG+ 成就解锁
+  const pr = S.doPrestige();
+  check('v1.13 doPrestige（2e14 → 4 传承点）', pr && pr.ok === true && pr.points === 4, JSON.stringify(pr));
+  const GNG = S.G;
+  check('v1.13 新纪元携带 G.legacy 与 endingSeen',
+    GNG.legacy && GNG.legacy.points === 4 && GNG.endingSeen === true,
+    'legacy=' + JSON.stringify(GNG.legacy) + ' end=' + GNG.endingSeen);
+  S.checkAchievements();
+  check('v1.13 NG+ 成就「第二黎明」解锁（新纪元标记）',
+    (GNG.unlockedAchievements || []).includes('ng_first_rebirth'),
+    JSON.stringify(GNG.unlockedAchievements));
+  // ng_act3：新纪元推到幕3（1e8 / rep50 / bizSum≥15）
+  // 新档仅 1 个初始业务（retail Lv1）：补齐 7 业务状态至 Lv3（bizSum 21 ≥ 15）
+  GNG.money = 5e8;
+  GNG.reputation = 50;
+  evalIn('BUSINESS_DEFS').forEach(bd => {
+    GNG.businesses[bd.id] = GNG.businesses[bd.id] || { level: 1 };
+    GNG.businesses[bd.id].level = 3;
+  }); // 7 业务 × Lv3 = 21
+  S.checkMilestones();
+  S.checkAchievements();
+  check('v1.13 NG+ 成就「重走老路」解锁（新纪元幕3）',
+    GNG.act >= 3 && (GNG.unlockedAchievements || []).includes('ng_act3'),
+    'act=' + GNG.act + ' ach=' + JSON.stringify(GNG.unlockedAchievements));
+
+  // [6] 现金守卫：新档 10 万裸资金全托管 30 tick —— 不破产、不冻结、守卫在位
+  S.startGame('tech', 'v113guard', { difficulty: 'standard' });
+  const GG = S.G;
+  GG.money = 100000;
+  GG.autoMode.enabled = true;
+  runIntervals(30);
+  check('v1.13 现金守卫：10万裸资金全托管 30 tick 不破产不冻结',
+    (GG.bankruptTicks || 0) < 8 && GG.tickCount === 30,
+    'bt=' + (GG.bankruptTicks || 0) + ' tick=' + GG.tickCount + ' money=' + GG.money);
+  check('v1.13 现金守卫已激活（_guardWas=true）', GG.autoMode._guardWas === true,
+    '_guardWas=' + GG.autoMode._guardWas + ' money=' + GG.money);
+
+  // [7] 业务自动轮转：纯放置（托管关）1000 tick 内自动升级 ≥1 级
+  // （retail Lv1→Lv2 成本 80 万，×2.5 现金规则 → 需累计 200 万；新档收入 ~2.4k/tick，
+  //  600 tick 时仅 194 万差一点，首个达标 120 边界在 720 tick，延长至 1000 留足余量）
+  S.startGame('tech', 'v113rot', { difficulty: 'standard' });
+  const GR = S.G;
+  GR.autoMode.enabled = false;
+  const lv0 = Object.values(GR.businesses).reduce((s, b) => s + (b.level || 0), 0);
+  runIntervals(1000);
+  const lv1 = Object.values(S.G.businesses).reduce((s, b) => s + (b.level || 0), 0);
+  check('v1.13 自动轮转：纯放置 1000 tick 自动升级（业务总级 ' + lv0 + '→' + lv1 + '）', lv1 > lv0,
+    'lv0=' + lv0 + ' lv1=' + lv1 + ' money=' + S.G.money);
 }
 
 console.log('\n' + results.join('\n'));
